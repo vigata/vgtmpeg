@@ -19,6 +19,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* needed for usleep() */
+#define _XOPEN_SOURCE 600
+#define STATS_DELAY 100000
+
 #include "config.h"
 #include <ctype.h>
 #include <string.h>
@@ -44,6 +48,7 @@
 #include "libavutil/avstring.h"
 #include "libavutil/libm.h"
 #include "libavformat/os_support.h"
+
 
 #include "libavformat/ffm.h" // not public API
 
@@ -84,6 +89,8 @@
 #include "cmdutils.h"
 
 #include "libavutil/avassert.h"
+
+
 
 const char program_name[] = "ffmpeg";
 const int program_birth_year = 2000;
@@ -345,6 +352,9 @@ typedef struct AVInputFile {
     int buffer_size;      /* current total buffer size */
 } AVInputFile;
 
+
+#include "vgtmpeg.h"
+
 #if HAVE_TERMIOS_H
 
 /* init terminal so that we can grab keys */
@@ -533,6 +543,14 @@ static int ffmpeg_exit(int ret)
 {
     int i;
 
+
+    FFMSG_START_MSGTYPE( FFMSG_MSGTYPE_PROGRESSINFO, progress );
+    FFMSG_LOG( FFMSG_INT32_FMT(is_last_report), 1 );
+    FFMSG_LOG( FFMSG_INT32_FMT(curtime), (int)(INT_MAX) );
+    FFMSG_STOP_MSGTYPE( FFMSG_MSGTYPE_PROGRESSINFO, progress );
+
+    nlinput_cancel();
+
     /* close files */
     for(i=0;i<nb_output_files;i++) {
         AVFormatContext *s = output_files[i];
@@ -584,6 +602,17 @@ static int ffmpeg_exit(int ret)
             (int) received_sigterm);
         exit (255);
     }
+
+    if( nli.cancel_transcode ) {
+        fprintf(stderr, "transcode was cancelled" );
+    }
+
+    if( nli.exit ) {
+        fprintf(stderr,
+            "Received exit signal from input: terminating.\n");
+        exit (255);
+    }
+
 
     exit(ret); /* not all OS-es handle main() return value */
     return ret;
@@ -1387,6 +1416,8 @@ static void print_report(AVFormatContext **output_files,
     int64_t pts = INT64_MAX;
     static int64_t last_time = -1;
     static int qp_histogram[52];
+
+    print_nlreport( output_files, ost_table, nb_ostreams, is_last_report );
 
     if (!is_last_report) {
         int64_t cur_time;
@@ -2600,7 +2631,7 @@ static int transcode(AVFormatContext **output_files,
 
     timer_start = av_gettime();
 
-    for(; received_sigterm == 0;) {
+    for(; received_sigterm == 0 && nli.exit==0 && nli.cancel_transcode==0 ;) {
         int file_index, ist_index;
         AVPacket pkt;
         double ipts_min;
@@ -3461,6 +3492,8 @@ static int opt_input_file(const char *opt, const char *filename)
     /* dump the file content */
     if (verbose >= 0)
         av_dump_format(ic, nb_input_files, filename, 0);
+
+    dump_nlformat(ic, nb_input_files, filename, 0);
 
     input_files = grow_array(input_files, sizeof(*input_files), &nb_input_files, nb_input_files + 1);
     input_files[nb_input_files - 1].ctx        = ic;
@@ -4522,6 +4555,8 @@ static const OptionDef options[] = {
 int main(int argc, char **argv)
 {
     int64_t ti;
+
+    nlinput_prepare();
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
 
