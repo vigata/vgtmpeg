@@ -19,27 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* needed for usleep() */
 #define _XOPEN_SOURCE 600
 #define STATS_DELAY 100000
 
@@ -115,27 +95,7 @@
 const char program_name[] = "ffmpeg";
 const int program_birth_year = 2000;
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* select an input stream for an output stream */
 typedef struct AVStreamMap {
     int file_index;
     int stream_index;
@@ -175,27 +135,7 @@ static int nb_output_files = 0;
 static AVStreamMap *stream_maps = NULL;
 static int nb_stream_maps;
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* first item specifies output metadata, second is input */
 static AVMetaDataMap (*meta_data_maps)[2] = NULL;
 static int nb_meta_data_maps;
 static int metadata_global_autocopy   = 1;
@@ -205,27 +145,7 @@ static int metadata_chapters_autocopy = 1;
 static AVChapterMap *chapter_maps = NULL;
 static int nb_chapter_maps;
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* indexed by output file stream index */
 static int *streamid_map = NULL;
 static int nb_streamid_map = 0;
 
@@ -437,27 +357,7 @@ typedef struct AVInputFile {
 
 #if HAVE_TERMIOS_H
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* init terminal so that we can grab keys */
 static struct termios oldtty;
 #endif
 
@@ -602,27 +502,7 @@ static void term_init(void)
 #endif
 }
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* read a key without blocking */
 static int read_key(void)
 {
 #if HAVE_TERMIOS_H
@@ -738,27 +618,7 @@ static int ffmpeg_exit(int ret)
     return ret;
 }
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* similar to ff_dynarray_add() and av_fast_realloc() */
 static void *grow_array(void *array, int elem_size, int *size, int new_size)
 {
     if (new_size >= INT_MAX / elem_size) {
@@ -1250,27 +1110,7 @@ static void pre_process_video_frame(AVInputStream *ist, AVPicture *picture, void
     *bufp = buf;
 }
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* we begin to correct av delay at this threshold */
 #define AV_DELAY_MAX 0.100
 
 static void do_subtitle_out(AVFormatContext *s,
@@ -1703,27 +1543,7 @@ static void generate_silence(uint8_t* buf, enum AVSampleFormat sample_fmt, size_
     memset(buf, fill_char, size);
 }
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* pkt = NULL means EOF (needed to flush decoder buffers) */
 static int output_packet(AVInputStream *ist, int ist_index,
                          AVOutputStream **ost_table, int nb_ostreams,
                          const AVPacket *pkt)
@@ -4064,27 +3884,7 @@ static int opt_new_stream(const char *opt, const char *arg)
     return 0;
 }
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* arg format is "output-stream-index:streamid-value". */
 static int opt_streamid(const char *opt, const char *arg)
 {
     int idx;
@@ -4244,27 +4044,7 @@ static int opt_output_file(const char *opt, const char *filename)
     return 0;
 }
 
-/* 
- * Copyright (C) 2011 Alberto Vigata
- *       
- * This file is part of vgtmpeg
- * 
- * a Versed Generalist Transcoder
- * 
- * vgtmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- * 
- * vgtmpeg is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* same option as mencoder */
 static int opt_pass(const char *opt, const char *arg)
 {
     do_pass = parse_number_or_die(opt, arg, OPT_INT, 1, 2);
@@ -4294,7 +4074,7 @@ static int64_t getmaxrss(void)
 #if HAVE_GETRUSAGE && HAVE_STRUCT_RUSAGE_RU_MAXRSS
     struct rusage rusage;
     getrusage(RUSAGE_SELF, &rusage);
-    return (int64_t)0 * 1024;
+    return (int64_t)rusage.ru_maxrss * 1024;
 #elif HAVE_GETPROCESSMEMORYINFO
     HANDLE proc;
     PROCESS_MEMORY_COUNTERS memcounters;
