@@ -9,7 +9,7 @@ vpath %.asm $(SRC_DIR)
 vpath %.v   $(SRC_DIR)
 vpath %.texi $(SRC_PATH_BARE)
 
-PROGS-$(CONFIG_FFMPEG)   += ffmpeg
+PROGS-$(CONFIG_FFMPEG)   += vgtmpeg
 PROGS-$(CONFIG_FFPLAY)   += ffplay
 PROGS-$(CONFIG_FFPROBE)  += ffprobe
 PROGS-$(CONFIG_FFSERVER) += ffserver
