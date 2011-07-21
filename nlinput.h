@@ -53,21 +53,13 @@ static int nlinput_readbyte(char *val) {
     return read==1;
 }
 
-/* input message binary format 
- * all words little endian.
- *
- * 'VGTM'
- * 'data'
- *
- * 
- *
- *
- * */
 
+/* message code definitions */
 #define EXIT                101
 #define CANCEL_TRANSCODE    99
 
 
+/* cross thread signal struct */
 typedef struct {
     int exit;
     int cancel_transcode;
@@ -98,14 +90,15 @@ static void *nlinput_start(void *c) {
        }
     }
 
-    // printf("hello from nlinput thread. Exit is: %d. read %d bytes = %d\n", ctx->exit, read, CB2INT(b4) );
     pthread_exit(NULL);
 }
 
+/* static objects to be imported on module */
 static nlinput_t nli;
 static pthread_t nlin_th;
 static pthread_attr_t nlin_attr;
 
+/* fires up input thread */
 static void nlinput_prepare() {
     /* starting nlinput */
     memset( &nli, 0, sizeof (nlinput_t) );
@@ -115,14 +108,11 @@ static void nlinput_prepare() {
     pthread_create( &nlin_th, &nlin_attr, nlinput_start, (void *)&nli );
 }
 
+/* shutdown input thread */
 static void nlinput_cancel() {
     void *status;
     printf("nlinput_cancel\n");
 
-    //pthread_cancel( nlin_th );
-//#if defined(_WIN32) || defined(_WIN64) || 1 
-    //fclose(stdin);
-//#endif
     pthread_join( nlin_th, &status );
     pthread_attr_destroy(&nlin_attr);
 }
