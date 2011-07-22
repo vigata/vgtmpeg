@@ -1282,7 +1282,7 @@ static void do_video_out(AVFormatContext *s,
 #endif
 
     /* duplicates frame if needed */
-    for(i=0;i<nb_frames;i++) {
+    for(i=0; i<nb_frames && nli.cancel_transcode==0 ;i++) {
         AVPacket pkt;
         av_init_packet(&pkt);
         pkt.stream_index= ost->index;
