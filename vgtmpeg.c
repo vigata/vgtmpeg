@@ -356,6 +356,8 @@ typedef struct AVInputFile {
 
 
 #include "vgtmpeg.h"
+int output_xml = 0;
+int server_mode = 0;
 
 #if HAVE_TERMIOS_H
 
@@ -546,12 +548,15 @@ static int vgtmpeg_exit(int ret)
     int i;
 
 
-    FFMSG_START_MSGTYPE( FFMSG_MSGTYPE_PROGRESSINFO, progress );
-    FFMSG_LOG( FFMSG_INT32_FMT(is_last_report), 1 );
-    FFMSG_LOG( FFMSG_INT32_FMT(curtime), (int)(INT_MAX) );
-    FFMSG_STOP_MSGTYPE( FFMSG_MSGTYPE_PROGRESSINFO, progress );
+    if( output_xml ) {
+        FFMSG_START_MSGTYPE( FFMSG_MSGTYPE_PROGRESSINFO, progress );
+        FFMSG_LOG( FFMSG_INT32_FMT(is_last_report), 1 );
+        FFMSG_LOG( FFMSG_INT32_FMT(curtime), (int)(INT_MAX) );
+        FFMSG_STOP_MSGTYPE( FFMSG_MSGTYPE_PROGRESSINFO, progress );
+    }
 
-    nlinput_cancel();
+    if( server_mode )
+        nlinput_cancel();
 
     /* close files */
     for(i=0;i<nb_output_files;i++) {
@@ -1419,7 +1424,8 @@ static void print_report(AVFormatContext **output_files,
     static int64_t last_time = -1;
     static int qp_histogram[52];
 
-    print_nlreport( output_files, ost_table, nb_ostreams, is_last_report );
+    if( output_xml )
+        print_nlreport( output_files, ost_table, nb_ostreams, is_last_report );
 
     if (!is_last_report) {
         int64_t cur_time;
@@ -2786,7 +2792,7 @@ static int transcode(AVFormatContext **output_files,
             && (is->iformat->flags & AVFMT_TS_DISCONT)) {
             int64_t pkt_dts= av_rescale_q(pkt.dts, ist->st->time_base, AV_TIME_BASE_Q);
             int64_t delta= pkt_dts - ist->next_pts;
-            if((FFABS(delta) > 1LL*dts_delta_threshold*AV_TIME_BASE || pkt_dts+1<ist->pts)&& !copy_ts){
+            if((FFABS(delta) > 1LL*dts_delta_threshold*AV_TIME_BASE /*|| pkt_dts+1<ist->pts*/ )&& !copy_ts){
                 input_files_ts_offset[ist->file_index]-= delta;
                 if (verbose > 2)
                     fprintf(stderr, "timestamp discontinuity %"PRId64", new offset= %"PRId64"\n", delta, input_files_ts_offset[ist->file_index]);
@@ -3495,7 +3501,8 @@ static int opt_input_file(const char *opt, const char *filename)
     if (verbose >= 0)
         av_dump_format(ic, nb_input_files, filename, 0);
 
-    dump_nlformat(ic, nb_input_files, filename, 0);
+    if( output_xml )
+        dump_nlformat(ic, nb_input_files, filename, 0);
 
     input_files = grow_array(input_files, sizeof(*input_files), &nb_input_files, nb_input_files + 1);
     input_files[nb_input_files - 1].ctx        = ic;
@@ -4423,6 +4430,8 @@ static const OptionDef options[] = {
     { "f", HAS_ARG, {(void*)opt_format}, "force format", "fmt" },
     { "i", HAS_ARG, {(void*)opt_input_file}, "input file name", "filename" },
     { "y", OPT_BOOL, {(void*)&file_overwrite}, "overwrite output files" },
+    { "output_xml", OPT_BOOL, {(void*)&output_xml}, "turn on xml output" },
+    { "server_mode", OPT_BOOL, {(void*)&server_mode}, "setup server mode" },
     { "map", HAS_ARG | OPT_EXPERT, {(void*)opt_map}, "set input stream mapping", "file.stream[:syncfile.syncstream]" },
     { "map_meta_data", HAS_ARG | OPT_EXPERT, {(void*)opt_map_meta_data}, "DEPRECATED set meta data information of outfile from infile",
       "outfile[,metadata]:infile[,metadata]" },
@@ -4559,7 +4568,6 @@ int main(int argc, char **argv)
 {
     int64_t ti;
 
-    nlinput_prepare();
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
 
@@ -4592,6 +4600,9 @@ int main(int argc, char **argv)
 
     /* parse options */
     parse_options(argc, argv, options, opt_output_file);
+
+    if( server_mode ) 
+        nlinput_prepare();
 
     if(nb_output_files <= 0 && nb_input_files == 0) {
         show_usage();
