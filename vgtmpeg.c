@@ -546,6 +546,7 @@ static int decode_interrupt_cb(void)
 static int vgtmpeg_exit(int ret)
 {
     int i;
+    AVFormatContext *os;
 
 
     if( output_xml ) {
@@ -560,6 +561,15 @@ static int vgtmpeg_exit(int ret)
         nlinput_cancel();
 
     /* close files */
+
+    /* if there was an error try to write the trailers */
+    if( ret>0 ) {
+        for(i=0;i<nb_output_files;i++) {
+            os = output_files[i];
+            av_write_trailer(os);
+        }
+    }
+
     for(i=0;i<nb_output_files;i++) {
         AVFormatContext *s = output_files[i];
         if (!(s->oformat->flags & AVFMT_NOFILE) && s->pb)
