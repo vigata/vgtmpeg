@@ -553,6 +553,7 @@ static int vgtmpeg_exit(int ret)
         FFMSG_LOG( FFMSG_INT32_FMT(is_last_report), 1 );
         FFMSG_LOG( FFMSG_INT32_FMT(curtime), (int)(INT_MAX) );
         FFMSG_STOP_MSGTYPE( FFMSG_MSGTYPE_PROGRESSINFO, progress );
+        fflush(stderr);
     }
 
     if( server_mode )
