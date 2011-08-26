@@ -141,5 +141,154 @@ static void print_nlreport( AVFormatContext **output_files,
     FFMSG_LOG( FFMSG_STOP );
 }
 
+/* codec output report */
+/* outputs and array of codecs with format:
+ *
+ * {
+ *  codecs: [
+ *      {
+ *          decode: true,
+ *          encode: false,
+ *          type: one of 'video','audio','subtitle'
+ *          features: int
+ *      }
+ *  ]
+ *  }
+ */
+
+#define JSON_LOG(...)  av_log ( NULL, AV_LOG_INFO, __VA_ARGS__ )
+
+#define JSON_OBJECT(x) JSON_LOG("{"); {x}; JSON_LOG("}"); 
+#define JSON_PROPERTY( first, name, val) if(!first) {JSON_LOG(",");}; JSON_LOG( "\""#name "\":"  ); {val};
+
+
+#define JSON_STRING_C(cstring)  JSON_LOG("\"%s\"", cstring);
+#define JSON_INT_C(val)  JSON_LOG("%d", val);
+
+#define JSON_BOOLEAN_C(val)     JSON_LOG("%s", (val) ? "true" : "false");
+
+#define JSON_STRING_PROPERTY(name, val ) JSON_LOG( #name ":" #val ); 
+#define JSON_BOOLEAN_PROPERTY(name, val ) JSON_LOG( #name ":" ##val ); 
+
+#define JSON_ARRAY(x) JSON_LOG("["); {x}; JSON_LOG("]");
+#define JSON_ARRAY_ITEM(first, x) if(!first) {JSON_LOG(",");}; {x}; 
+
+
+static void show_codecs_json(void)
+{
+    AVCodec *p=NULL, *p2;
+    const char *last_name;
+    last_name= "000";
+    
+
+
+    JSON_OBJECT( 
+            JSON_PROPERTY( 1, codecs, JSON_ARRAY(
+                    int first = 1;
+                    for(;;)                    {
+                        int decode=0;
+                        int encode=0;
+                        int cap=0;
+                        const char *type_str;
+
+                        p2=NULL;
+                        while((p= av_codec_next(p))) {
+                            if((p2==NULL || strcmp(p->name, p2->name)<0) &&
+                                strcmp(p->name, last_name)>0){
+                            p2= p;
+                            decode= encode= cap=0;
+                        }
+                        if(p2 && strcmp(p->name, p2->name)==0){
+                            if(p->decode) decode=1;
+                            if(p->encode) encode=1;
+                            cap |= p->capabilities;
+                            }
+                        }
+                        if(p2==NULL)
+                            break;
+        
+                        last_name= p2->name;
+
+                        switch(p2->type) {
+                            case AVMEDIA_TYPE_VIDEO:
+                                type_str = "video";
+                                break;
+                            case AVMEDIA_TYPE_AUDIO:
+                                type_str = "audio";
+                                break;
+                            case AVMEDIA_TYPE_SUBTITLE:
+                                type_str = "subtitle";
+                                break;
+                            default:
+                                type_str = "?";
+                                break;
+                        }
+
+                        JSON_ARRAY_ITEM( first, JSON_OBJECT( 
+                            JSON_PROPERTY( 1, name,  JSON_STRING_C( p2->name ) );
+                            JSON_PROPERTY( 0, decode, JSON_BOOLEAN_C(decode) );
+                            JSON_PROPERTY( 0, encode, JSON_BOOLEAN_C(encode) );
+                            JSON_PROPERTY( 0, type, JSON_STRING_C(type_str) );
+                            JSON_PROPERTY( 0, caps, JSON_INT_C(cap) );
+                            JSON_PROPERTY( 0, long_name,  JSON_STRING_C( p2->long_name ) );
+                        ))
+                        first = 0;
+                    }
+        ))
+   );
+}
+
+static void show_formats_json(void) {
+    AVInputFormat *ifmt=NULL;
+    AVOutputFormat *ofmt=NULL;
+    const char *last_name;
+    last_name= "000";
+
+    JSON_OBJECT( 
+            JSON_PROPERTY( 1, formats, JSON_ARRAY(
+                    int first = 1;
+                    for(;;)                    {
+                        int decode=0;
+                        int encode=0;
+                        const char *name=NULL;
+                        const char *long_name=NULL;
+
+                        while((ofmt= av_oformat_next(ofmt))) {
+                            if((name == NULL || strcmp(ofmt->name, name)<0) &&
+                                strcmp(ofmt->name, last_name)>0){
+                            name= ofmt->name;
+                            long_name= ofmt->long_name;
+                            encode=1;
+                            }
+                        }
+
+                        while((ifmt= av_iformat_next(ifmt))) {
+                            if((name == NULL || strcmp(ifmt->name, name)<0) &&
+                            strcmp(ifmt->name, last_name)>0){
+                            name= ifmt->name;
+                            long_name= ifmt->long_name;
+                            encode=0;
+                           }
+                        
+                            if(name && strcmp(ifmt->name, name)==0)
+                            decode=1;
+                        }
+                        if(name==NULL)
+                            break;
+                        last_name= name;
+        
+                        JSON_ARRAY_ITEM( first, JSON_OBJECT( 
+                            JSON_PROPERTY( 1, name,  JSON_STRING_C( name ) );
+                            JSON_PROPERTY( 0, decode, JSON_BOOLEAN_C(decode) );
+                            JSON_PROPERTY( 0, encode, JSON_BOOLEAN_C(encode) );
+                            JSON_PROPERTY( 0, long_name,  JSON_STRING_C( long_name ) );
+                        ))
+                        first = 0;
+
+                  }
+
+        ))
+   );
+}
 
 #endif

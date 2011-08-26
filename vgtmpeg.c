@@ -358,6 +358,7 @@ typedef struct AVInputFile {
 #include "vgtmpeg.h"
 int output_xml = 0;
 int server_mode = 0;
+int banner = 0;
 
 #if HAVE_TERMIOS_H
 
@@ -4438,11 +4439,10 @@ static void opt_passlogfile(const char *arg)
 static const OptionDef options[] = {
     /* main options */
 #include "cmdutils_common_opts.h"
+#include "vgtmpeg_opts.h"
     { "f", HAS_ARG, {(void*)opt_format}, "force format", "fmt" },
     { "i", HAS_ARG, {(void*)opt_input_file}, "input file name", "filename" },
     { "y", OPT_BOOL, {(void*)&file_overwrite}, "overwrite output files" },
-    { "output_xml", OPT_BOOL, {(void*)&output_xml}, "turn on xml output" },
-    { "server_mode", OPT_BOOL, {(void*)&server_mode}, "setup server mode" },
     { "map", HAS_ARG | OPT_EXPERT, {(void*)opt_map}, "set input stream mapping", "file.stream[:syncfile.syncstream]" },
     { "map_meta_data", HAS_ARG | OPT_EXPERT, {(void*)opt_map_meta_data}, "DEPRECATED set meta data information of outfile from infile",
       "outfile[,metadata]:infile[,metadata]" },
@@ -4606,11 +4606,12 @@ int main(int argc, char **argv)
 
     init_opts();
 
-    if(verbose>=0)
-        show_banner();
 
     /* parse options */
     parse_options(argc, argv, options, opt_output_file);
+
+    if(verbose>=0 && banner )
+        show_banner();
 
     if( server_mode ) 
         nlinput_prepare();
