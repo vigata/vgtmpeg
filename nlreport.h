@@ -156,22 +156,99 @@ static void print_nlreport( AVFormatContext **output_files,
  *  }
  */
 
+
+/* escape C string so it can be used as a string literal */
+static void c_strfree(char *str) { 
+    free(str);
+}
+static char *c_strescape (const char *source)
+{
+    const unsigned char *p;
+    char *dest;
+    char *q;
+    unsigned char excmap[256];
+
+    //g_return_val_if_fail (source != NULL, NULL);
+    if(!source) return NULL;
+
+    p = (unsigned char *) source;
+    /* Each source byte needs maximally four destination chars (\777) */
+    q = dest = malloc (strlen (source) * 4 + 1);
+
+    memset (excmap, 0, 256);
+
+    while (*p)
+    {
+        if (excmap[*p])
+            *q++ = *p;
+        else
+        {
+            switch (*p)
+            {
+                case '\b':
+                    *q++ = '\\';
+                    *q++ = 'b';
+                    break;
+                case '\f':
+                    *q++ = '\\';
+                    *q++ = 'f';
+                    break;
+                case '\n':
+                    *q++ = '\\';
+                    *q++ = 'n';
+                    break;
+                case '\r':
+                    *q++ = '\\';
+                    *q++ = 'r';
+                    break;
+                case '\t':
+                    *q++ = '\\';
+                    *q++ = 't';
+                    break;
+                case '\\':
+                    *q++ = '\\';
+                    *q++ = '\\';
+                    break;
+                case '"':
+                    *q++ = '\\';
+                    *q++ = '"';
+                    break;
+                default:
+                    if ((*p < ' ') || (*p >= 0177))
+                    {
+                        *q++ = '\\';
+                        *q++ = '0' + (((*p) >> 6) & 07);
+                        *q++ = '0' + (((*p) >> 3) & 07);
+                        *q++ = '0' + ((*p) & 07);
+                    }
+                    else
+                        *q++ = *p;
+                    break;
+            }
+        }
+        p++;
+    }
+    *q = 0;
+    return dest;
+}
+
+
 #define JSON_LOG(...)  av_log ( NULL, AV_LOG_INFO, __VA_ARGS__ )
 
 #define JSON_OBJECT(x) JSON_LOG("{"); {x}; JSON_LOG("}"); 
-#define JSON_PROPERTY( first, name, val) if(!first) {JSON_LOG(",");}; JSON_LOG( "\""#name "\":"  ); {val};
+#define JSON_PROPERTY( first, name, val) { if(!first) {JSON_LOG(",");}; JSON_LOG( "\""#name "\":"  ); {val}; }
 
 
-#define JSON_STRING_C(cstring)  JSON_LOG("\"%s\"", cstring);
-#define JSON_INT_C(val)  JSON_LOG("%d", val);
-
+static char *tmpstrcptr;
+#define JSON_STRING_C(cstring)  { JSON_LOG("\"%s\"", tmpstrcptr=c_strescape(cstring) ); c_strfree(tmpstrcptr); }
+//#define JSON_STRING_C(cstring)  { JSON_LOG("\"%s\"", cstring) ;  }
+#define JSON_INT_C(val)  JSON_LOG("%d", (val));
+#define JSON_DOUBLE_C(val) JSON_LOG("%f", (double)(val));
 #define JSON_BOOLEAN_C(val)     JSON_LOG("%s", (val) ? "true" : "false");
 
-#define JSON_STRING_PROPERTY(name, val ) JSON_LOG( #name ":" #val ); 
-#define JSON_BOOLEAN_PROPERTY(name, val ) JSON_LOG( #name ":" ##val ); 
 
-#define JSON_ARRAY(x) JSON_LOG("["); {x}; JSON_LOG("]");
-#define JSON_ARRAY_ITEM(first, x) if(!first) {JSON_LOG(",");}; {x}; 
+#define JSON_ARRAY(x) {JSON_LOG("["); {x}; JSON_LOG("]");}
+#define JSON_ARRAY_ITEM(first, x) {if(!first) {JSON_LOG(",");}; {x}; }
 
 
 static void show_codecs_json(void)
@@ -290,5 +367,260 @@ static void show_formats_json(void) {
         ))
    );
 }
+
+
+static void show_avoptions_opt_list_enum(void *obj,  const char *unit,
+                     int req_flags, int rej_flags) {
+    const AVOption *opt=NULL;
+    char *class_name = (*(AVClass**)obj)->class_name;
+    int first=1;
+
+
+    while ((opt= av_next_option(obj, opt))) {
+        if (!(opt->flags & req_flags) || (opt->flags & rej_flags))
+            continue;
+
+        /* Don't print CONST's on level one.
+         * Don't print anything but CONST's on level two.
+         * Only print items from the requested unit.
+         */
+        if (!unit && opt->type==FF_OPT_TYPE_CONST)
+            continue;
+        else if (unit && opt->type!=FF_OPT_TYPE_CONST)
+            continue;
+        else if (unit && opt->type==FF_OPT_TYPE_CONST && strcmp(unit, opt->unit))
+            continue;
+
+
+        JSON_ARRAY_ITEM( first, 
+                JSON_OBJECT( 
+                    JSON_PROPERTY( 1, name, JSON_STRING_C(opt->name) );
+                    JSON_PROPERTY( 0, value, JSON_DOUBLE_C(opt->default_val.dbl) );
+                    if( opt->help ) JSON_PROPERTY( 0, help, JSON_STRING_C(opt->help) );
+                    );
+                );
+        first = 0;
+    }
+}
+
+
+static void show_avoptions_json(void *obj, int req_flags, int rej_flags, const char *klass, int add_flags )
+{
+    const AVOption *opt=NULL;
+    const char *type;
+    const char *unit=NULL;
+    //char *class_name = (*(AVClass**)obj)->class_name;
+    if (!obj)
+        return -1;
+
+
+    while ((opt= av_next_option(obj, opt))) {
+        if (!(opt->flags & req_flags) || (opt->flags & rej_flags))
+            continue;
+
+        /* Don't print CONST's on level one.
+         * Don't print anything but CONST's on level two.
+         * Only print items from the requested unit.
+         */
+        if (!unit && opt->type==FF_OPT_TYPE_CONST)
+            continue;
+        else if (unit && opt->type!=FF_OPT_TYPE_CONST)
+            continue;
+        else if (unit && opt->type==FF_OPT_TYPE_CONST && strcmp(unit, opt->unit))
+            continue;
+        /* else if (unit && opt->type == FF_OPT_TYPE_CONST) */
+            /* av_log(av_log_obj, AV_LOG_INFO, "   %-15s ", opt->name); */
+        /* else */
+            /* av_log(av_log_obj, AV_LOG_INFO, "-%-17s ", opt->name); */
+
+        switch (opt->type) {
+            case FF_OPT_TYPE_FLAGS:
+                type = "flags";
+                break;
+            case FF_OPT_TYPE_INT:
+                type = "int";
+                break;
+            case FF_OPT_TYPE_INT64:
+                type = "int64";
+                break;
+            case FF_OPT_TYPE_DOUBLE:
+                type = "double";
+                break;
+            case FF_OPT_TYPE_FLOAT:
+                type = "float";
+                break;
+            case FF_OPT_TYPE_STRING:
+                type = "string";
+                break;
+            case FF_OPT_TYPE_RATIONAL:
+                type = "rational";
+                break;
+            case FF_OPT_TYPE_BINARY:
+                type = "binary";
+                break;
+            case FF_OPT_TYPE_CONST:
+                type = "const";
+            default:
+                type = "uknown";
+                break;
+        }
+
+    JSON_ARRAY_ITEM( 0, 
+    JSON_OBJECT( 
+            JSON_PROPERTY( 1, domain,  JSON_STRING_C( "avcontext" ) );                    
+            JSON_PROPERTY( 0, flags, JSON_INT_C(opt->flags | add_flags) ); 
+            JSON_PROPERTY( 0, klass, JSON_STRING_C(klass) );
+            JSON_PROPERTY( 0, name, JSON_STRING_C(opt->name) );
+            JSON_PROPERTY( 0, type, JSON_STRING_C(type) );
+            JSON_PROPERTY( 0, typeint, JSON_INT_C(opt->type) );
+            JSON_PROPERTY( 0, def, JSON_DOUBLE_C(opt->default_val.dbl) );
+            /* JSON_PROPERTY( 0, encode, JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_ENCODING_PARAM ) ); */
+            /* JSON_PROPERTY( 0, decode, JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_DECODING_PARAM ) ); */
+            /* JSON_PROPERTY( 0, video,  JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_VIDEO_PARAM ) ); */
+            /* JSON_PROPERTY( 0, audio,    JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_AUDIO_PARAM ) ); */
+            /* JSON_PROPERTY( 0, subtitle, JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_SUBTITLE_PARAM ) ); */
+            if( opt->help ) JSON_PROPERTY( 0, help, JSON_STRING_C(opt->help) );
+           
+
+        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_ENCODING_PARAM) ? 'E' : '.'); */
+        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_DECODING_PARAM) ? 'D' : '.'); */
+        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_VIDEO_PARAM   ) ? 'V' : '.'); */
+        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_AUDIO_PARAM   ) ? 'A' : '.'); */
+        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_SUBTITLE_PARAM) ? 'S' : '.'); */
+
+        /* if (opt->help) */
+            /* av_log(av_log_obj, AV_LOG_INFO, " %s", opt->help); */
+        /* av_log(av_log_obj, AV_LOG_INFO, "\n"); */
+
+            
+            int has_enum = opt->unit && opt->type!=FF_OPT_TYPE_CONST;
+            JSON_PROPERTY( 0, has_enum, JSON_BOOLEAN_C(has_enum) );
+
+            if ( has_enum ) {
+                JSON_PROPERTY(0, enums, JSON_ARRAY(
+                            show_avoptions_opt_list_enum(obj,  opt->unit, req_flags, rej_flags);
+                            ));
+            }
+            )
+        );
+    }
+}
+
+
+
+static void show_help_options_json(const OptionDef *po)
+{
+    JSON_OBJECT(
+            JSON_PROPERTY( 1, domain,  JSON_STRING_C( "general" ) );                    
+            JSON_PROPERTY( 0, flags, JSON_INT_C(po->flags) );
+            JSON_PROPERTY( 0, name, JSON_STRING_C(po->name) );
+            JSON_PROPERTY( 0, has_arg, JSON_BOOLEAN_C(po->flags & HAS_ARG) );
+            if( po->flags &HAS_ARG ) JSON_PROPERTY(0, arg, JSON_STRING_C(po->argname));
+            JSON_PROPERTY( 0, help, JSON_STRING_C(po->help) );
+    );
+}
+
+#define AV_OPT_FLAG_FORMAT_PARAM (1<<17)
+static void avcontext_flagdef() {
+    JSON_OBJECT(
+            JSON_PROPERTY( 1, name, JSON_STRING_C("avflags") );
+            JSON_PROPERTY( 0, def,  JSON_OBJECT(
+                    JSON_PROPERTY(1, AV_OPT_FLAG_ENCODING_PARAM, JSON_INT_C(AV_OPT_FLAG_ENCODING_PARAM));
+                    JSON_PROPERTY(0, AV_OPT_FLAG_DECODING_PARAM, JSON_INT_C(AV_OPT_FLAG_DECODING_PARAM));
+                    JSON_PROPERTY(0, AV_OPT_FLAG_METADATA, JSON_INT_C(AV_OPT_FLAG_METADATA));
+                    JSON_PROPERTY(0, AV_OPT_FLAG_AUDIO_PARAM, JSON_INT_C(AV_OPT_FLAG_AUDIO_PARAM));
+                    JSON_PROPERTY(0, AV_OPT_FLAG_VIDEO_PARAM, JSON_INT_C(AV_OPT_FLAG_VIDEO_PARAM));
+                    JSON_PROPERTY(0, AV_OPT_FLAG_FORMAT_PARAM, JSON_INT_C(AV_OPT_FLAG_FORMAT_PARAM));
+                    JSON_PROPERTY(0, AV_OPT_FLAG_SUBTITLE_PARAM, JSON_INT_C(AV_OPT_FLAG_SUBTITLE_PARAM));
+                    ));
+            )
+}
+
+static void avcontext_typedef() {
+    JSON_OBJECT(
+            JSON_PROPERTY( 1, name, JSON_STRING_C("avtype") );
+            JSON_PROPERTY( 0, def,  JSON_OBJECT(
+                    JSON_PROPERTY(1, FF_OPT_TYPE_FLAGS, JSON_INT_C(FF_OPT_TYPE_FLAGS));
+                    JSON_PROPERTY(0, FF_OPT_TYPE_INT, JSON_INT_C(FF_OPT_TYPE_INT));
+                    JSON_PROPERTY(0, FF_OPT_TYPE_INT64, JSON_INT_C(FF_OPT_TYPE_INT64));
+                    JSON_PROPERTY(0, FF_OPT_TYPE_DOUBLE, JSON_INT_C(FF_OPT_TYPE_DOUBLE));
+                    JSON_PROPERTY(0, FF_OPT_TYPE_FLOAT, JSON_INT_C(FF_OPT_TYPE_FLOAT));
+                    JSON_PROPERTY(0, FF_OPT_TYPE_STRING, JSON_INT_C(FF_OPT_TYPE_STRING));
+                    JSON_PROPERTY(0, FF_OPT_TYPE_RATIONAL, JSON_INT_C(FF_OPT_TYPE_RATIONAL));
+                    JSON_PROPERTY(0, FF_OPT_TYPE_BINARY, JSON_INT_C(FF_OPT_TYPE_BINARY));
+                    JSON_PROPERTY(0, FF_OPT_TYPE_CONST, JSON_INT_C(FF_OPT_TYPE_CONST));
+                    ));
+            )
+}  
+static void show_help_options_json_flagdef() {
+    JSON_OBJECT(
+            JSON_PROPERTY( 1, name, JSON_STRING_C("gflags") );
+            JSON_PROPERTY( 0, def,  JSON_OBJECT(
+                    JSON_PROPERTY(1, HAS_ARG    ,JSON_INT_C(HAS_ARG));
+                    JSON_PROPERTY(0, OPT_BOOL   ,JSON_INT_C(OPT_BOOL));
+                    JSON_PROPERTY(0, OPT_EXPERT ,JSON_INT_C(OPT_EXPERT));
+                    JSON_PROPERTY(0, OPT_STRING ,JSON_INT_C(OPT_STRING));
+                    JSON_PROPERTY(0, OPT_VIDEO  ,JSON_INT_C(OPT_VIDEO));
+                    JSON_PROPERTY(0, OPT_AUDIO  ,JSON_INT_C(OPT_AUDIO));
+                    JSON_PROPERTY(0, OPT_GRAB   ,JSON_INT_C(OPT_GRAB));
+                    JSON_PROPERTY(0, OPT_INT    ,JSON_INT_C(OPT_INT));
+                    JSON_PROPERTY(0, OPT_FLOAT  ,JSON_INT_C(OPT_FLOAT));
+                    JSON_PROPERTY(0, OPT_SUBTITLE ,JSON_INT_C(OPT_SUBTITLE));
+                    JSON_PROPERTY(0, OPT_INT64  ,JSON_INT_C(OPT_INT64));
+                    JSON_PROPERTY(0, OPT_EXIT   ,JSON_INT_C(OPT_EXIT));
+                    JSON_PROPERTY(0, OPT_DATA   ,JSON_INT_C(OPT_DATA));
+                    ));
+            )
+}
+
+static void show_options_json() {
+    /* general options  */
+    const OptionDef *po;
+    int first = 1;
+    AVCodec *c;
+    AVOutputFormat *oformat=NULL;
+
+    JSON_OBJECT(
+            JSON_PROPERTY(1, flagdef, JSON_ARRAY(
+                    JSON_ARRAY_ITEM(1, show_help_options_json_flagdef(); );
+                    JSON_ARRAY_ITEM(0, avcontext_flagdef(); );
+                    JSON_ARRAY_ITEM(0, avcontext_typedef(); );
+                    )); 
+            JSON_PROPERTY(0, options, JSON_ARRAY( 
+
+            for( po=options; po->name!=NULL; po++ ) {
+            JSON_ARRAY_ITEM( first, show_help_options_json(po); );
+            first = 0;
+            }
+
+            /* codec options */
+            show_avoptions_json(avcodec_opts[0], AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, "", 0);
+
+            /* individual codec options */
+            c = NULL;
+            while ((c = av_codec_next(c))) {
+                if (c->priv_class) {
+                    show_avoptions_json(&c->priv_class, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, c->name, 0);
+                }
+            }
+
+
+            /*muxer options */
+            show_avoptions_json(avformat_opts, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, "", AV_OPT_FLAG_FORMAT_PARAM );
+
+            /* individual muxer options */
+            while ((oformat = av_oformat_next(oformat))) {
+                if (oformat->priv_class) {
+                show_avoptions_json(&oformat->priv_class, AV_OPT_FLAG_ENCODING_PARAM, 0, oformat->name, AV_OPT_FLAG_FORMAT_PARAM );
+                }
+            }
+
+            show_avoptions_json(sws_opts, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, "", AV_OPT_FLAG_FORMAT_PARAM );
+    ))
+        )
+
+}
+
+
 
 #endif
