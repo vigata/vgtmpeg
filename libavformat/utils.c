@@ -2039,20 +2039,18 @@ static void av_estimate_timings(AVFormatContext *ic, int64_t old_offset)
     }
     ic->file_size = file_size;
 
-    if ((!strcmp(ic->iformat->name, "mpeg") ||
-         !strcmp(ic->iformat->name, "mpegts")) &&
-        file_size && ic->pb->seekable) {
+    if (av_has_duration(ic)) {
+        /* at least one component has timings - we use them for all the components */
+        fill_all_stream_timings(ic);
+    } else if ((!strcmp(ic->iformat->name, "mpeg") || !strcmp(ic->iformat->name, "mpegts")) && file_size && ic->pb->seekable) {
         /* get accurate estimate from the PTSes */
         av_estimate_timings_from_pts(ic, old_offset);
-    } else if (av_has_duration(ic)) {
-        /* at least one component has timings - we use them for all
-           the components */
-        fill_all_stream_timings(ic);
     } else {
         av_log(ic, AV_LOG_WARNING, "Estimating duration from bitrate, this may be inaccurate\n");
         /* less precise: use bitrate info */
         av_estimate_timings_from_bit_rate(ic);
     }
+
     av_update_stream_timings(ic);
 
 #if 0

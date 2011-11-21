@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2011 Alberto Vigata
+ * Copyright (C) 2010-2011 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -2779,8 +2779,13 @@ static int transcode(AVFormatContext **output_files,
         }
         /* the following test is needed in case new streams appear
            dynamically in stream : we ignore them */
-        if (pkt.stream_index >= input_files[file_index].ctx->nb_streams)
+//        if (pkt.stream_index >= input_files[file_index].ctx->nb_streams)
+//            goto discard_packet;
+
+        if (pkt.stream_index >= nb_input_streams )
             goto discard_packet;
+
+
         ist_index = input_files[file_index].ist_index + pkt.stream_index;
         ist = &input_streams[ist_index];
         if (ist->discard)

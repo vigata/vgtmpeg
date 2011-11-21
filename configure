@@ -2962,6 +2962,8 @@ else
   fi
 fi
 enabled sdl && add_cflags $sdl_cflags && add_extralibs $sdl_libs
+#FIXME
+add_extralibs "-ldvdread -ldl"
 
 texi2html -version > /dev/null 2>&1 && enable texi2html || disable texi2html
 
