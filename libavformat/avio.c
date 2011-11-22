@@ -29,6 +29,7 @@
 #include "network.h"
 #endif
 #include "url.h"
+#include "dvdurl.h"
 
 /** @name Logging context. */
 /*@{*/
@@ -223,7 +224,11 @@ int ffurl_alloc(URLContext **puc, const char *filename, int flags)
     char proto_str[128], proto_nested[128], *ptr;
     size_t proto_len = strspn(filename, URL_SCHEME_CHARS);
 
-    if (filename[proto_len] != ':' || is_dos_path(filename))
+    /* turn a raw file or a file:// url into a dvd url if the path is a dvd path */
+    if ( (filename[proto_len] != ':' || strcmp(proto_str,"file")) && is_dvd_path(filename) ) {
+        strcpy(proto_str, "dvd");
+    }
+    else if (filename[proto_len] != ':' || is_dos_path(filename))
         strcpy(proto_str, "file");
     else
         av_strlcpy(proto_str, filename, FFMIN(proto_len+1, sizeof(proto_str)));

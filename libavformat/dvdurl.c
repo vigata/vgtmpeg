@@ -20,7 +20,7 @@
  * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
-
+#include <string.h>
 #include "avformat.h"
 #include "libavutil/avstring.h"
 #include "libavutil/opt.h"
@@ -127,6 +127,45 @@ static char * hb_dvdread_name( char * path )
     return name;
 }
 
+
+/* gets the parent path. Caller must free the string eventually */
+static char *get_parent_path( const char *path ) {
+    char *p = strdup(path);
+    char *l = &p[strlen(p)-1];
+    while(l-->=p) {
+        if(*l=='/' || *l=='\\') {
+            *l=0;
+            break;
+        }
+    }
+    return p;
+}
+
+/* if a path to individual file in a DVD folder is passed
+ * obtain path to root folder. If couldn't be identified just return path by itself
+ */
+static char *get_root_dvd_path(const char *path) {
+    if (av_stristr(&path[strlen(path) - 4], ".IFO") || av_stristr(&path[strlen(path) - 4], ".BUP") || av_stristr(&path[strlen(path) - 4], ".VOB")) {
+        return get_parent_path(path);
+    } else {
+        return strdup(path);
+    }
+}
+
+int is_dvd_path(const char *path) {
+    hb_dvd_t *c;
+    const char *fpath;
+    path = av_strstart(path, "file://", &fpath) ? fpath : path;
+
+    c = hb_dvdread_init(path);
+    if(c) {
+        hb_dvdread_close(&c);
+        return 1;
+    }
+    return 0;
+}
+
+
 /***********************************************************************
  * hb_dvdread_init
  ***********************************************************************
@@ -137,6 +176,8 @@ hb_dvd_t * hb_dvdread_init( char * path )
     hb_dvd_t * e;
     hb_dvdread_t * d;
     int region_mask;
+
+    path = get_root_dvd_path(path);
 
     e = calloc( sizeof( hb_dvd_t ), 1 );
     d = &(e->dvdread);
@@ -1394,7 +1435,7 @@ static int dvdtime2msec(dvd_time_t * dt)
 /* libavformat glue */
 static const AVOption options[] = {
     { "wide_support", "enable wide support", offsetof(dvdurl_t, wide_support), FF_OPT_TYPE_INT, 1, -1, 1, AV_OPT_FLAG_DECODING_PARAM},
-    { NULL },
+    { NULL }
 };
 
 static const AVClass dvdurl_class = {
@@ -1469,13 +1510,24 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
     int min_title_duration = 10*90000;
 
 
+
+
     //ctx = av_malloc( sizeof(dvdurl_t) );
     ctx = h->priv_data;
     ctx->class = &dvdurl_class;
     ctx->list_title = hb_list_init();
     ctx->selected_chapter = 1;
 
-    av_strstart(filename, "dvd://", &dvdpath);
+    if( av_strstart(filename, "dvd://", &dvdpath) ) {
+        // is url
+    } else if(av_strstart(filename, "file://", &dvdpath)) {
+        // is file url
+    }
+    else {
+        dvdpath = filename;
+    }
+
+
     ctx->hb_dvd = hb_dvdread_init(dvdpath);
     if(!ctx->hb_dvd) {
         hb_log("dvd_open: couldn't initialize dvdread");
