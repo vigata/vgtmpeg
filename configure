@@ -2945,6 +2945,7 @@ enabled libx264    && require  libx264 x264.h x264_encoder_encode -lx264 &&
 enabled libxavs    && require  libxavs xavs.h xavs_encoder_encode -lxavs
 enabled libxvid    && require  libxvid xvid.h xvid_global -lxvidcore
 enabled mlib       && require  mediaLib mlib_types.h mlib_VectorSub_S16_U8_Mod -lmlib
+enabled dvd_protocol && require libdvdread  dvdread/dvd_reader.h DVDOpenFile -ldvdread $ldl 
 
 SDL_CONFIG="${cross_prefix}sdl-config"
 if check_pkg_config sdl SDL_version.h SDL_Linked_Version; then
@@ -2962,8 +2963,6 @@ else
   fi
 fi
 enabled sdl && add_cflags $sdl_cflags && add_extralibs $sdl_libs
-#FIXME
-add_extralibs "-ldvdread -ldl"
 
 texi2html -version > /dev/null 2>&1 && enable texi2html || disable texi2html
 
