@@ -3327,6 +3327,17 @@ static int opt_input_file(const char *opt, const char *filename)
         ffmpeg_exit(1);
     }
 
+//#if CONFIG_DVD_PROTOCOL
+extern int is_dvd_path(const char *path);
+static const char dfname[2048];
+/* make filename a dvd url if it's a dvd image */
+    if( is_dvd_path(filename) ) {
+        av_strlcat(dfname, "dvd://", 6);
+        av_strlcat(dfname, filename, 2048-6);
+        filename = dfname;
+    }
+//#endif
+
     memset(ap, 0, sizeof(*ap));
     ap->prealloced_context = 1;
     ap->sample_rate = audio_sample_rate;

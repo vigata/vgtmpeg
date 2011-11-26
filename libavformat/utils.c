@@ -1903,6 +1903,9 @@ static void fill_all_stream_timings(AVFormatContext *ic)
         if (st->start_time == AV_NOPTS_VALUE) {
             if(ic->start_time != AV_NOPTS_VALUE)
                 st->start_time = av_rescale_q(ic->start_time, AV_TIME_BASE_Q, st->time_base);
+        }
+
+        if (st->duration == AV_NOPTS_VALUE) {
             if(ic->duration != AV_NOPTS_VALUE)
                 st->duration = av_rescale_q(ic->duration, AV_TIME_BASE_Q, st->time_base);
         }

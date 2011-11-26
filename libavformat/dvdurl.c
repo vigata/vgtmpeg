@@ -152,15 +152,33 @@ static char *get_root_dvd_path(const char *path) {
     }
 }
 
-int is_dvd_path(const char *path) {
+int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename) ) {
     hb_dvd_t *c;
+    int min_title_duration = 15*90000;
     const char *fpath;
+    static char dfname[2048];
+    char *efilename;
     path = av_strstart(path, "file://", &fpath) ? fpath : path;
+    efilename = url_encode(path);
 
     c = hb_dvdread_init(path);
     if(c) {
+        int tc = hb_dvdread_title_count(c);
+        int i;
+        if (parse_file) {
+            for (i = 1; i <= tc; i++) {
+                hb_title_t *t = hb_dvdread_title_scan(c, i, min_title_duration);
+                if (t) {
+                    dfname[0] = 0;
+                    av_strlcat(dfname, "dvd://", 7);
+                    av_strlcat(dfname, efilename, 2048 - 7);
+                    av_strlcatf(dfname, 2048, "?title=%d", i);
+                    parse_file(opt, dfname);
+                }
+            }
+        }
         hb_dvdread_close(&c);
-        return 1;
+        return tc;
     }
     return 0;
 }
@@ -250,8 +268,9 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
     uint64_t       duration;
     float          duration_correction;
     unsigned char  unused[1024];
+    int loglevel =  HB_LOG_VERBOSE;
 
-    hb_log( "scan: scanning title %d", t );
+    hb_log_level( loglevel, "scan: scanning title %d", t );
 
     title = hb_title_init( d->path, t );
     title->type = HB_DVD_TYPE;
@@ -280,7 +299,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         goto fail;
     }
 
-    hb_log( "scan: opening IFO for VTS %d", title->vts );
+    hb_log_level( loglevel, "scan: opening IFO for VTS %d", title->vts );
     if( !( vts = ifoOpen( d->reader, title->vts ) ) )
     {
         hb_error( "scan: ifoOpen failed" );
@@ -318,7 +337,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         }
     }
 
-    if( global_verbosity_level == 3 )
+    if( hb_global_verbosity_level == 3 )
     {
         ifo_print( d->reader, title->vts );
     }
@@ -341,7 +360,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
     pgn    = vts->vts_ptt_srpt->title[title->ttn-1].ptt[0].pgn;
     d->pgc = vts->vts_pgcit->pgci_srp[pgc_id-1].pgc;
 
-    hb_log("pgc_id: %d, pgn: %d: pgc: %p", pgc_id, pgn, d->pgc);
+    hb_log_level( loglevel,"pgc_id: %d, pgn: %d: pgc: %p", pgc_id, pgn, d->pgc);
 
     if( !d->pgc )
     {
@@ -375,7 +394,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         d->cell_cur = d->cell_next;
     }
 
-    hb_log( "scan: vts=%d, ttn=%d, cells=%d->%d, blocks=%"PRIu64"->%"PRIu64", "
+    hb_log_level( loglevel, "scan: vts=%d, ttn=%d, cells=%d->%d, blocks=%"PRIu64"->%"PRIu64", "
             "%"PRIu64" blocks", title->vts, title->ttn, title->cell_start,
             title->cell_end, title->block_start, title->block_end,
             title->block_count );
@@ -385,7 +404,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
     title->hours    = title->duration / 90000 / 3600;
     title->minutes  = ( ( title->duration / 90000 ) % 3600 ) / 60;
     title->seconds  = ( title->duration / 90000 ) % 60;
-    hb_log( "scan: duration is %02d:%02d:%02d (%"PRId64" ms)",
+    hb_log_level( loglevel, "scan: duration is %02d:%02d:%02d (%"PRId64" ms)",
             title->hours, title->minutes, title->seconds,
             title->duration / 90 );
 
@@ -394,8 +413,37 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
      * either of these. */
     if( title->duration < min_duration )
     {
-        hb_log( "scan: ignoring title (too short)" );
+        hb_log_level( loglevel, "scan: ignoring title (too short)" );
         goto fail;
+    }
+
+    /* video */
+    {
+        int height = 480;
+        if (vts->vtsi_mat->vtsm_video_attr.video_format  != 0)
+            height = 576;
+
+        switch (vts->vtsi_mat->vtsm_video_attr.picture_size) {
+        case 0:
+            title->width = 720;
+            title->height = height;
+            break;
+        case 1:
+            title->width = 704;
+            title->height = height;
+            break;
+        case 2:
+            title->width = 352;
+            title->height = height;
+            break;
+        case 3:
+            title->width = 352;
+            title->height = height / 2;
+            break;
+        default:
+            hb_error("width and height not available on IFO file");
+            break;
+        }
     }
 
     /* Detect languages */
@@ -407,7 +455,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         const iso639_lang_t * lang;
         int lang_extension = 0;
 
-        hb_log( "scan: checking audio %d", i + 1 );
+        hb_log_level( loglevel, "scan: checking audio %d", i + 1 );
 
         audio = calloc( sizeof( hb_audio_t ), 1 );
 
@@ -419,7 +467,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
 
         if( !( audio_control & 0x8000 ) )
         {
-            hb_log( "scan: audio channel is not active" );
+            hb_log_level( loglevel, "scan: audio channel is not active" );
             av_free( audio );
             continue;
         }
@@ -452,7 +500,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
             default:
                 audio->id    = 0;
                 audio->config.in.codec = 0;
-                hb_log( "scan: unknown audio codec (%x)",
+                hb_log_level( loglevel, "scan: unknown audio codec (%x)",
                         audio_format );
                 break;
         }
@@ -474,7 +522,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         }
         if( audio_tmp )
         {
-            hb_log( "scan: duplicate audio track" );
+            hb_log_level( loglevel, "scan: duplicate audio track" );
             av_free( audio );
             continue;
         }
@@ -511,7 +559,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
             break;
         }
 
-        hb_log( "scan: id=0x%x, lang=%s, 3cc=%s ext=%i", audio->id,
+        hb_log_level( loglevel, "scan: id=0x%x, lang=%s, 3cc=%s ext=%i", audio->id,
                 audio->config.lang.description, audio->config.lang.iso639_2,
                 lang_extension );
 
@@ -528,14 +576,14 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         const iso639_lang_t * lang;
         int lang_extension = 0;
 
-        hb_log( "scan: checking subtitle %d", i + 1 );
+        hb_log_level( loglevel, "scan: checking subtitle %d", i + 1 );
 
         spu_control =
             vts->vts_pgcit->pgci_srp[pgc_id-1].pgc->subp_control[i];
 
         if( !( spu_control & 0x80000000 ) )
         {
-            hb_log( "scan: subtitle channel is not active" );
+            hb_log_level( loglevel, "scan: subtitle channel is not active" );
             continue;
         }
 
@@ -625,14 +673,14 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
             break;
         }
 
-        hb_log( "scan: id=0x%x, lang=%s, 3cc=%s", subtitle->id,
+        hb_log_level( loglevel, "scan: id=0x%x, lang=%s, 3cc=%s", subtitle->id,
                 subtitle->lang, subtitle->iso639_2 );
 
         hb_list_add( title->list_subtitle, subtitle );
     }
 
     /* Chapters */
-    hb_log( "scan: title %d has %d chapters", t,
+    hb_log_level( loglevel, "scan: title %d has %d chapters", t,
             vts->vts_ptt_srpt->title[title->ttn-1].nr_of_ptts );
     for( i = 0, c = 1;
          i < vts->vts_ptt_srpt->title[title->ttn-1].nr_of_ptts; i++ )
@@ -700,7 +748,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         chapter->minutes   = ( seconds % 3600 ) / 60;
         chapter->seconds   = seconds % 60;
 
-        hb_log( "scan: chap %d c=%d->%d, b=%"PRIu64"->%"PRIu64" (%"PRIu64"), %"PRId64" ms",
+        hb_log_level( loglevel, "scan: chap %d c=%d->%d, b=%"PRIu64"->%"PRIu64" (%"PRIu64"), %"PRId64" ms",
                 chapter->index, chapter->cell_start, chapter->cell_end,
                 chapter->block_start, chapter->block_end,
                 chapter->block_count, chapter->duration / 90 );
@@ -717,11 +765,11 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
             title->container_aspect = 16. / 9.;
             break;
         default:
-            hb_log( "scan: unknown aspect" );
+            hb_log_level( loglevel, "scan: unknown aspect" );
             goto fail;
     }
 
-    hb_log( "scan: aspect = %g", title->aspect );
+    hb_log_level( loglevel, "scan: aspect = %g", title->aspect );
 
     /* This title is ok so far */
     goto cleanup;
@@ -1435,6 +1483,7 @@ static int dvdtime2msec(dvd_time_t * dt)
 /* libavformat glue */
 static const AVOption options[] = {
     { "wide_support", "enable wide support", offsetof(dvdurl_t, wide_support), FF_OPT_TYPE_INT, 1, -1, 1, AV_OPT_FLAG_DECODING_PARAM},
+    { "min_title_duration", "minimum duration in ms to select a DVD title", offsetof(dvdurl_t, min_title_duration), FF_OPT_TYPE_INT, 0, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
     { NULL }
 };
 
@@ -1507,7 +1556,8 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
     const char *dvdpath;
     int i,title_count;
     dvdurl_t *ctx;
-    int min_title_duration = 10*90000;
+    int64_t min_title_duration = 0*90000;
+    int urltitle = 0;
 
 
 
@@ -1517,9 +1567,26 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
     ctx->class = &dvdurl_class;
     ctx->list_title = hb_list_init();
     ctx->selected_chapter = 1;
+    min_title_duration = (((uint64_t)ctx->min_title_duration)*90000L)/1000L;
 
     if( av_strstart(filename, "dvd://", &dvdpath) ) {
+        const char *path = strdup(dvdpath);
+        char *query,*tq;
+
+        /* remove query from path */
+        tq = strchr(path, '?');
+        if(tq) *tq = 0;
+        path = url_decode(path);
+
+        query = strchr(dvdpath,'?');
         // is url
+        // is title specified in query string
+        if( query && ((tq=strstr(query, "?title=")) || (tq=strstr(query, "&title=")))) {
+            tq+=7;
+            urltitle = atoi(tq);
+        }
+
+        dvdpath = path;
     } else if(av_strstart(filename, "file://", &dvdpath)) {
         // is file url
     }
@@ -1535,19 +1602,34 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
     }
 
     title_count = hb_dvdread_title_count(ctx->hb_dvd);
-    hb_log("dvd_open: dvd image has %d titles", title_count);
-    for( i=0; i<title_count; i++ ) {
-        hb_list_add( ctx->list_title, hb_dvdread_title_scan(ctx->hb_dvd, i+1, min_title_duration ) );
+    if( urltitle>0 && urltitle<=title_count ) {
+        hb_log("dvd_open: opening title %d ", urltitle);
+        hb_title_t *t= hb_dvdread_title_scan(ctx->hb_dvd, urltitle, min_title_duration );
+        if(t) {
+            ctx->selected_title = t;
+            ctx->selected_title_idx = t->index;
+        } else {
+            return -1;
+        }
+    } else {
+        hb_log("dvd_open: dvd image has %d titles", title_count);
+        for (i = 0; i < title_count; i++) {
+            hb_title_t *t = hb_dvdread_title_scan(ctx->hb_dvd, i + 1, min_title_duration);
+            if (t) {
+                ctx->selected_title = t;
+                ctx->selected_title_idx = t->index;
+                hb_list_add(ctx->list_title, t);
+            }
+        }
     }
 
-    if( title_count>0 ) {
-        ctx->selected_title = hb_dvdread_main_feature_title( ctx->hb_dvd, ctx->list_title );
-        ctx->selected_title_idx = ctx->selected_title->index;
-        hb_log("dvd_open: selected title %d", ctx->selected_title_idx);
-    } else {
+    if( title_count<=0 ) {
         hb_error("dvd_open: no titles found");
         return -1;
     }
+
+
+    hb_log("dvd_open: selected title %d", ctx->selected_title_idx);
 
 
     if( hb_dvdread_start(ctx->hb_dvd, ctx->selected_title, ctx->selected_chapter ) == 0 ) {

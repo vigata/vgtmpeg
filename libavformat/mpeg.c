@@ -241,8 +241,10 @@ static void dvd_create_streams(AVFormatContext *s) {
 	if(!ctx) return;
 	
 	/* iterate through the title list and add all the streams contained */
-	for( i=0; i<hb_list_count(ctx->list_title); i++) {
-		hb_title_t *title = hb_list_item(ctx->list_title,i);
+	//for( i=0; i<hb_list_count(ctx->list_title); i++) {
+	{
+		//hb_title_t *title = hb_list_item(ctx->list_title,i);
+	    hb_title_t *title = ctx->selected_title;
 		AVProgram *program = av_new_program(s, title->index);
 		uint64_t duration = title->duration;
 		int j;
@@ -251,6 +253,8 @@ static void dvd_create_streams(AVFormatContext *s) {
 		st = dvd_add_stream(s, STREAM_TYPE_VIDEO_MPEG2, title->video_id, 0, DVD_AVID(title->index,title->video_id) ); /* mpeg 2 stream type works for mpeg1/2 */
 		if(st) {
 		    st->duration = duration; // the 90khz base was set in dvd_add_stream
+		    st->codec->width = title->width;
+		    st->codec->height = title->height;
 		    ff_program_add_stream_index(s, title->index, st->index);
 		}
 

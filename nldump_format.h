@@ -205,6 +205,8 @@ static void dump_stream_nlformat(AVFormatContext *ic, int i, int index, int is_o
             FFMSG_LOG( FFMSG_INT32_FMT(codec_timebase_den), st->codec->time_base.den );
         }
     }
+
+    FFMSG_LOG( FFMSG_INTEGER_FMT(duration), st->duration != AV_NOPTS_VALUE ? st->duration : 0  );
     FFMSG_LOG( FFMSG_INT32_FMT(inspected_frame_count), st->codec_info_nb_frames );
 
     FFMSG_LOG( FFMSG_NODE_STOP_FMT("stream_%d_%d"), index, i );

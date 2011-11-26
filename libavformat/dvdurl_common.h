@@ -786,13 +786,20 @@ struct hb_buffer_s
 };
 
 
-extern int global_verbosity_level;
+extern int hb_global_verbosity_level;
+#define HB_LOG_INFO      AV_LOG_INFO
+#define HB_LOG_VERBOSE   AV_LOG_VERBOSE
+#define HB_LOG_ERROR     AV_LOG_ERROR
+
+char *url_encode(char *str);
+char *url_decode(char *str);
 
 /* logging */
 #ifdef __GNUC__
 
-#define hb_log(fmt,...) { av_log(NULL, AV_LOG_INFO,  fmt"\n", ##__VA_ARGS__ ); }
-#define hb_error(fmt,...){av_log(NULL, AV_LOG_ERROR, fmt"\n", ##__VA_ARGS__ ); }
+#define hb_log_level(level,fmt,...) { av_log(NULL, level,  fmt"\n", ##__VA_ARGS__ ); }
+#define hb_log(fmt,...)  hb_log_level( HB_LOG_INFO, fmt, ##__VA_ARGS__ )
+#define hb_error(fmt,...) hb_log_level( HB_LOG_ERROR, fmt, ##__VA_ARGS__ )
 
 #else
 

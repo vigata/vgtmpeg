@@ -217,9 +217,6 @@ int av_register_protocol2(URLProtocol *protocol, int size)
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"                \
     "0123456789+-."
 
-#if CONFIG_DVD_PROTOCOL
-extern int is_dvd_path(const char *path);
-#endif
 
 int ffurl_alloc(URLContext **puc, const char *filename, int flags)
 {
@@ -228,12 +225,6 @@ int ffurl_alloc(URLContext **puc, const char *filename, int flags)
     size_t proto_len = strspn(filename, URL_SCHEME_CHARS);
 
 
-#if CONFIG_DVD_PROTOCOL
-    /* turn a raw file or a file:// url into a dvd url if the path is a dvd path */
-    if ( (filename[proto_len] != ':' || strcmp(proto_str,"file")) && is_dvd_path(filename) ) {
-        strcpy(proto_str, "dvd");
-    } else
-#endif
     if (filename[proto_len] != ':' || is_dos_path(filename))
         strcpy(proto_str, "file");
     else

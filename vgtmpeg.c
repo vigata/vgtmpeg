@@ -351,6 +351,7 @@ typedef struct AVInputFile {
     AVFormatContext *ctx;
     int eof_reached;      /* true if eof reached */
     int ist_index;        /* index of first stream in ist_table */
+    int last_index;         /* index of last stream in ist_table */
     int buffer_size;      /* current total buffer size */
 } AVInputFile;
 
@@ -2785,6 +2786,10 @@ static int transcode(AVFormatContext **output_files,
         if (pkt.stream_index >= nb_input_streams )
             goto discard_packet;
 
+        if( input_files[file_index].ist_index + pkt.stream_index >= input_files[file_index].last_index )
+            goto discard_packet;
+
+
 
         ist_index = input_files[file_index].ist_index + pkt.stream_index;
         ist = &input_streams[ist_index];
@@ -3323,8 +3328,7 @@ static enum CodecID find_codec_or_die(const char *name, int type, int encoder, i
     return codec->id;
 }
 
-static int opt_input_file(const char *opt, const char *filename)
-{
+static int parse_input_file(const char *opt, const char *filename) {
     AVFormatContext *ic;
     AVFormatParameters params, *ap = &params;
     AVInputFormat *file_iformat = NULL;
@@ -3524,6 +3528,7 @@ static int opt_input_file(const char *opt, const char *filename)
     input_files = grow_array(input_files, sizeof(*input_files), &nb_input_files, nb_input_files + 1);
     input_files[nb_input_files - 1].ctx        = ic;
     input_files[nb_input_files - 1].ist_index  = nb_input_streams - ic->nb_streams;
+    input_files[nb_input_files - 1].last_index = nb_input_streams;
 
     top_field_first = -1;
     video_channel = 0;
@@ -3539,6 +3544,22 @@ static int opt_input_file(const char *opt, const char *filename)
     av_freep(&subtitle_codec_name);
     uninit_opts();
     init_opts();
+    return 0;
+}
+static int opt_input_file(const char *opt, const char *filename)
+{
+
+
+    #if CONFIG_DVD_PROTOCOL
+    extern  int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename) );
+        /* make filename a dvd url if it's a dvd image */
+        if( !is_dvd_path(opt, filename, parse_input_file) ) {
+            return parse_input_file(opt,filename);
+        }
+    #else
+        return parse_input_file(opt,filename);
+    #endif
+
     return 0;
 }
 
