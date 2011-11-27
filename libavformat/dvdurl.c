@@ -47,6 +47,8 @@ static void          hb_dvdread_set_angle( hb_dvd_t * d, int angle );
 static int           hb_dvdread_main_feature( hb_dvd_t * d, hb_list_t * list_title );
 static int           is_nav_pack( unsigned char *buf );
 
+static int gloglevel = HB_LOG_VERBOSE;
+
 hb_dvd_func_t hb_dvdread_func =
 {
     hb_dvdread_init,
@@ -152,7 +154,7 @@ static char *get_root_dvd_path(const char *path) {
     }
 }
 
-int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename) ) {
+int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename), void (* select_default_program)(int programid) ) {
     hb_dvd_t *c;
     int min_title_duration = 15*90000;
     const char *fpath;
@@ -165,17 +167,34 @@ int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char 
     if(c) {
         int tc = hb_dvdread_title_count(c);
         int i;
+        int64_t longest_duration=-1;
+        hb_title_t *longest_title;
         if (parse_file) {
+            hb_list_t *list_title = hb_list_init();
+            int longest_title_idx;
+            /* retrieve title information */
             for (i = 1; i <= tc; i++) {
                 hb_title_t *t = hb_dvdread_title_scan(c, i, min_title_duration);
                 if (t) {
-                    dfname[0] = 0;
-                    av_strlcat(dfname, "dvd://", 7);
-                    av_strlcat(dfname, efilename, 2048 - 7);
-                    av_strlcatf(dfname, 2048, "?title=%d", i);
-                    parse_file(opt, dfname);
+                    hb_list_add(list_title, t);
                 }
             }
+            longest_title = hb_dvdread_main_feature_title(c,list_title);
+
+            /* call parse file */
+            for (i = 0; i < hb_list_count(list_title); i++) {
+                hb_title_t *t = hb_list_item(list_title,i);
+                dfname[0] = 0;
+                av_strlcat(dfname, "dvd://", 7);
+                av_strlcat(dfname, efilename, 2048 - 7);
+                av_strlcatf(dfname, 2048, "?title=%d", t->index);
+                parse_file(opt, dfname );
+            }
+
+            if( longest_title ) {
+                select_default_program(longest_title->index);
+            }
+
         }
         hb_dvdread_close(&c);
         return tc;
@@ -203,10 +222,10 @@ hb_dvd_t * hb_dvdread_init( char * path )
 	/* Log DVD drive region code */
     if ( hb_dvd_region( path, &region_mask ) == 0 )
     {
-        hb_log( "dvd: Region mask 0x%02x", region_mask );
+        hb_log_level(gloglevel, "dvd: Region mask 0x%02x", region_mask );
         if ( region_mask == 0xFF )
         {
-            hb_log( "dvd: Warning, DVD device has no region set" );
+            hb_log_level(gloglevel, "dvd: Warning, DVD device has no region set" );
         }
     }
 
@@ -216,7 +235,7 @@ hb_dvd_t * hb_dvdread_init( char * path )
         /*
          * Not an error, may be a stream - which we'll try in a moment.
          */
-        hb_log( "dvd: not a dvd - trying as a stream/file instead" );
+        hb_log_level(gloglevel, "dvd: not a dvd - trying as a stream/file instead" );
         goto fail;
     }
 
@@ -901,7 +920,7 @@ static int64_t hb_dvdread_seek_bytes( hb_dvd_t *e, int64_t off, int mode ) {
     } else if( mode==SEEK_SET) {
         sftell = off/DVD_BLOCK_SIZE;
     } else {
-        hb_log("dvdread_seek_bytes: asked to seek but no mode specified");
+        hb_log_level(gloglevel,"dvdread_seek_bytes: asked to seek but no mode specified");
         return -1;
     }
     count = sftell;
@@ -1082,7 +1101,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
                     // adjust the skip increment upwards so that we can skip
                     // large sections of bad blocks more efficiently (at the
                     // cost of some missed good blocks at the end).
-                    hb_log( "dvd: vobu read error blk %d - skipping to next blk incr %d",
+                    hb_log_level(gloglevel, "dvd: vobu read error blk %d - skipping to next blk incr %d",
                             d->next_vobu, (read_retry * 10));
                     d->next_vobu += (read_retry * 10);
                 }
@@ -1093,7 +1112,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
             {
                 // That's too many bad blocks, jump to the start of the
                 // next cell.
-                hb_log( "dvd: vobu read error blk %d - skipping to cell %d",
+                hb_log_level(gloglevel, "dvd: vobu read error blk %d - skipping to cell %d",
                         d->next_vobu, d->cell_next );
                 d->cell_cur  = d->cell_next;
                 if ( d->cell_cur > d->cell_end )
@@ -1111,7 +1130,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
             if ( !is_nav_pack( b->data ) ) {
                 (d->next_vobu)++;
                 if( d->in_sync == 1 ) {
-                    hb_log("dvd: Lost sync, searching for NAV pack at blk %d",
+                    hb_log_level(gloglevel,"dvd: Lost sync, searching for NAV pack at blk %d",
                            d->next_vobu);
                     d->in_sync = 0;
                 } 
@@ -1126,7 +1145,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
             {
                 // We walked out of the cell we're supposed to be in.
                 // If we're not at the start of our next cell go there.
-                hb_log("dvd: left cell %d (%u,%u) for (%u,%u) at block %u",
+                hb_log_level(gloglevel,"dvd: left cell %d (%u,%u) for (%u,%u) at block %u",
                        d->cell_cur, d->cur_vob_id, d->cur_cell_id,
                        dsi_pack.dsi_gi.vobu_vob_idn, dsi_pack.dsi_gi.vobu_c_idn,
                        d->next_vobu );
@@ -1197,7 +1216,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
             /* Wasn't a valid VOBU, try next block */
             if( ++error > 1024 )
             {
-                hb_log( "dvd: couldn't find a VOBU after 1024 blocks" );
+                hb_log_level(gloglevel, "dvd: couldn't find a VOBU after 1024 blocks" );
                 //hb_buffer_close( &b );
                 return NULL;
             }
@@ -1209,7 +1228,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
         {
             if( d->in_sync == 0 )
             {
-                hb_log( "dvd: In sync with DVD at block %d", d->block );
+                hb_log_level(gloglevel, "dvd: In sync with DVD at block %d", d->block );
             }
             d->in_sync = 1;
         }
@@ -1231,7 +1250,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
             if ( d->pgc->cell_playback[d->cell_cur].first_sector < dsi_pack.dsi_gi.nv_pck_lbn &&
                  d->pgc->cell_playback[d->cell_cur].last_sector >= dsi_pack.dsi_gi.nv_pck_lbn )
             {
-                hb_log( "dvd: null prev_vobu in cell %d at block %d", d->cell_cur,
+                hb_log_level(gloglevel, "dvd: null prev_vobu in cell %d at block %d", d->cell_cur,
                         d->block );
                 // treat like end-of-cell then go directly to start of next cell.
                 d->cell_cur  = d->cell_next;
@@ -1245,7 +1264,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
             {
                 if ( d->block != d->pgc->cell_playback[d->cell_cur].first_sector )
                 {
-                    hb_log( "dvd: beginning of cell %d at block %d", d->cell_cur,
+                    hb_log_level(gloglevel, "dvd: beginning of cell %d at block %d", d->cell_cur,
                            d->block );
                 }
                 if( d->in_cell )
@@ -1276,7 +1295,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
             if ( d->block <= d->pgc->cell_playback[d->cell_cur].first_sector ||
                  d->block > d->pgc->cell_playback[d->cell_cur].last_sector )
             {
-                hb_log( "dvd: end of cell %d at block %d", d->cell_cur,
+                hb_log_level(gloglevel, "dvd: end of cell %d at block %d", d->cell_cur,
                         d->block );
             }
             d->cell_cur  = d->cell_next;
@@ -1446,7 +1465,7 @@ static void FindNextCell( hb_dvdread_t * d )
              i++;
         }
         d->cell_next = d->cell_cur + i + 1;
-        hb_log( "dvd: Skipping multi-angle cells %d-%d",
+        hb_log_level(gloglevel, "dvd: Skipping multi-angle cells %d-%d",
                 d->cell_cur,
                 d->cell_next - 1 );
     }
@@ -1524,7 +1543,7 @@ static int dvd_read(URLContext *h, unsigned char *buf, int size)
             /* reading fresh data from dvdread. this must return a buffer if succesful */
             ctx->cur_read_buffer = hb_dvdread_read( ctx->hb_dvd );
             if(!ctx->cur_read_buffer) {
-                hb_log("dvd_read: EOF");
+                hb_log_level(gloglevel,"dvd_read: EOF");
                 break;
             }
             ctx->cur_read_buffer->cur = 0;
@@ -1540,7 +1559,7 @@ static int dvd_write(URLContext *h, const unsigned char *buf, int size)
 
 static int dvd_get_handle(URLContext *h)
 {
-    hb_log("dvd_get_handle");
+    hb_log_level(gloglevel,"dvd_get_handle");
     return (intptr_t) h->priv_data;
 }
 
@@ -1558,6 +1577,7 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
     dvdurl_t *ctx;
     int64_t min_title_duration = 0*90000;
     int urltitle = 0;
+    int loglevel =  gloglevel;
 
 
 
@@ -1597,13 +1617,13 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
 
     ctx->hb_dvd = hb_dvdread_init(dvdpath);
     if(!ctx->hb_dvd) {
-        hb_log("dvd_open: couldn't initialize dvdread");
+        hb_log_level(loglevel, "dvd_open: couldn't initialize dvdread");
         return -1;
     }
 
     title_count = hb_dvdread_title_count(ctx->hb_dvd);
     if( urltitle>0 && urltitle<=title_count ) {
-        hb_log("dvd_open: opening title %d ", urltitle);
+        hb_log_level(loglevel,"dvd_open: opening title %d ", urltitle);
         hb_title_t *t= hb_dvdread_title_scan(ctx->hb_dvd, urltitle, min_title_duration );
         if(t) {
             ctx->selected_title = t;
@@ -1612,7 +1632,7 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
             return -1;
         }
     } else {
-        hb_log("dvd_open: dvd image has %d titles", title_count);
+        hb_log_level(loglevel,"dvd_open: dvd image has %d titles", title_count);
         for (i = 0; i < title_count; i++) {
             hb_title_t *t = hb_dvdread_title_scan(ctx->hb_dvd, i + 1, min_title_duration);
             if (t) {
@@ -1629,7 +1649,7 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
     }
 
 
-    hb_log("dvd_open: selected title %d", ctx->selected_title_idx);
+    hb_log_level(loglevel,"dvd_open: selected title %d", ctx->selected_title_idx);
 
 
     if( hb_dvdread_start(ctx->hb_dvd, ctx->selected_title, ctx->selected_chapter ) == 0 ) {
@@ -1646,7 +1666,7 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
 static int64_t dvd_seek(URLContext *h, int64_t pos, int whence)
 {
     dvdurl_t *ctx = h->priv_data;
-    hb_error("dvd_seek: pos %"PRId64" whence %d", pos, whence);
+    //hb_error("dvd_seek: pos %"PRId64" whence %d", pos, whence);
 
     if (whence == AVSEEK_SIZE) {
         return hb_dvdread_cur_title_size(ctx->hb_dvd); 

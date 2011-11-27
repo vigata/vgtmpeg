@@ -106,6 +106,10 @@ typedef struct MpegDemuxContext {
 static dvdurl_t *get_dvdurl_ctx(AVFormatContext *s) {
 	URLContext *uc = s->pb->opaque;
 	dvdurl_t * du = uc->priv_data;
+	if(strcmp(uc->prot->name,"dvd")){
+	    return 0;
+	}
+
 	if(du) {
 		return strstr(du->class->class_name, "DVDURL")==NULL  ? 0 : du;
 	} else {
@@ -285,6 +289,9 @@ static int mpegps_read_header(AVFormatContext *s,
     int v, i = 0;
     int dvdurl = is_dvdurl(s);
 
+    if(dvdurl) {
+        av_dict_set(&s->metadata, "source_type", "dvd", 0);
+    }
     m->header_state = 0xff;
     s->ctx_flags |= AVFMTCTX_NOHEADER;
 

@@ -228,6 +228,7 @@ static int opt_shortest = 0;
 static char *vstats_filename;
 static FILE *vstats_file;
 static int opt_programid = 0;
+static int default_programid = 0;
 static int copy_initial_nonkeyframes = 0;
 
 static int rate_emu = 0;
@@ -2046,6 +2047,30 @@ static void parse_forced_key_frames(char *kf, AVOutputStream *ost,
     }
 }
 
+/* disables all programs but the one indicated with the program id */
+static void enable_program(int programid) {
+    int k;
+
+    for( int k=0; k<nb_input_files; k++) {
+        AVFormatContext *ic = input_files[k].ctx;
+        int i, j;
+
+        for(i=0; i<ic->nb_programs; i++){
+            AVProgram *p= ic->programs[i];
+            if(p->id != programid){
+                p->discard = AVDISCARD_ALL;
+                for(j=0; j<p->nb_stream_indexes; j++){
+                    ic->streams[p->stream_index[j]]->discard= AVDISCARD_ALL;
+                }
+            }else{
+                for(j=0; j<p->nb_stream_indexes; j++){
+                    ic->streams[p->stream_index[j]]->discard= AVDISCARD_DEFAULT;
+                }
+            }
+        }
+    }
+}
+
 /*
  * The following code is the main loop of the file converter
  */
@@ -2174,6 +2199,10 @@ static int transcode(AVFormatContext **output_files,
                 }
 
             } else {
+                /* enforce default program */
+                if( default_programid ) {
+                    enable_program(default_programid);
+                }
                 /* get corresponding input stream index : we select the first one with the right type */
                 found = 0;
                 for (j = 0; j < nb_input_streams; j++) {
@@ -3418,6 +3447,7 @@ static int parse_input_file(const char *opt, const char *filename) {
         opt_programid=0;
     }
 
+
     ic->loop_input = loop_input;
 
     /* If not enough info to get the stream parameters, we decode the
@@ -3546,14 +3576,21 @@ static int parse_input_file(const char *opt, const char *filename) {
     init_opts();
     return 0;
 }
+
+static void select_default_program(int programid) {
+    default_programid = programid;
+}
+
+
+
 static int opt_input_file(const char *opt, const char *filename)
 {
 
 
     #if CONFIG_DVD_PROTOCOL
-    extern  int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename) );
+    extern  int is_dvd_path(char *opt, const char *path,  int (* parse_file)(char *opt, char *filename), void (* select_default_program)(int programid) );
         /* make filename a dvd url if it's a dvd image */
-        if( !is_dvd_path(opt, filename, parse_input_file) ) {
+        if( !is_dvd_path(opt, filename, parse_input_file, select_default_program) ) {
             return parse_input_file(opt,filename);
         }
     #else

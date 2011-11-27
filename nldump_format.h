@@ -219,6 +219,7 @@ static void dump_nlformat(AVFormatContext *ic,
                  int is_output)
 {
     int i,rscount;
+    AVDictionaryEntry *srctype;
     uint8_t *printed = av_mallocz(ic->nb_streams);
     if (ic->nb_streams && !printed)
         return;
@@ -235,6 +236,8 @@ static void dump_nlformat(AVFormatContext *ic,
     av_log(NULL, AV_LOG_INFO, FFMSG_INTEGER_FMT(index), (int64_t)index );
     av_log(NULL, AV_LOG_INFO, FFMSG_INTEGER_FMT(timebase), (int64_t)AV_TIME_BASE );
     av_log(NULL, AV_LOG_INFO, FFMSG_STRING_FMT(mux_format), is_output ? ic->oformat->name : ic->iformat->name  );
+    srctype = av_dict_get(ic->metadata, "source_type", 0,0);
+    av_log(NULL, AV_LOG_INFO, FFMSG_STRING_FMT(source_type), srctype ? srctype->value : "file"  );
 
     av_log(NULL, AV_LOG_INFO, FFMSG_INTEGER_FMT(program_count), (int64_t)ic->nb_programs );
     FFMSG_LOG( FFMSG_INT32_FMT(stream_count), ic->nb_streams );
