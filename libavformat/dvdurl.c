@@ -47,7 +47,7 @@ static void          hb_dvdread_set_angle( hb_dvd_t * d, int angle );
 static int           hb_dvdread_main_feature( hb_dvd_t * d, hb_list_t * list_title );
 static int           is_nav_pack( unsigned char *buf );
 
-static int gloglevel = HB_LOG_VERBOSE;
+static int gloglevel = HB_LOG_VERBOSE; 
 
 hb_dvd_func_t hb_dvdread_func =
 {
@@ -181,6 +181,7 @@ int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char 
             }
             longest_title = hb_dvdread_main_feature_title(c,list_title);
 
+            hb_log_level(gloglevel, "is_dvd_path: calling parse file");
             /* call parse file */
             for (i = 0; i < hb_list_count(list_title); i++) {
                 hb_title_t *t = hb_list_item(list_title,i);
@@ -213,6 +214,8 @@ hb_dvd_t * hb_dvdread_init( char * path )
     hb_dvd_t * e;
     hb_dvdread_t * d;
     int region_mask;
+    
+    // gloglevel = (verbose>1) ? HB_LOG_VERBOSE : HB_LOG_INFO;
 
     path = get_root_dvd_path(path);
 
@@ -248,7 +251,7 @@ hb_dvd_t * hb_dvdread_init( char * path )
 
     /* vgtmpeg */
     /* allocate fixed hb_buffer_t for reads */
-    d->read_buffer = calloc( sizeof(hb_buffer_t), 1);
+    d->read_buffer = av_mallocz( sizeof(hb_buffer_t));
     d->read_buffer->size = HB_DVD_READ_BUFFER_SIZE;
     d->read_buffer->data = av_malloc(HB_DVD_READ_BUFFER_SIZE);
 
@@ -287,7 +290,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
     uint64_t       duration;
     float          duration_correction;
     unsigned char  unused[1024];
-    int loglevel =  HB_LOG_VERBOSE;
+    int loglevel =  gloglevel; 
 
     hb_log_level( loglevel, "scan: scanning title %d", t );
 
@@ -712,10 +715,15 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         pgn    = vts->vts_ptt_srpt->title[title->ttn-1].ptt[i].pgn;
         d->pgc = vts->vts_pgcit->pgci_srp[pgc_id-1].pgc;
 
+
+
+
         /* Start cell */
         chapter->cell_start  = d->pgc->program_map[pgn-1] - 1;
         chapter->block_start =
             d->pgc->cell_playback[chapter->cell_start].first_sector;
+
+
 
         // if there are no more programs in this pgc, the end cell is the
         // last cell. Otherwise it's the cell before the start cell of the
@@ -747,6 +755,8 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         hb_list_add( title->list_chapter, chapter );
         c++;
     }
+
+    hb_log_level(gloglevel, "hb_title_scan: adjusting chapter durations");
 
     /* The durations we get for chapters aren't precise. Scale them so
        the total matches the title duration */
@@ -1676,6 +1686,7 @@ static int64_t dvd_seek(URLContext *h, int64_t pos, int whence)
 
 static int dvd_close(URLContext *h)
 {
+    hb_log_level(gloglevel,"dvd_close: closing");
     if( h->priv_data ) {        
         dvdurl_t *ctx = h->priv_data;
         if( ctx->list_title ) {
@@ -1686,6 +1697,7 @@ static int dvd_close(URLContext *h)
         //av_free(ctx);
         //h->priv_data =0;
     }
+    hb_log_level(gloglevel,"dvd_close: closed");
     return 0;
 }
 

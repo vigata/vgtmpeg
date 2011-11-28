@@ -4499,6 +4499,15 @@ static void opt_passlogfile(const char *arg)
     opt_default("passlogfile", arg);
 }
 
+static void opt_setloglevel(const char *opt, const char *arg) {
+    if(!strcmp(arg,"info")) {
+        av_log_set_level(AV_LOG_INFO);
+    } else if(!strcmp(arg,"verbose") ) {
+        av_log_set_level(AV_LOG_VERBOSE);
+    } else if(!strcmp(arg,"debug") ) {
+        av_log_set_level(AV_LOG_DEBUG);
+    }
+}
 static const OptionDef options[] = {
     /* main options */
 #include "cmdutils_common_opts.h"

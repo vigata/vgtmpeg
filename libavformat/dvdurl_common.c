@@ -827,8 +827,8 @@ hb_list_t * hb_list_init(void)
 {
     hb_list_t * l;
 
-    l              = calloc( sizeof( hb_list_t ), 1 );
-    l->items       = calloc( HB_LIST_DEFAULT_SIZE * sizeof( void * ), 1 );
+    l              = av_mallocz( sizeof( hb_list_t ));
+    l->items       = av_mallocz( HB_LIST_DEFAULT_SIZE * sizeof( void * ));
     l->items_alloc = HB_LIST_DEFAULT_SIZE;
 
     return l;
@@ -978,7 +978,7 @@ hb_title_t * hb_title_init( char * path, int index )
 {
     hb_title_t * t;
 
-    t = calloc( sizeof( hb_title_t ), 1 );
+    t = av_mallocz( sizeof( hb_title_t ));
 
     t->index         = index;
     t->playlist      = -1;
@@ -1083,7 +1083,7 @@ hb_audio_t *hb_audio_copy(const hb_audio_t *src)
 
     if( src )
     {
-        audio = calloc(1, sizeof(*audio));
+        audio = av_mallocz(sizeof(*audio));
         memcpy(audio, src, sizeof(*audio));
     }
     return audio;
@@ -1209,7 +1209,7 @@ hb_subtitle_t *hb_subtitle_copy(const hb_subtitle_t *src)
 
     if( src )
     {
-        subtitle = calloc(1, sizeof(*subtitle));
+        subtitle = av_mallocz(sizeof(*subtitle));
         memcpy(subtitle, src, sizeof(*subtitle));
         if ( src->extradata )
         {
@@ -1249,7 +1249,7 @@ int hb_srt_add( const hb_job_t * job,
     const iso639_lang_t *language = NULL;
     int retval = 0;
 
-    subtitle = calloc( 1, sizeof( *subtitle ) );
+    subtitle = av_mallocz( sizeof( *subtitle ) );
     
     subtitle->id = (hb_list_count(job->list_subtitle) << 8) | 0xFF;
     subtitle->format = TEXTSUB;
@@ -1283,7 +1283,7 @@ hb_attachment_t *hb_attachment_copy(const hb_attachment_t *src)
 
     if( src )
     {
-        attachment = calloc(1, sizeof(*attachment));
+        attachment = av_mallocz(sizeof(*attachment));
         memcpy(attachment, src, sizeof(*attachment));
         if ( src->name )
         {

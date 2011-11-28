@@ -3,4 +3,6 @@
     { "codecs_json", OPT_EXIT, {(void*)&show_codecs_json}, "show codecs in json format" },
     { "formats_json", OPT_EXIT, {(void*)&show_formats_json}, "show formats  in json format" },
     { "options_json", OPT_EXIT, {(void*)&show_options_json}, "show options in json format" },
-    { "banner", OPT_BOOL, {(void*)&banner}, "shows ffmpeg banner" },
+    { "banner", OPT_BOOL, {(void*)&banner}, "shows vgtmpeg banner" },
+    { "log_level", HAS_ARG, {(void*)&opt_setloglevel}, "sets av log level","loglevel" },
+
