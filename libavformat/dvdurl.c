@@ -154,35 +154,81 @@ static char *get_root_dvd_path(const char *path) {
     }
 }
 
-int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename), void (* select_default_program)(int programid) ) {
+/* parses a 'filename' that can be a dvd://.. , a file://... url or a file name
+ * and returns the decoded path to the resource, and optionally a title
+ */
+static void dvd_url_parse(const char *filename, const char **urlpath, int *title ) {
+    const char *pathstart;
+    *title = 0;
+
+    if( av_strstart(filename, "dvd://", &pathstart) ) {
+        const char *path = strdup(pathstart);
+        char *query,*tq;
+
+        /* remove query from path */
+        tq = strchr(path, '?');
+        if(tq) *tq = 0;
+        *urlpath = url_decode(path);
+
+
+        query = strchr(pathstart,'?');
+        // is url
+        // is title specified in query string
+        if( query && ((tq=strstr(query, "?title=")) || (tq=strstr(query, "&title=")))) {
+            tq+=7;
+            *title = atoi(tq);
+        }
+    } else if( av_strstart(filename, "file://", &pathstart) ) {
+        *urlpath = url_decode(pathstart);
+    } else {
+        /* assume raw file name */
+        *urlpath = filename;
+    }
+}
+
+int parse_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename), void (* select_default_program)(int programid) ) {
     hb_dvd_t *c;
     int min_title_duration = 15*90000;
-    const char *fpath;
-    static char dfname[2048];
-    char *efilename;
-    path = av_strstart(path, "file://", &fpath) ? fpath : path;
-    efilename = url_encode(path);
+    //const char *fpath;
+    static char dfname[4096];
+    const char *urlpath;
+    int urltitle=0;
 
-    c = hb_dvdread_init(path);
+    dvd_url_parse(path, &urlpath, &urltitle);
+
+    c = hb_dvdread_init(urlpath);
     if(c) {
         int tc = hb_dvdread_title_count(c);
         int i;
-        int64_t longest_duration=-1;
         hb_title_t *longest_title;
         if (parse_file) {
+            char *efilename;
+
+
             hb_list_t *list_title = hb_list_init();
-            int longest_title_idx;
-            /* retrieve title information */
-            for (i = 1; i <= tc; i++) {
-                hb_title_t *t = hb_dvdread_title_scan(c, i, min_title_duration);
+
+            if( urltitle && urltitle>0 && urltitle<=tc ) {
+                hb_title_t *t = hb_dvdread_title_scan(c, urltitle, min_title_duration);
                 if (t) {
                     hb_list_add(list_title, t);
+                } else {
+                    hb_error("parse_dvd_path: couldn't open title %d. Does title exist in DVD?", urltitle);
+                    return 0;
+                }
+            } else {
+                /* retrieve title information */
+                for (i = 1; i <= tc; i++) {
+                    hb_title_t *t = hb_dvdread_title_scan(c, i, min_title_duration);
+                    if (t) {
+                        hb_list_add(list_title, t);
+                    }
                 }
             }
             longest_title = hb_dvdread_main_feature_title(c,list_title);
 
-            hb_log_level(gloglevel, "is_dvd_path: calling parse file");
+            hb_log_level(gloglevel, "parse_dvd_path: calling parse file");
             /* call parse file */
+            efilename = url_encode(urlpath);
             for (i = 0; i < hb_list_count(list_title); i++) {
                 hb_title_t *t = hb_list_item(list_title,i);
                 dfname[0] = 0;
@@ -191,10 +237,15 @@ int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char 
                 av_strlcatf(dfname, 2048, "?title=%d", t->index);
                 parse_file(opt, dfname );
             }
+            av_free(efilename);
 
-            if( longest_title ) {
+            if( urltitle && urltitle>0 && urltitle<=tc ) {
+                select_default_program(urltitle);
+            }else if( longest_title ) {
                 select_default_program(longest_title->index);
             }
+
+
 
         }
         hb_dvdread_close(&c);
@@ -1580,6 +1631,7 @@ static int dvd_check(URLContext *h, int mask)
     return ret;
 }
 
+
 static int dvd_open(URLContext *h, const char *filename, int flags)
 {
     const char *dvdpath;
@@ -1599,30 +1651,31 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
     ctx->selected_chapter = 1;
     min_title_duration = (((uint64_t)ctx->min_title_duration)*90000L)/1000L;
 
-    if( av_strstart(filename, "dvd://", &dvdpath) ) {
-        const char *path = strdup(dvdpath);
-        char *query,*tq;
-
-        /* remove query from path */
-        tq = strchr(path, '?');
-        if(tq) *tq = 0;
-        path = url_decode(path);
-
-        query = strchr(dvdpath,'?');
-        // is url
-        // is title specified in query string
-        if( query && ((tq=strstr(query, "?title=")) || (tq=strstr(query, "&title=")))) {
-            tq+=7;
-            urltitle = atoi(tq);
-        }
-
-        dvdpath = path;
-    } else if(av_strstart(filename, "file://", &dvdpath)) {
-        // is file url
-    }
-    else {
-        dvdpath = filename;
-    }
+    dvd_url_parse(filename, &dvdpath, &urltitle );
+//    if( av_strstart(filename, "dvd://", &dvdpath) ) {
+//        const char *path = strdup(dvdpath);
+//        char *query,*tq;
+//
+//        /* remove query from path */
+//        tq = strchr(path, '?');
+//        if(tq) *tq = 0;
+//        path = url_decode(path);
+//
+//        query = strchr(dvdpath,'?');
+//        // is url
+//        // is title specified in query string
+//        if( query && ((tq=strstr(query, "?title=")) || (tq=strstr(query, "&title=")))) {
+//            tq+=7;
+//            urltitle = atoi(tq);
+//        }
+//
+//        dvdpath = path;
+//    } else if(av_strstart(filename, "file://", &dvdpath)) {
+//        // is file url
+//    }
+//    else {
+//        dvdpath = filename;
+//    }
 
 
     ctx->hb_dvd = hb_dvdread_init(dvdpath);

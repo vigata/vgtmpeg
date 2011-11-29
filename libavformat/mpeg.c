@@ -227,7 +227,7 @@ static AVStream * dvd_add_stream(AVFormatContext *s, int es_type, int startcode,
 }
 
 #define DVD_AVID(title,startcode) (((title)<<16)|((startcode)&0xff))
-static uint32_t get_current_avid(AVFormatContext *s, uint32_t startcode) {
+static uint32_t get_current_privateid(AVFormatContext *s, uint32_t startcode) {
     dvdurl_t *ctx = get_dvdurl_ctx(s);
     if(ctx) {
         return DVD_AVID(ctx->selected_title_idx, startcode);
@@ -630,7 +630,7 @@ static int mpegps_read_packet(AVFormatContext *s,
     /* now find stream */
     for(i=0;i<s->nb_streams;i++) {
         st = s->streams[i];
-        if (st->id == get_current_avid(s,startcode))
+        if (st->id == get_current_privateid(s,startcode))
             goto found;
     }
 
@@ -719,7 +719,7 @@ static int mpegps_read_packet(AVFormatContext *s,
         goto redo;
     }
     /* no stream found: add a new stream */
-    st = av_new_stream(s, startcode);
+    st = av_new_stream(s, get_current_privateid(s,startcode));
     if (!st)
         goto skip;
     st->codec->codec_type = type;
@@ -783,7 +783,7 @@ static int64_t mpegps_read_dts(AVFormatContext *s, int stream_index,
             av_dlog(s, "none (ret=%d)\n", len);
             return AV_NOPTS_VALUE;
         }
-        if ( get_current_avid(s,startcode) == s->streams[stream_index]->id &&
+        if ( get_current_privateid(s,startcode) == s->streams[stream_index]->id &&
             dts != AV_NOPTS_VALUE) {
             break;
         }

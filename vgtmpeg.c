@@ -3588,9 +3588,9 @@ static int opt_input_file(const char *opt, const char *filename)
 
 
     #if CONFIG_DVD_PROTOCOL
-    extern  int is_dvd_path(char *opt, const char *path,  int (* parse_file)(char *opt, char *filename), void (* select_default_program)(int programid) );
+    extern  int parse_dvd_path(char *opt, const char *path,  int (* parse_file)(char *opt, char *filename), void (* select_default_program)(int programid) );
         /* make filename a dvd url if it's a dvd image */
-        if( !is_dvd_path(opt, filename, parse_input_file, select_default_program) ) {
+        if( !parse_dvd_path(opt, filename, parse_input_file, select_default_program) ) {
             return parse_input_file(opt,filename);
         }
     #else

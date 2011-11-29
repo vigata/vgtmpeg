@@ -110,7 +110,7 @@ typedef struct dvdurl_s {
 /* returns 1 if the path indicated contains a valid path that will be opened
  * with dvd url
  */
-int is_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename ), void (* select_default_program)(int programid) );
+int parse_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename ), void (* select_default_program)(int programid) );
 
 
 #endif // HB_DVD_H
