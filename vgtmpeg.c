@@ -566,12 +566,12 @@ static int vgtmpeg_exit(int ret)
     /* close files */
 
     /* if there was an error try to write the trailers */
-    if( ret>0 ) {
-        for(i=0;i<nb_output_files;i++) {
-            os = output_files[i];
-            av_write_trailer(os);
-        }
-    }
+//    if( ret>0 ) {
+//        for(i=0;i<nb_output_files;i++) {
+//            os = output_files[i];
+//            av_write_trailer(os);
+//        }
+//    }
 
     for(i=0;i<nb_output_files;i++) {
         AVFormatContext *s = output_files[i];
@@ -4650,7 +4650,6 @@ static const OptionDef options[] = {
 int main(int argc, char **argv)
 {
     int64_t ti;
-    int ret;
 
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
@@ -4707,9 +4706,9 @@ int main(int argc, char **argv)
     }
 
     ti = getutime();
-    if ((ret=transcode(output_files, nb_output_files, input_files, nb_input_files,
+    if ((transcode(output_files, nb_output_files, input_files, nb_input_files,
                   stream_maps, nb_stream_maps)) < 0)
-        vgtmpeg_exit(ret);
+        vgtmpeg_exit(1);
     ti = getutime() - ti;
     if (do_benchmark) {
         int maxrss = getmaxrss() / 1024;
