@@ -4650,6 +4650,7 @@ static const OptionDef options[] = {
 int main(int argc, char **argv)
 {
     int64_t ti;
+    int ret;
 
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
@@ -4706,9 +4707,9 @@ int main(int argc, char **argv)
     }
 
     ti = getutime();
-    if (transcode(output_files, nb_output_files, input_files, nb_input_files,
-                  stream_maps, nb_stream_maps) < 0)
-        vgtmpeg_exit(1);
+    if ((ret=transcode(output_files, nb_output_files, input_files, nb_input_files,
+                  stream_maps, nb_stream_maps)) < 0)
+        vgtmpeg_exit(ret);
     ti = getutime() - ti;
     if (do_benchmark) {
         int maxrss = getmaxrss() / 1024;
