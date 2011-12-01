@@ -157,7 +157,7 @@ static char *get_root_dvd_path(const char *path) {
 /* parses a 'filename' that can be a dvd://.. , a file://... url or a file name
  * and returns the decoded path to the resource, and optionally a title
  */
-static void dvd_url_parse(const char *filename, const char **urlpath, int *title ) {
+static int dvd_url_parse(const char *filename, const char **urlpath, int *title ) {
     const char *pathstart;
     *title = 0;
 
@@ -179,11 +179,13 @@ static void dvd_url_parse(const char *filename, const char **urlpath, int *title
             *title = atoi(tq);
         }
     } else if( av_strstart(filename, "file://", &pathstart) ) {
-        *urlpath = url_decode(pathstart);
+        return 0;
+        //*urlpath = url_decode(pathstart);
     } else {
         /* assume raw file name */
         *urlpath = filename;
     }
+    return 1;
 }
 
 int parse_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, char *filename), void (* select_default_program)(int programid) ) {
@@ -194,7 +196,8 @@ int parse_dvd_path(char *opt, const char *path, int (* parse_file)(char *opt, ch
     const char *urlpath;
     int urltitle=0;
 
-    dvd_url_parse(path, &urlpath, &urltitle);
+    if(!dvd_url_parse(path, &urlpath, &urltitle))
+        return 0;
 
     c = hb_dvdread_init(urlpath);
     if(c) {
@@ -517,6 +520,8 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
             hb_error("width and height not available on IFO file");
             break;
         }
+
+        hb_log_level( loglevel, "scan: film mode is %s", vts->vtsi_mat->vts_video_attr.film_mode ? "on" : "off" );
     }
 
     /* Detect languages */

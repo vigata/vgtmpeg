@@ -217,7 +217,7 @@ static AVStream * dvd_add_stream(AVFormatContext *s, int es_type, int startcode,
             av_set_pts_info(st, 33, 1, 90000);
             st->codec->codec_type = type;
             st->codec->codec_id = codec_id;
-            st->request_probe = 1;
+            st->request_probe = 0;
             if (codec_id != CODEC_ID_PCM_S16BE)
                 st->need_parsing = AVSTREAM_PARSE_FULL;
         }
