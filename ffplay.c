@@ -27,6 +27,7 @@
 #include "libavutil/colorspace.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/dict.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/samplefmt.h"
 #include "libavutil/avassert.h"
@@ -211,7 +212,7 @@ typedef struct VideoState {
     int refresh;
 } VideoState;
 
-static void show_help(void);
+static int opt_help(const char *opt, const char *arg);
 
 /* options specified by the user */
 static AVInputFormat *file_iformat;
@@ -1778,8 +1779,10 @@ static int video_thread(void *arg)
 
         if (ret < 0) goto the_end;
 
+#if CONFIG_AVFILTER
         if (!picref)
             continue;
+#endif
 
         pts = pts_int*av_q2d(is->video_st->time_base);
 
@@ -2132,7 +2135,12 @@ static int stream_component_open(VideoState *is, int stream_index)
 
     avctx->workaround_bugs = workaround_bugs;
     avctx->lowres = lowres;
-    if(lowres) avctx->flags |= CODEC_FLAG_EMU_EDGE;
+    if(avctx->lowres > codec->max_lowres){
+        av_log(avctx, AV_LOG_WARNING, "The maximum value for lowres supported by the decoder is %d\n",
+                codec->max_lowres);
+        avctx->lowres= codec->max_lowres;
+    }
+    if(avctx->lowres) avctx->flags |= CODEC_FLAG_EMU_EDGE;
     avctx->idct_algo= idct;
     if(fast) avctx->flags2 |= CODEC_FLAG2_FAST;
     avctx->skip_frame= skip_frame;
@@ -2295,15 +2303,13 @@ static int decode_interrupt_cb(void)
 static int read_thread(void *arg)
 {
     VideoState *is = arg;
-    AVFormatContext *ic;
+    AVFormatContext *ic = NULL;
     int err, i, ret;
     int st_index[AVMEDIA_TYPE_NB];
     AVPacket pkt1, *pkt = &pkt1;
-    AVFormatParameters params, *ap = &params;
     int eof=0;
     int pkt_in_play_range = 0;
-
-    ic = avformat_alloc_context();
+    AVDictionaryEntry *t;
 
     memset(st_index, -1, sizeof(st_index));
     is->video_stream = -1;
@@ -2313,28 +2319,15 @@ static int read_thread(void *arg)
     global_video_state = is;
     avio_set_interrupt_cb(decode_interrupt_cb);
 
-    memset(ap, 0, sizeof(*ap));
-
-    ap->prealloced_context = 1;
-    ap->width = frame_width;
-    ap->height= frame_height;
-    ap->time_base= (AVRational){1, 25};
-    ap->pix_fmt = frame_pix_fmt;
-    ic->flags |= AVFMT_FLAG_PRIV_OPT;
-
-
-    err = av_open_input_file(&ic, is->filename, is->iformat, 0, ap);
-    if (err >= 0) {
-        set_context_opts(ic, avformat_opts, AV_OPT_FLAG_DECODING_PARAM, NULL);
-        err = av_demuxer_open(ic, ap);
-        if(err < 0){
-            avformat_free_context(ic);
-            ic= NULL;
-        }
-    }
+    err = avformat_open_input(&ic, is->filename, is->iformat, &format_opts);
     if (err < 0) {
         print_error(is->filename, err);
         ret = -1;
+        goto fail;
+    }
+    if ((t = av_dict_get(format_opts, "", NULL, AV_DICT_IGNORE_SUFFIX))) {
+        av_log(NULL, AV_LOG_ERROR, "Option %s not found.\n", t->key);
+        ret = AVERROR_OPTION_NOT_FOUND;
         goto fail;
     }
     is->ic = ic;
@@ -2964,7 +2957,7 @@ static void show_usage(void)
     printf("\n");
 }
 
-static void show_help(void)
+static int opt_help(const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
     show_usage();
@@ -2996,6 +2989,7 @@ static void show_help(void)
            "down/up             seek backward/forward 1 minute\n"
            "mouse click         seek to percentage in file corresponding to fraction of width\n"
            );
+    return 0;
 }
 
 /* Called from the main */

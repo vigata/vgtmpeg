@@ -288,6 +288,7 @@ static int mpegps_read_header(AVFormatContext *s,
     const char *sofdec = "Sofdec";
     int v, i = 0;
     int dvdurl = is_dvdurl(s);
+    int64_t last_pos = avio_tell(s->pb);
 
     if(dvdurl) {
         av_dict_set(&s->metadata, "source_type", "dvd", 0);
@@ -309,6 +310,10 @@ static int mpegps_read_header(AVFormatContext *s,
     avio_seek(s->pb, oldpos, SEEK_SET);
 
     dvd_create_streams(s);
+
+    if (!m->sofdec)
+       avio_seek(s->pb, last_pos, SEEK_SET);
+
     /* no need to do more */
     return 0;
 }

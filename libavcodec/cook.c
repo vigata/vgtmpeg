@@ -335,7 +335,7 @@ static av_cold int cook_decode_close(AVCodecContext *avctx)
  * Fill the gain array for the timedomain quantization.
  *
  * @param gb          pointer to the GetBitContext
- * @param gaininfo[9] array of gain indexes
+ * @param gaininfo    array[9] of gain indexes
  */
 
 static void decode_gain_info(GetBitContext *gb, int *gaininfo)
@@ -1079,7 +1079,7 @@ static av_cold int cook_decode_init(AVCodecContext *avctx)
             q->subpacket[s].subbands = bytestream_get_be16(&edata_ptr);
             extradata_size -= 8;
         }
-        if (avctx->extradata_size >= 8){
+        if (extradata_size >= 8){
             bytestream_get_be32(&edata_ptr);    //Unknown unused
             q->subpacket[s].js_subband_start = bytestream_get_be16(&edata_ptr);
             q->subpacket[s].js_vlc_bits = bytestream_get_be16(&edata_ptr);
@@ -1175,8 +1175,9 @@ static av_cold int cook_decode_init(AVCodecContext *avctx)
             return -1;
         }
 
-        if ((q->subpacket[s].js_vlc_bits > 6) || (q->subpacket[s].js_vlc_bits < 0)) {
-            av_log(avctx,AV_LOG_ERROR,"js_vlc_bits = %d, only >= 0 and <= 6 allowed!\n",q->subpacket[s].js_vlc_bits);
+        if ((q->subpacket[s].js_vlc_bits > 6) || (q->subpacket[s].js_vlc_bits < 2*q->subpacket[s].joint_stereo)) {
+            av_log(avctx,AV_LOG_ERROR,"js_vlc_bits = %d, only >= %d and <= 6 allowed!\n",
+                   q->subpacket[s].js_vlc_bits, 2*q->subpacket[s].joint_stereo);
             return -1;
         }
 

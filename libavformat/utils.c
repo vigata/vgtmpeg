@@ -457,18 +457,25 @@ int av_open_input_stream(AVFormatContext **ic_ptr,
     opts = convert_format_parameters(ap);
 
     if(!ap->prealloced_context)
-        ic = avformat_alloc_context();
+        *ic_ptr = ic = avformat_alloc_context();
     else
         ic = *ic_ptr;
     if (!ic) {
         err = AVERROR(ENOMEM);
         goto fail;
     }
-    ic->pb = pb;
+    if (pb && fmt && fmt->flags & AVFMT_NOFILE)
+        av_log(ic, AV_LOG_WARNING, "Custom AVIOContext makes no sense and "
+                                   "will be ignored with AVFMT_NOFILE format.\n");
+    else
+        ic->pb = pb;
 
-    err = avformat_open_input(ic_ptr, filename, fmt, &opts);
+    if ((err = avformat_open_input(&ic, filename, fmt, &opts)) < 0)
+        goto fail;
+    ic->pb = ic->pb ? ic->pb : pb; // don't leak custom pb if it wasn't set above
 
 fail:
+    *ic_ptr = ic;
     av_dict_free(&opts);
     return err;
 }
@@ -518,13 +525,19 @@ int av_probe_input_buffer(AVIOContext *pb, AVInputFormat **fmt,
         probe_size = FFMIN(probe_size<<1, FFMAX(max_probe_size, probe_size+1))) {
         int ret, score = probe_size < max_probe_size ? AVPROBE_SCORE_MAX/4 : 0;
         int buf_offset = (probe_size == PROBE_BUF_MIN) ? 0 : probe_size>>1;
+        void *buftmp;
 
         if (probe_size < offset) {
             continue;
         }
 
         /* read probe data */
-        buf = av_realloc(buf, probe_size + AVPROBE_PADDING_SIZE);
+        buftmp = av_realloc(buf, probe_size + AVPROBE_PADDING_SIZE);
+        if(!buftmp){
+            av_free(buf);
+            return AVERROR(ENOMEM);
+        }
+        buf=buftmp;
         if ((ret = avio_read(pb, buf + buf_offset, probe_size - buf_offset)) < 0) {
             /* fail if error was not end of file, otherwise, lower score */
             if (ret != AVERROR_EOF) {
@@ -983,7 +996,7 @@ static void compute_pkt_fields(AVFormatContext *s, AVStream *st,
     // we take the conservative approach and discard both
     // Note, if this is misbehaving for a H.264 file then possibly presentation_delayed is not set correctly.
     if(delay==1 && pkt->dts == pkt->pts && pkt->dts != AV_NOPTS_VALUE && presentation_delayed){
-        av_log(s, AV_LOG_DEBUG, "invalid dts/pts combination\n");
+        av_log(s, AV_LOG_DEBUG, "invalid dts/pts combination %Ld\n", pkt->dts);
         pkt->dts= pkt->pts= AV_NOPTS_VALUE;
     }
 
@@ -1121,7 +1134,10 @@ static int av_read_frame_internal(AVFormatContext *s, AVPacket *pkt)
             if (!st->need_parsing || !st->parser) {
                 /* no parsing needed: we just output the packet as is */
                 /* raw data support */
-                *pkt = st->cur_pkt; st->cur_pkt.data= NULL;
+                *pkt = st->cur_pkt;
+                st->cur_pkt.data= NULL;
+                st->cur_pkt.side_data_elems = 0;
+                st->cur_pkt.side_data = NULL;
                 compute_pkt_fields(s, st, NULL, pkt);
                 s->cur_st = NULL;
                 if ((s->iformat->flags & AVFMT_GENERIC_INDEX) &&
@@ -2106,7 +2122,7 @@ static int has_decode_delay_been_guessed(AVStream *st)
         st->codec_info_nb_frames >= 6 + st->codec->has_b_frames;
 }
 
-static int try_decode_frame(AVStream *st, AVPacket *avpkt)
+static int try_decode_frame(AVStream *st, AVPacket *avpkt, AVDictionary **options)
 {
     int16_t *samples;
     AVCodec *codec;
@@ -2117,7 +2133,7 @@ static int try_decode_frame(AVStream *st, AVPacket *avpkt)
         codec = avcodec_find_decoder(st->codec->codec_id);
         if (!codec)
             return -1;
-        ret = avcodec_open(st->codec, codec);
+        ret = avcodec_open2(st->codec, codec, options);
         if (ret < 0)
             return ret;
     }
@@ -2236,12 +2252,20 @@ static int tb_unreliable(AVCodecContext *c){
     return 0;
 }
 
+#if FF_API_FORMAT_PARAMETERS
 int av_find_stream_info(AVFormatContext *ic)
+{
+    return avformat_find_stream_info(ic, NULL);
+}
+#endif
+
+int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 {
     int i, count, ret, read_size, j;
     AVStream *st;
     AVPacket pkt1, *pkt;
     int64_t old_offset = avio_tell(ic->pb);
+    int orig_nb_streams = ic->nb_streams;        // new streams might appear, no options for those
 
     for(i=0;i<ic->nb_streams;i++) {
         AVCodec *codec;
@@ -2278,12 +2302,12 @@ int av_find_stream_info(AVFormatContext *ic)
         /* Ensure that subtitle_header is properly set. */
         if (st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE
             && codec && !st->codec->codec)
-            avcodec_open(st->codec, codec);
+            avcodec_open2(st->codec, codec, options ? &options[i] : NULL);
 
         //try to just open decoders, in case this is enough to get parameters
         if(!has_codec_parameters(st->codec)){
             if (codec && !st->codec->codec)
-                avcodec_open(st->codec, codec);
+                avcodec_open2(st->codec, codec, options ? &options[i] : NULL);
         }
     }
 
@@ -2381,9 +2405,9 @@ int av_find_stream_info(AVFormatContext *ic)
         }
         {
             int64_t last = st->info->last_dts;
-            int64_t duration= pkt->dts - last;
 
-            if(pkt->dts != AV_NOPTS_VALUE && last != AV_NOPTS_VALUE && duration>0){
+            if(pkt->dts != AV_NOPTS_VALUE && last != AV_NOPTS_VALUE && pkt->dts > last){
+                int64_t duration= pkt->dts - last;
                 double dur= duration * av_q2d(st->time_base);
 
 //                if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
@@ -2393,7 +2417,7 @@ int av_find_stream_info(AVFormatContext *ic)
                 for (i=1; i<FF_ARRAY_ELEMS(st->info->duration_error); i++) {
                     int framerate= get_std_framerate(i);
                     int ticks= lrintf(dur*framerate/(1001*12));
-                    double error= dur - ticks*1001*12/(double)framerate;
+                    double error = dur - (double)ticks*1001*12 / framerate;
                     st->info->duration_error[i] += error*error;
                 }
                 st->info->duration_count++;
@@ -2419,7 +2443,7 @@ int av_find_stream_info(AVFormatContext *ic)
            it takes longer and uses more memory. For MPEG-4, we need to
            decompress for QuickTime. */
         if (!has_codec_parameters(st->codec) || !has_decode_delay_been_guessed(st))
-            try_decode_frame(st, pkt);
+            try_decode_frame(st, pkt, (options && i < orig_nb_streams )? &options[i] : NULL);
 
         st->codec_info_nb_frames++;
         count++;
@@ -2644,13 +2668,13 @@ void avformat_free_context(AVFormatContext *s)
             av_free_packet(&st->cur_pkt);
         }
         av_dict_free(&st->metadata);
-        av_free(st->index_entries);
-        av_free(st->codec->extradata);
-        av_free(st->codec->subtitle_header);
-        av_free(st->codec);
-        av_free(st->priv_data);
-        av_free(st->info);
-        av_free(st);
+        av_freep(&st->index_entries);
+        av_freep(&st->codec->extradata);
+        av_freep(&st->codec->subtitle_header);
+        av_freep(&st->codec);
+        av_freep(&st->priv_data);
+        av_freep(&st->info);
+        av_freep(&st);
     }
     for(i=s->nb_programs-1; i>=0; i--) {
         av_dict_free(&s->programs[i]->metadata);
@@ -2661,7 +2685,7 @@ void avformat_free_context(AVFormatContext *s)
     av_freep(&s->priv_data);
     while(s->nb_chapters--) {
         av_dict_free(&s->chapters[s->nb_chapters]->metadata);
-        av_free(s->chapters[s->nb_chapters]);
+        av_freep(&s->chapters[s->nb_chapters]);
     }
     av_freep(&s->chapters);
     av_dict_free(&s->metadata);
@@ -2943,7 +2967,9 @@ int avformat_write_header(AVFormatContext *s, AVDictionary **options)
                 ret = AVERROR(EINVAL);
                 goto fail;
             }
-            if(av_cmp_q(st->sample_aspect_ratio, st->codec->sample_aspect_ratio)){
+            if(av_cmp_q(st->sample_aspect_ratio, st->codec->sample_aspect_ratio)
+               && FFABS(av_q2d(st->sample_aspect_ratio) - av_q2d(st->codec->sample_aspect_ratio)) > 0.004*av_q2d(st->sample_aspect_ratio)
+            ){
                 av_log(s, AV_LOG_ERROR, "Aspect ratio mismatch between encoder and muxer layer\n");
                 ret = AVERROR(EINVAL);
                 goto fail;
@@ -3420,7 +3446,7 @@ void av_dump_format(AVFormatContext *ic,
                     int is_output)
 {
     int i;
-    uint8_t *printed = av_mallocz(ic->nb_streams);
+    uint8_t *printed = ic->nb_streams ? av_mallocz(ic->nb_streams) : NULL;
     if (ic->nb_streams && !printed)
         return;
 

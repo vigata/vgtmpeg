@@ -128,9 +128,7 @@ static const struct frame_type_desc {
  */
 typedef struct {
     /**
-     * @defgroup struct_global Global values
-     * Global values, specified in the stream header / extradata or used
-     * all over.
+     * @name Global values specified in the stream header / extradata or used all over.
      * @{
      */
     GetBitContext gb;             ///< packet bitreader. During decoder init,
@@ -182,8 +180,9 @@ typedef struct {
 
     /**
      * @}
-     * @defgroup struct_packet Packet values
-     * Packet values, specified in the packet header or related to a packet.
+     *
+     * @name Packet values specified in the packet header or related to a packet.
+     *
      * A packet is considered to be a single unit of data provided to this
      * decoder by the demuxer.
      * @{
@@ -213,7 +212,8 @@ typedef struct {
 
     /**
      * @}
-     * @defgroup struct_frame Frame and superframe values
+     *
+     * @name Frame and superframe values
      * Superframe and frame data - these can change from frame to frame,
      * although some of them do in that case serve as a cache / history for
      * the next frame or superframe.
@@ -256,7 +256,9 @@ typedef struct {
     float synth_history[MAX_LSPS]; ///< see #excitation_history
     /**
      * @}
-     * @defgroup post_filter Postfilter values
+     *
+     * @name Postfilter values
+     *
      * Variables used for postfilter implementation, mostly history for
      * smoothing and so on, and context variables for FFT/iFFT.
      * @{
@@ -399,6 +401,10 @@ static av_cold int wmavoice_decode_init(AVCodecContext *ctx)
     s->min_pitch_val    = ((ctx->sample_rate << 8)      /  400 + 50) >> 8;
     s->max_pitch_val    = ((ctx->sample_rate << 8) * 37 / 2000 + 50) >> 8;
     pitch_range         = s->max_pitch_val - s->min_pitch_val;
+    if (pitch_range <= 0) {
+        av_log(ctx, AV_LOG_ERROR, "Invalid pitch range; broken extradata?\n");
+        return -1;
+    }
     s->pitch_nbits      = av_ceil_log2(pitch_range);
     s->last_pitch_val   = 40;
     s->last_acb_type    = ACB_TYPE_NONE;
@@ -420,6 +426,10 @@ static av_cold int wmavoice_decode_init(AVCodecContext *ctx)
     s->block_conv_table[2]      = (pitch_range * 44) >> 6;
     s->block_conv_table[3]      = s->max_pitch_val - 1;
     s->block_delta_pitch_hrange = (pitch_range >> 3) & ~0xF;
+    if (s->block_delta_pitch_hrange <= 0) {
+        av_log(ctx, AV_LOG_ERROR, "Invalid delta pitch hrange; broken extradata?\n");
+        return -1;
+    }
     s->block_delta_pitch_nbits  = 1 + av_ceil_log2(s->block_delta_pitch_hrange);
     s->block_pitch_range        = s->block_conv_table[2] +
                                   s->block_conv_table[3] + 1 +
@@ -432,7 +442,7 @@ static av_cold int wmavoice_decode_init(AVCodecContext *ctx)
 }
 
 /**
- * @defgroup postfilter Postfilter functions
+ * @name Postfilter functions
  * Postfilter functions (gain control, wiener denoise filter, DC filter,
  * kalman smoothening, plus surrounding code to wrap it)
  * @{
@@ -825,7 +835,7 @@ static void dequant_lsps(double *lsps, int num,
 }
 
 /**
- * @defgroup lsp_dequant LSP dequantization routines
+ * @name LSP dequantization routines
  * LSP dequantization routines, for 10/16LSPs and independent/residual coding.
  * @note we assume enough bits are available, caller should check.
  * lsp10i() consumes 24 bits; lsp10r() consumes an additional 24 bits;
@@ -969,7 +979,7 @@ static void dequant_lsp16r(GetBitContext *gb,
 
 /**
  * @}
- * @defgroup aw Pitch-adaptive window coding functions
+ * @name Pitch-adaptive window coding functions
  * The next few functions are for pitch-adaptive window coding.
  * @{
  */
@@ -1075,7 +1085,7 @@ static void aw_pulse_set2(WMAVoiceContext *s, GetBitContext *gb,
             int excl_range         = s->aw_pulse_range; // always 16 or 24
             uint16_t *use_mask_ptr = &use_mask[idx >> 4];
             int first_sh           = 16 - (idx & 15);
-            *use_mask_ptr++       &= 0xFFFF << first_sh;
+            *use_mask_ptr++       &= 0xFFFFu << first_sh;
             excl_range            -= first_sh;
             if (excl_range >= 16) {
                 *use_mask_ptr++    = 0;
@@ -1877,6 +1887,8 @@ static void copy_bits(PutBitContext *pb,
 
     rmn_bits = rmn_bytes = get_bits_left(gb);
     if (rmn_bits < nbits)
+        return;
+    if (nbits > pb->size_in_bits - put_bits_count(pb))
         return;
     rmn_bits &= 7; rmn_bytes >>= 3;
     if ((rmn_bits = FFMIN(rmn_bits, nbits)) > 0)

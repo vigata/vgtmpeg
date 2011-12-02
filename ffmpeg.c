@@ -350,6 +350,7 @@ typedef struct AVInputFile {
     int eof_reached;      /* true if eof reached */
     int ist_index;        /* index of first stream in ist_table */
     int buffer_size;      /* current total buffer size */
+    int nb_streams;       /* nb streams we are aware of */
 } AVInputFile;
 
 
@@ -1890,7 +1891,7 @@ static int output_packet(AVInputStream *ist, int ist_index,
                             ret = 0;
                             /* encode any samples remaining in fifo */
                             if (fifo_bytes > 0) {
-                                int osize = av_get_bits_per_sample_fmt(enc->sample_fmt) >> 3;
+                                int osize = av_get_bytes_per_sample(enc->sample_fmt);
                                 int fs_tmp = enc->frame_size;
 
                                 av_fifo_generic_read(ost->fifo, audio_buf, fifo_bytes, NULL);
@@ -2076,7 +2077,7 @@ static int transcode(AVFormatContext **output_files,
         int si = stream_maps[i].stream_index;
 
         if (fi < 0 || fi > nb_input_files - 1 ||
-            si < 0 || si > input_files[fi].ctx->nb_streams - 1) {
+            si < 0 || si > input_files[fi].nb_streams - 1) {
             fprintf(stderr,"Could not find input stream #%d.%d\n", fi, si);
             ret = AVERROR(EINVAL);
             goto fail;
@@ -2084,7 +2085,7 @@ static int transcode(AVFormatContext **output_files,
         fi = stream_maps[i].sync_file_index;
         si = stream_maps[i].sync_stream_index;
         if (fi < 0 || fi > nb_input_files - 1 ||
-            si < 0 || si > input_files[fi].ctx->nb_streams - 1) {
+            si < 0 || si > input_files[fi].nb_streams - 1) {
             fprintf(stderr,"Could not find sync stream #%d.%d\n", fi, si);
             ret = AVERROR(EINVAL);
             goto fail;
@@ -2334,16 +2335,19 @@ static int transcode(AVFormatContext **output_files,
                     fprintf(stderr, "Video pixel format is unknown, stream cannot be encoded\n");
                     ffmpeg_exit(1);
                 }
+
+                if (!codec->width || !codec->height) {
+                    codec->width  = icodec->width;
+                    codec->height = icodec->height;
+                }
+
                 ost->video_resample = codec->width   != icodec->width  ||
                                       codec->height  != icodec->height ||
                                       codec->pix_fmt != icodec->pix_fmt;
                 if (ost->video_resample) {
                     codec->bits_per_raw_sample= frame_bits_per_raw_sample;
                 }
-                if (!codec->width || !codec->height) {
-                    codec->width  = icodec->width;
-                    codec->height = icodec->height;
-                }
+
                 ost->resample_height = icodec->height;
                 ost->resample_width  = icodec->width;
                 ost->resample_pix_fmt= icodec->pix_fmt;
@@ -2406,9 +2410,9 @@ static int transcode(AVFormatContext **output_files,
             }
         }
         if(codec->codec_type == AVMEDIA_TYPE_VIDEO){
-            /* maximum video buffer size is 6-bytes per pixel, plus DPX header size */
+            /* maximum video buffer size is 6-bytes per pixel, plus DPX header size (1664)*/
             int size= codec->width * codec->height;
-            bit_buffer_size= FFMAX(bit_buffer_size, 6*size + 1664);
+            bit_buffer_size= FFMAX(bit_buffer_size, 7*size + 10000);
         }
     }
 
@@ -2759,7 +2763,7 @@ static int transcode(AVFormatContext **output_files,
         }
         /* the following test is needed in case new streams appear
            dynamically in stream : we ignore them */
-        if (pkt.stream_index >= input_files[file_index].ctx->nb_streams)
+        if (pkt.stream_index >= input_files[file_index].nb_streams)
             goto discard_packet;
         ist_index = input_files[file_index].ist_index + pkt.stream_index;
         ist = &input_streams[ist_index];
@@ -2972,7 +2976,7 @@ static int opt_frame_pix_fmt(const char *opt, const char *arg)
             return AVERROR(EINVAL);
         }
     } else {
-        show_pix_fmts();
+        opt_pix_fmts(NULL, NULL);
         ffmpeg_exit(0);
     }
     return 0;
@@ -3509,6 +3513,7 @@ static const char dfname[2048];
     input_files = grow_array(input_files, sizeof(*input_files), &nb_input_files, nb_input_files + 1);
     input_files[nb_input_files - 1].ctx        = ic;
     input_files[nb_input_files - 1].ist_index  = nb_input_streams - ic->nb_streams;
+    input_files[nb_input_files - 1].nb_streams = ic->nb_streams;
 
     top_field_first = -1;
     video_channel = 0;
@@ -4115,16 +4120,18 @@ static void parse_matrix_coeffs(uint16_t *dest, const char *str)
     }
 }
 
-static void opt_inter_matrix(const char *arg)
+static int opt_inter_matrix(const char *opt, const char *arg)
 {
     inter_matrix = av_mallocz(sizeof(uint16_t) * 64);
     parse_matrix_coeffs(inter_matrix, arg);
+    return 0;
 }
 
-static void opt_intra_matrix(const char *arg)
+static int opt_intra_matrix(const char *opt, const char *arg)
 {
     intra_matrix = av_mallocz(sizeof(uint16_t) * 64);
     parse_matrix_coeffs(intra_matrix, arg);
+    return 0;
 }
 
 static void show_usage(void)
@@ -4134,7 +4141,7 @@ static void show_usage(void)
     printf("\n");
 }
 
-static void show_help(void)
+static int opt_help(const char *opt, const char *arg)
 {
     AVCodec *c;
     AVOutputFormat *oformat = NULL;
@@ -4189,6 +4196,7 @@ static void show_help(void)
     }
 
     av_opt_show2(sws_opts, NULL, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0);
+    return 0;
 }
 
 static int opt_target(const char *opt, const char *arg)
@@ -4419,10 +4427,14 @@ static void log_callback_null(void* ptr, int level, const char* fmt, va_list vl)
 {
 }
 
-static void opt_passlogfile(const char *arg)
+static int opt_passlogfile(const char *opt, const char *arg)
 {
     pass_logfilename_prefix = arg;
-    opt_default("passlogfile", arg);
+#if CONFIG_LIBX264_ENCODER
+    return opt_default("passlogfile", arg);
+#else
+    return 0;
+#endif
 }
 
 static const OptionDef options[] = {

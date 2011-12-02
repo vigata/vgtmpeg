@@ -1090,7 +1090,7 @@ static int decode_spectrum_and_dequant(AACContext *ac, float coef[1024],
                             GET_VLC(code, re, gb, vlc_tab, 8, 2);
                             cb_idx = cb_vector_idx[code];
                             nnz = cb_idx >> 8 & 15;
-                            bits = SHOW_UBITS(re, gb, nnz) << (32-nnz);
+                            bits = nnz ? GET_CACHE(re, gb) : 0;
                             LAST_SKIP_BITS(re, gb, nnz);
                             cf = VMUL4S(cf, vq, cb_idx, bits, sf + idx);
                         } while (len -= 4);
@@ -1130,7 +1130,7 @@ static int decode_spectrum_and_dequant(AACContext *ac, float coef[1024],
                             GET_VLC(code, re, gb, vlc_tab, 8, 2);
                             cb_idx = cb_vector_idx[code];
                             nnz = cb_idx >> 8 & 15;
-                            sign = SHOW_UBITS(re, gb, nnz) << (cb_idx >> 12);
+                            sign = nnz ? SHOW_UBITS(re, gb, nnz) << (cb_idx >> 12) : 0;
                             LAST_SKIP_BITS(re, gb, nnz);
                             cf = VMUL2S(cf, vq, cb_idx, sign, sf + idx);
                         } while (len -= 2);
@@ -1755,12 +1755,10 @@ static void windowing_and_mdct_ltp(AACContext *ac, float *out,
     } else {
         memset(in, 0, 448 * sizeof(float));
         ac->dsp.vector_fmul(in + 448, in + 448, swindow_prev, 128);
-        memcpy(in + 576, in + 576, 448 * sizeof(float));
     }
     if (ics->window_sequence[0] != LONG_START_SEQUENCE) {
         ac->dsp.vector_fmul_reverse(in + 1024, in + 1024, lwindow, 1024);
     } else {
-        memcpy(in + 1024, in + 1024, 448 * sizeof(float));
         ac->dsp.vector_fmul_reverse(in + 1024 + 448, in + 1024 + 448, swindow, 128);
         memset(in + 1024 + 576, 0, 448 * sizeof(float));
     }
@@ -2078,7 +2076,7 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
     ChannelElement *che = NULL, *che_prev = NULL;
     enum RawDataBlockType elem_type, elem_type_prev = TYPE_END;
     int err, elem_id, data_size_tmp;
-    int samples = 0, multiplier;
+    int samples = 0, multiplier, audio_found = 0;
 
     if (show_bits(gb, 12) == 0xfff) {
         if (parse_adts_frame_header(ac, gb) < 0) {
@@ -2109,10 +2107,12 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
 
         case TYPE_SCE:
             err = decode_ics(ac, &che->ch[0], gb, 0, 0);
+            audio_found = 1;
             break;
 
         case TYPE_CPE:
             err = decode_cpe(ac, gb, che);
+            audio_found = 1;
             break;
 
         case TYPE_CCE:
@@ -2121,6 +2121,7 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
 
         case TYPE_LFE:
             err = decode_ics(ac, &che->ch[0], gb, 0, 0);
+            audio_found = 1;
             break;
 
         case TYPE_DSE:
@@ -2197,7 +2198,7 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
                                                    samples, avctx->channels);
     }
 
-    if (ac->output_configured)
+    if (ac->output_configured && audio_found)
         ac->output_configured = OC_LOCKED;
 
     return 0;

@@ -69,16 +69,13 @@ static int query_formats(AVFilterContext *ctx)
         PIX_FMT_BGR555BE,     PIX_FMT_BGR555LE,
         PIX_FMT_GRAY16BE,     PIX_FMT_GRAY16LE,
         PIX_FMT_YUV420P16LE,  PIX_FMT_YUV420P16BE,
-        PIX_FMT_YUV422P16LE,  PIX_FMT_YUV422P16BE,
         PIX_FMT_YUV444P16LE,  PIX_FMT_YUV444P16BE,
         PIX_FMT_NV12,         PIX_FMT_NV21,
         PIX_FMT_RGB8,         PIX_FMT_BGR8,
         PIX_FMT_RGB4_BYTE,    PIX_FMT_BGR4_BYTE,
-        PIX_FMT_YUV444P,      PIX_FMT_YUV422P,
+        PIX_FMT_YUV444P,      PIX_FMT_YUVJ444P,
         PIX_FMT_YUV420P,      PIX_FMT_YUVJ420P,
-        PIX_FMT_YUV411P,      PIX_FMT_YUV410P,
-        PIX_FMT_YUVJ444P,     PIX_FMT_YUVJ422P,
-        PIX_FMT_YUV440P,      PIX_FMT_YUVJ440P,
+        PIX_FMT_YUV410P,
         PIX_FMT_YUVA420P,     PIX_FMT_GRAY8,
         PIX_FMT_NONE
     };
@@ -195,6 +192,8 @@ static void end_frame(AVFilterLink *inlink)
     avfilter_unref_buffer(outpic);
 }
 
+static void null_draw_slice(AVFilterLink *link, int y, int h, int slice_dir) { }
+
 AVFilter avfilter_vf_transpose = {
     .name      = "transpose",
     .description = NULL_IF_CONFIG_SMALL("Transpose input video."),
@@ -207,6 +206,7 @@ AVFilter avfilter_vf_transpose = {
     .inputs    = (AVFilterPad[]) {{ .name            = "default",
                                     .type            = AVMEDIA_TYPE_VIDEO,
                                     .start_frame     = start_frame,
+                                    .draw_slice      = null_draw_slice,
                                     .end_frame       = end_frame,
                                     .min_perms       = AV_PERM_READ, },
                                   { .name = NULL}},

@@ -301,7 +301,7 @@ int ff_h264_decode_ref_pic_list_reordering(H264Context *h){
 
 void ff_h264_fill_mbaff_ref_list(H264Context *h){
     int list, i, j;
-    for(list=0; list<2; list++){ //FIXME try list_count
+    for(list=0; list<h->list_count; list++){
         for(i=0; i<h->ref_count[list]; i++){
             Picture *frame = &h->ref_list[list][i];
             Picture *field = &h->ref_list[list][16+2*i];
@@ -678,7 +678,7 @@ int ff_h264_decode_ref_pic_marking(H264Context *h, GetBitContext *gb){
                 }
                 if(opcode==MMCO_SHORT2LONG || opcode==MMCO_LONG2UNUSED || opcode==MMCO_LONG || opcode==MMCO_SET_MAX_LONG){
                     unsigned int long_arg= get_ue_golomb_31(gb);
-                    if(long_arg >= 32 || (long_arg >= 16 && !(opcode == MMCO_LONG2UNUSED && FIELD_PICTURE))){
+                    if(long_arg >= 32 || (long_arg >= 16 && !(opcode == MMCO_SET_MAX_LONG && long_arg == 16) && !(opcode == MMCO_LONG2UNUSED && FIELD_PICTURE))){
                         av_log(h->s.avctx, AV_LOG_ERROR, "illegal long ref in memory management control operation %d\n", opcode);
                         return -1;
                     }

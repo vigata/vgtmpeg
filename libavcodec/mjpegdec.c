@@ -318,8 +318,10 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
     case 0x11111100:
         if(s->rgb){
             s->avctx->pix_fmt = PIX_FMT_BGRA;
-        }else
+        }else{
             s->avctx->pix_fmt = s->cs_itu601 ? PIX_FMT_YUV444P : PIX_FMT_YUVJ444P;
+            s->avctx->color_range = s->cs_itu601 ? AVCOL_RANGE_MPEG : AVCOL_RANGE_JPEG;
+        }
         assert(s->nb_components==3);
         break;
     case 0x11000000:
@@ -327,12 +329,15 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
         break;
     case 0x12111100:
         s->avctx->pix_fmt = s->cs_itu601 ? PIX_FMT_YUV440P : PIX_FMT_YUVJ440P;
+        s->avctx->color_range = s->cs_itu601 ? AVCOL_RANGE_MPEG : AVCOL_RANGE_JPEG;
         break;
     case 0x21111100:
         s->avctx->pix_fmt = s->cs_itu601 ? PIX_FMT_YUV422P : PIX_FMT_YUVJ422P;
+        s->avctx->color_range = s->cs_itu601 ? AVCOL_RANGE_MPEG : AVCOL_RANGE_JPEG;
         break;
     case 0x22111100:
         s->avctx->pix_fmt = s->cs_itu601 ? PIX_FMT_YUV420P : PIX_FMT_YUVJ420P;
+        s->avctx->color_range = s->cs_itu601 ? AVCOL_RANGE_MPEG : AVCOL_RANGE_JPEG;
         break;
     default:
         av_log(s->avctx, AV_LOG_ERROR, "Unhandled pixel format 0x%x\n", pix_fmt_id);
@@ -881,14 +886,19 @@ static int mjpeg_decode_scan(MJpegDecodeContext *s, int nb_components, int Ah, i
                 }
             }
 
-            if (s->restart_interval && show_bits(&s->gb, 8) == 0xFF){/* skip RSTn */
-                --s->restart_count;
+            if (s->restart_interval) --s->restart_count;
+            i= 8+((-get_bits_count(&s->gb))&7);
+            if (s->restart_interval && show_bits(&s->gb, i)  == (1<<i)-1){ /* skip RSTn */
+                int pos= get_bits_count(&s->gb);
                 align_get_bits(&s->gb);
                 while(show_bits(&s->gb, 8) == 0xFF)
                     skip_bits(&s->gb, 8);
-                skip_bits(&s->gb, 8);
-                for (i=0; i<nb_components; i++) /* reset dc */
-                    s->last_dc[i] = 1024;
+                if((get_bits(&s->gb, 8)&0xF8) == 0xD0){
+                    for (i=0; i<nb_components; i++) /* reset dc */
+                        s->last_dc[i] = 1024;
+                }else{
+                    skip_bits_long(&s->gb, pos - get_bits_count(&s->gb));
+                }
             }
         }
     }

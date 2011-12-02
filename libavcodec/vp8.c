@@ -33,6 +33,19 @@
 #   include "arm/vp8.h"
 #endif
 
+static void free_buffers(VP8Context *s)
+{
+    av_freep(&s->macroblocks_base);
+    av_freep(&s->filter_strength);
+    av_freep(&s->intra4x4_pred_mode_top);
+    av_freep(&s->top_nnz);
+    av_freep(&s->edge_emu_buffer);
+    av_freep(&s->top_border);
+    av_freep(&s->segmentation_map);
+
+    s->macroblocks = NULL;
+}
+
 static void vp8_decode_flush(AVCodecContext *avctx)
 {
     VP8Context *s = avctx->priv_data;
@@ -45,15 +58,7 @@ static void vp8_decode_flush(AVCodecContext *avctx)
     }
     memset(s->framep, 0, sizeof(s->framep));
 
-    av_freep(&s->macroblocks_base);
-    av_freep(&s->filter_strength);
-    av_freep(&s->intra4x4_pred_mode_top);
-    av_freep(&s->top_nnz);
-    av_freep(&s->edge_emu_buffer);
-    av_freep(&s->top_border);
-    av_freep(&s->segmentation_map);
-
-    s->macroblocks        = NULL;
+    free_buffers(s);
 }
 
 static int update_dimensions(VP8Context *s, int width, int height)
@@ -273,7 +278,7 @@ static int decode_frame_header(VP8Context *s, const uint8_t *buf, int buf_size)
 
     if (!s->macroblocks_base || /* first frame */
         width != s->avctx->width || height != s->avctx->height) {
-        if ((ret = update_dimensions(s, width, height) < 0))
+        if ((ret = update_dimensions(s, width, height)) < 0)
             return ret;
     }
 
@@ -487,6 +492,7 @@ void decode_mvs(VP8Context *s, VP8Macroblock *mb, int mb_x, int mb_y)
 
     AV_ZERO32(&near_mv[0]);
     AV_ZERO32(&near_mv[1]);
+    AV_ZERO32(&near_mv[2]);
 
     /* Process MB on top, left and top-left */
     #define MV_EDGE_CHECK(n)\
@@ -641,8 +647,6 @@ void decode_mb_mode(VP8Context *s, VP8Macroblock *mb, int mb_x, int mb_y, uint8_
  * @param block destination for block coefficients
  * @param probs probabilities to use when reading trees from the bitstream
  * @param i initial coeff index, 0 unless a separate DC block is coded
- * @param zero_nhood the initial prediction context for number of surrounding
- *                   all-zero blocks (only left/top, so 0-2)
  * @param qmul array holding the dc/ac dequant factor at position 0/1
  * @return 0 if no coeffs were decoded
  *         otherwise, the index of the last coeff decoded plus one
@@ -701,6 +705,17 @@ skip_eob:
 }
 #endif
 
+/**
+ * @param c arithmetic bitstream reader context
+ * @param block destination for block coefficients
+ * @param probs probabilities to use when reading trees from the bitstream
+ * @param i initial coeff index, 0 unless a separate DC block is coded
+ * @param zero_nhood the initial prediction context for number of surrounding
+ *                   all-zero blocks (only left/top, so 0-2)
+ * @param qmul array holding the dc/ac dequant factor at position 0/1
+ * @return 0 if no coeffs were decoded
+ *         otherwise, the index of the last coeff decoded plus one
+ */
 static av_always_inline
 int decode_block_coeffs(VP56RangeCoder *c, DCTELEM block[16],
                         uint8_t probs[16][3][NUM_DCT_TOKENS-1],
@@ -910,7 +925,8 @@ void intra_predict(VP8Context *s, uint8_t *dst[3], VP8Macroblock *mb,
                    int mb_x, int mb_y)
 {
     AVCodecContext *avctx = s->avctx;
-    int x, y, mode, nnz, tr;
+    int x, y, mode, nnz;
+    uint32_t tr;
 
     // for the first row, we need to run xchg_mb_border to init the top edge to 127
     // otherwise, skip it if we aren't going to deblock
@@ -939,7 +955,7 @@ void intra_predict(VP8Context *s, uint8_t *dst[3], VP8Macroblock *mb,
         // from the top macroblock
         if (!(!mb_y && avctx->flags & CODEC_FLAG_EMU_EDGE) &&
             mb_x == s->mb_width-1) {
-            tr = tr_right[-1]*0x01010101;
+            tr = tr_right[-1]*0x01010101u;
             tr_right = (uint8_t *)&tr;
         }
 
@@ -1034,10 +1050,9 @@ static const uint8_t subpel_idx[3][8] = {
 };
 
 /**
- * Generic MC function.
+ * luma MC function
  *
  * @param s VP8 decoding context
- * @param luma 1 for luma (Y) planes, 0 for chroma (Cb/Cr) planes
  * @param dst target buffer for block data at block position
  * @param src reference picture buffer at origin (0, 0)
  * @param mv motion vector (relative to block position) to get pixel data from
@@ -1083,6 +1098,23 @@ void vp8_mc_luma(VP8Context *s, uint8_t *dst, AVFrame *ref, const VP56mv *mv,
     }
 }
 
+/**
+ * chroma MC function
+ *
+ * @param s VP8 decoding context
+ * @param dst1 target buffer for block data at block position (U plane)
+ * @param dst2 target buffer for block data at block position (V plane)
+ * @param ref reference picture buffer at origin (0, 0)
+ * @param mv motion vector (relative to block position) to get pixel data from
+ * @param x_off horizontal position of block from origin (0, 0)
+ * @param y_off vertical position of block from origin (0, 0)
+ * @param block_w width of block (16, 8 or 4)
+ * @param block_h height of block (always same as block_w)
+ * @param width width of src/dst plane data
+ * @param height height of src/dst plane data
+ * @param linesize size of a single line of plane data, including padding
+ * @param mc_func motion compensation function pointers (bilinear or sixtap MC)
+ */
 static av_always_inline
 void vp8_mc_chroma(VP8Context *s, uint8_t *dst1, uint8_t *dst2, AVFrame *ref,
                    const VP56mv *mv, int x_off, int y_off,
@@ -1723,6 +1755,11 @@ static av_cold int vp8_decode_init_thread_copy(AVCodecContext *avctx)
 static int vp8_decode_update_thread_context(AVCodecContext *dst, const AVCodecContext *src)
 {
     VP8Context *s = dst->priv_data, *s_src = src->priv_data;
+
+    if (s->macroblocks_base &&
+        (s_src->mb_width != s->mb_width || s_src->mb_height != s->mb_height)) {
+        free_buffers(s);
+    }
 
     s->prob[0] = s_src->prob[!s_src->update_probabilities];
     s->segmentation = s_src->segmentation;

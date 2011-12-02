@@ -826,11 +826,15 @@ static int ebml_parse_elem(MatroskaDemuxContext *matroska,
     uint32_t id = syntax->id;
     uint64_t length;
     int res;
+    void *newelem;
 
     data = (char *)data + syntax->data_offset;
     if (syntax->list_elem_size) {
         EbmlList *list = data;
-        list->elem = av_realloc(list->elem, (list->nb_elem+1)*syntax->list_elem_size);
+        newelem = av_realloc(list->elem, (list->nb_elem+1)*syntax->list_elem_size);
+        if (!newelem)
+            return AVERROR(ENOMEM);
+        list->elem = newelem;
         data = (char*)list->elem + list->nb_elem*syntax->list_elem_size;
         memset(data, 0, syntax->list_elem_size);
         list->nb_elem++;
@@ -928,6 +932,8 @@ static int matroska_probe(AVProbeData *p)
      * Not fully fool-proof, but good enough. */
     for (i = 0; i < FF_ARRAY_ELEMS(matroska_doctypes); i++) {
         int probelen = strlen(matroska_doctypes[i]);
+        if (total < probelen)
+            continue;
         for (n = 4+size; n <= 4+size+total-probelen; n++)
             if (!memcmp(p->buf+n, matroska_doctypes[i], probelen))
                 return AVPROBE_SCORE_MAX;
@@ -958,6 +964,7 @@ static int matroska_decode_buffer(uint8_t** buf, int* buf_size,
     uint8_t* data = *buf;
     int isize = *buf_size;
     uint8_t* pkt_data = NULL;
+    uint8_t* newpktdata;
     int pkt_size = isize;
     int result = 0;
     int olen;
@@ -987,10 +994,18 @@ static int matroska_decode_buffer(uint8_t** buf, int* buf_size,
         zstream.avail_in = isize;
         do {
             pkt_size *= 3;
-            pkt_data = av_realloc(pkt_data, pkt_size);
+            newpktdata = av_realloc(pkt_data, pkt_size);
+            if (!newpktdata) {
+                inflateEnd(&zstream);
+                goto failed;
+            }
+            pkt_data = newpktdata;
             zstream.avail_out = pkt_size - zstream.total_out;
             zstream.next_out = pkt_data + zstream.total_out;
-            result = inflate(&zstream, Z_NO_FLUSH);
+            if (pkt_data) {
+                result = inflate(&zstream, Z_NO_FLUSH);
+            } else
+                result = Z_MEM_ERROR;
         } while (result==Z_OK && pkt_size<10000000);
         pkt_size = zstream.total_out;
         inflateEnd(&zstream);
@@ -1008,10 +1023,18 @@ static int matroska_decode_buffer(uint8_t** buf, int* buf_size,
         bzstream.avail_in = isize;
         do {
             pkt_size *= 3;
-            pkt_data = av_realloc(pkt_data, pkt_size);
+            newpktdata = av_realloc(pkt_data, pkt_size);
+            if (!newpktdata) {
+                BZ2_bzDecompressEnd(&bzstream);
+                goto failed;
+            }
+            pkt_data = newpktdata;
             bzstream.avail_out = pkt_size - bzstream.total_out_lo32;
             bzstream.next_out = pkt_data + bzstream.total_out_lo32;
-            result = BZ2_bzDecompress(&bzstream);
+            if (pkt_data) {
+                result = BZ2_bzDecompress(&bzstream);
+            } else
+                result = BZ_MEM_ERROR;
         } while (result==BZ_OK && pkt_size<10000000);
         pkt_size = bzstream.total_out_lo32;
         BZ2_bzDecompressEnd(&bzstream);
@@ -1064,13 +1087,17 @@ static void matroska_fix_ass_packet(MatroskaDemuxContext *matroska,
     }
 }
 
-static void matroska_merge_packets(AVPacket *out, AVPacket *in)
+static int matroska_merge_packets(AVPacket *out, AVPacket *in)
 {
-    out->data = av_realloc(out->data, out->size+in->size);
+    void *newdata = av_realloc(out->data, out->size+in->size);
+    if (!newdata)
+        return AVERROR(ENOMEM);
+    out->data = newdata;
     memcpy(out->data+out->size, in->data, in->size);
     out->size += in->size;
     av_destruct_packet(in);
     av_free(in);
+    return 0;
 }
 
 static void matroska_convert_tag(AVFormatContext *s, EbmlList *list,
@@ -1624,11 +1651,13 @@ static int matroska_deliver_packet(MatroskaDemuxContext *matroska,
         memcpy(pkt, matroska->packets[0], sizeof(AVPacket));
         av_free(matroska->packets[0]);
         if (matroska->num_packets > 1) {
+            void *newpackets;
             memmove(&matroska->packets[0], &matroska->packets[1],
                     (matroska->num_packets - 1) * sizeof(AVPacket *));
-            matroska->packets =
-                av_realloc(matroska->packets, (matroska->num_packets - 1) *
-                           sizeof(AVPacket *));
+            newpackets = av_realloc(matroska->packets,
+                            (matroska->num_packets - 1) * sizeof(AVPacket *));
+            if (newpackets)
+                matroska->packets = newpackets;
         } else {
             av_freep(&matroska->packets);
         }
@@ -1782,7 +1811,7 @@ static int matroska_parse_block(MatroskaDemuxContext *matroska, uint8_t *data,
                         lace_size[n] = lace_size[n - 1] + snum;
                         total += lace_size[n];
                     }
-                    lace_size[n] = size - total;
+                    lace_size[laces - 1] = size - total;
                     break;
                 }
             }
@@ -1959,6 +1988,7 @@ static int matroska_read_seek(AVFormatContext *s, int stream_index,
 
     if ((index = av_index_search_timestamp(st, timestamp, flags)) < 0) {
         avio_seek(s->pb, st->index_entries[st->nb_index_entries-1].pos, SEEK_SET);
+        matroska->current_id = 0;
         while ((index = av_index_search_timestamp(st, timestamp, flags)) < 0) {
             matroska_clear_queue(matroska);
             if (matroska_parse_cluster(matroska) < 0)
@@ -1987,6 +2017,7 @@ static int matroska_read_seek(AVFormatContext *s, int stream_index,
     }
 
     avio_seek(s->pb, st->index_entries[index_min].pos, SEEK_SET);
+    matroska->current_id = 0;
     matroska->skip_to_keyframe = !(flags & AVSEEK_FLAG_ANY);
     matroska->skip_to_timecode = st->index_entries[index].timestamp;
     matroska->done = 0;

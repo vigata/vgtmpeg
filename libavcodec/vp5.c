@@ -116,7 +116,7 @@ static void vp5_parse_vector_models(VP56Context *s)
                 model->vector_pdv[comp][node] = vp56_rac_gets_nn(c, 7);
 }
 
-static void vp5_parse_coeff_models(VP56Context *s)
+static int vp5_parse_coeff_models(VP56Context *s)
 {
     VP56RangeCoder *c = &s->c;
     VP56Model *model = s->modelp;
@@ -160,6 +160,7 @@ static void vp5_parse_coeff_models(VP56Context *s)
                 for (ctx=0; ctx<6; ctx++)
                     for (node=0; node<5; node++)
                         model->coeff_acct[pt][ct][cg][ctx][node] = av_clip(((model->coeff_ract[pt][ct][cg][node] * vp5_ract_lc[ct][cg][node][ctx][0] + 128) >> 8) + vp5_ract_lc[ct][cg][node][ctx][1], 1, 254);
+    return 0;
 }
 
 static void vp5_parse_coeff(VP56Context *s)
@@ -182,7 +183,8 @@ static void vp5_parse_coeff(VP56Context *s)
         model1 = model->coeff_dccv[pt];
         model2 = model->coeff_dcct[pt][ctx];
 
-        for (coeff_idx=0; coeff_idx<64; ) {
+        coeff_idx = 0;
+        for (;;) {
             if (vp56_rac_get_prob(c, model2[0])) {
                 if (vp56_rac_get_prob(c, model2[2])) {
                     if (vp56_rac_get_prob(c, model2[3])) {
@@ -219,8 +221,11 @@ static void vp5_parse_coeff(VP56Context *s)
                 ct = 0;
                 s->coeff_ctx[vp56_b6to4[b]][coeff_idx] = 0;
             }
+            coeff_idx++;
+            if (coeff_idx >= 64)
+                break;
 
-            cg = vp5_coeff_groups[++coeff_idx];
+            cg = vp5_coeff_groups[coeff_idx];
             ctx = s->coeff_ctx[vp56_b6to4[b]][coeff_idx];
             model1 = model->coeff_ract[pt][ct][cg];
             model2 = cg > 2 ? model1 : model->coeff_acct[pt][ct][cg][ctx];

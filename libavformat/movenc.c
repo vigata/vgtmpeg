@@ -206,7 +206,7 @@ static int mov_write_ac3_tag(AVIOContext *pb, MOVTrack *track)
     avio_wb32(pb, 11);
     ffio_wfourcc(pb, "dac3");
 
-    init_get_bits(&gbc, track->vosData+4, track->vosLen-4);
+    init_get_bits(&gbc, track->vosData+4, (track->vosLen-4) * 8);
     fscod      = get_bits(&gbc, 2);
     frmsizecod = get_bits(&gbc, 6);
     bsid       = get_bits(&gbc, 5);
@@ -1223,7 +1223,8 @@ static int mov_write_tkhd_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
 
     avio_wb32(pb, 0); /* reserved */
     avio_wb32(pb, 0); /* reserved */
-    avio_wb32(pb, 0x0); /* reserved (Layer & Alternate group) */
+    avio_wb16(pb, 0); /* layer */
+    avio_wb16(pb, st ? st->codec->codec_type : 0); /* alternate group) */
     /* Volume, only for audio */
     if(track->enc->codec_type == AVMEDIA_TYPE_AUDIO)
         avio_wb16(pb, 0x0100);
@@ -2058,7 +2059,7 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     if (!(trk->entry % MOV_INDEX_CLUSTER_SIZE)) {
-        trk->cluster = av_realloc(trk->cluster, (trk->entry + MOV_INDEX_CLUSTER_SIZE) * sizeof(*trk->cluster));
+        trk->cluster = av_realloc_f(trk->cluster, sizeof(*trk->cluster), (trk->entry + MOV_INDEX_CLUSTER_SIZE));
         if (!trk->cluster)
             return -1;
     }

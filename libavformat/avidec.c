@@ -220,13 +220,18 @@ static int read_braindead_odml_indx(AVFormatContext *s, int frame_num){
                 return -1;
             }
 
-            avio_seek(pb, offset+8, SEEK_SET);
+            if(avio_seek(pb, offset+8, SEEK_SET) < 0)
+                return -1;
             avi->odml_depth++;
             read_braindead_odml_indx(s, frame_num);
             avi->odml_depth--;
             frame_num += duration;
 
-            avio_seek(pb, pos, SEEK_SET);
+            if(avio_seek(pb, pos, SEEK_SET) < 0) {
+                av_log(s, AV_LOG_ERROR, "Failed to restore position after reading index");
+                return -1;
+            }
+
         }
     }
     avi->index_loaded=1;
@@ -634,7 +639,7 @@ static int avi_read_header(AVFormatContext *s, AVFormatParameters *ap)
 
                     if(st->codec->codec_tag==0 && st->codec->height > 0 && st->codec->extradata_size < 1U<<30){
                         st->codec->extradata_size+= 9;
-                        st->codec->extradata= av_realloc(st->codec->extradata, st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
+                        st->codec->extradata= av_realloc_f(st->codec->extradata, 1, st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
                         if(st->codec->extradata)
                             memcpy(st->codec->extradata + st->codec->extradata_size - 9, "BottomUp", 9);
                     }
@@ -1325,11 +1330,13 @@ static int avi_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
         /* the av_index_search_timestamp call above.                     */
         assert(stream_index == 0);
 
+        if(avio_seek(s->pb, pos, SEEK_SET) < 0)
+            return -1;
+
         /* Feed the DV video stream version of the timestamp to the */
         /* DV demux so it can synthesize correct timestamps.        */
         dv_offset_reset(avi->dv_demux, timestamp);
 
-        avio_seek(s->pb, pos, SEEK_SET);
         avi->stream_index= -1;
         return 0;
     }
@@ -1380,7 +1387,8 @@ static int avi_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
     }
 
     /* do the seek */
-    avio_seek(s->pb, pos_min, SEEK_SET);
+    if (avio_seek(s->pb, pos_min, SEEK_SET) < 0)
+        return -1;
     avi->stream_index= -1;
     return 0;
 }
