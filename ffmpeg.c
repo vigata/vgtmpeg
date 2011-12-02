@@ -3331,17 +3331,6 @@ static int opt_input_file(const char *opt, const char *filename)
         ffmpeg_exit(1);
     }
 
-//#if CONFIG_DVD_PROTOCOL
-extern int is_dvd_path(const char *path);
-static const char dfname[2048];
-/* make filename a dvd url if it's a dvd image */
-    if( is_dvd_path(filename) ) {
-        av_strlcat(dfname, "dvd://", 6);
-        av_strlcat(dfname, filename, 2048-6);
-        filename = dfname;
-    }
-//#endif
-
     memset(ap, 0, sizeof(*ap));
     ap->prealloced_context = 1;
     ap->sample_rate = audio_sample_rate;
@@ -3508,7 +3497,6 @@ static const char dfname[2048];
     if (verbose >= 0)
         av_dump_format(ic, nb_input_files, filename, 0);
 
-    dump_nlformat(ic, nb_input_files, filename, 0);
 
     input_files = grow_array(input_files, sizeof(*input_files), &nb_input_files, nb_input_files + 1);
     input_files[nb_input_files - 1].ctx        = ic;
@@ -4579,7 +4567,6 @@ int main(int argc, char **argv)
 {
     int64_t ti;
 
-    nlinput_prepare();
 
     av_log_set_flags(AV_LOG_SKIP_REPEATED);
 
@@ -4607,8 +4594,6 @@ int main(int argc, char **argv)
 
     init_opts();
 
-    if(verbose>=0)
-        show_banner();
 
     /* parse options */
     parse_options(argc, argv, options, opt_output_file);
