@@ -132,6 +132,7 @@ static int nb_input_codecs = 0;
 static int nb_input_files_ts_scale[MAX_FILES] = {0};
 
 static AVFormatContext *output_files[MAX_FILES];
+static int wrote_headers[MAX_FILES] = {0};
 static int nb_output_files = 0;
 
 static AVStreamMap *stream_maps = NULL;
@@ -566,12 +567,14 @@ static int vgtmpeg_exit(int ret)
     /* close files */
 
     /* if there was an error try to write the trailers */
-//    if( ret>0 ) {
-//        for(i=0;i<nb_output_files;i++) {
-//            os = output_files[i];
-//            av_write_trailer(os);
-//        }
-//    }
+    if( ret>0 ) {
+        for(i=0;i<nb_output_files;i++) {
+            if( wrote_headers[i] ) {
+                os = output_files[i];
+                av_write_trailer(os);
+            }
+        }
+    }
 
     for(i=0;i<nb_output_files;i++) {
         AVFormatContext *s = output_files[i];
@@ -2047,6 +2050,7 @@ static void parse_forced_key_frames(char *kf, AVOutputStream *ost,
     }
 }
 
+
 /* disables all programs but the one indicated with the program id */
 static void enable_program(int programid) {
     int k;
@@ -2055,14 +2059,18 @@ static void enable_program(int programid) {
         AVFormatContext *ic = input_files[k].ctx;
         int i, j;
 
+        /* disable all streams first */
+        for(i=0; i<ic->nb_streams; i++) {
+            ic->streams[i]->discard = AVDISCARD_ALL;
+        }
+
+        /* enable streams only in the selected program */
         for(i=0; i<ic->nb_programs; i++){
             AVProgram *p= ic->programs[i];
             if(p->id != programid){
                 p->discard = AVDISCARD_ALL;
-                for(j=0; j<p->nb_stream_indexes; j++){
-                    ic->streams[p->stream_index[j]]->discard= AVDISCARD_ALL;
-                }
             }else{
+                p->discard = AVDISCARD_DEFAULT;
                 for(j=0; j<p->nb_stream_indexes; j++){
                     ic->streams[p->stream_index[j]]->discard= AVDISCARD_DEFAULT;
                 }
@@ -2226,7 +2234,7 @@ static int transcode(AVFormatContext **output_files,
                         nb_frame_threshold[ist->st->codec->codec_type] <= ist->st->codec_info_nb_frames) {
                             ost->source_index = j;
                             found = 1;
-                            break;
+                            break; /* vgtmpeg. no need to keep looking */
                     }
                 }
 
@@ -2239,6 +2247,7 @@ static int transcode(AVFormatContext **output_files,
                                 && ist->st->discard != AVDISCARD_ALL) {
                                 ost->source_index = j;
                                 found = 1;
+                                break;
                             }
                         }
                     }
@@ -2636,6 +2645,7 @@ static int transcode(AVFormatContext **output_files,
             ret = AVERROR(EINVAL);
             goto dump_format;
         }
+        wrote_headers[i] = 1;
         if (strcmp(output_files[i]->oformat->name, "rtp")) {
             want_sdp = 0;
         }
