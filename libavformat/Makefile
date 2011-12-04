@@ -353,6 +353,7 @@ OBJS-$(CONFIG_MMSH_PROTOCOL)             += mmsh.o mms.o asf.o
 OBJS-$(CONFIG_MMST_PROTOCOL)             += mmst.o mms.o asf.o
 OBJS-$(CONFIG_MD5_PROTOCOL)              += md5proto.o
 OBJS-$(CONFIG_PIPE_PROTOCOL)             += file.o
+OBJS-$(CONFIG_DVD_PROTOCOL)				 += dvdurl.o dvdurl_common.o dvdurl_lang.o
 
 # external or internal rtmp
 RTMP-OBJS-$(CONFIG_LIBRTMP)               = librtmp.o
