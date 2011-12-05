@@ -3504,6 +3504,9 @@ static int parse_input_file(OptionsContext *o, const char *opt, const char *file
     /* dump the file content */
     av_dump_format(ic, nb_input_files, filename, 0);
 
+    if( output_xml )
+        dump_nlformat(ic, nb_input_files, filename, 0);
+
     input_files = grow_array(input_files, sizeof(*input_files), &nb_input_files, nb_input_files + 1);
     input_files[nb_input_files - 1].ctx        = ic;
     input_files[nb_input_files - 1].ist_index  = nb_input_streams - ic->nb_streams;
@@ -3526,8 +3529,7 @@ static int parse_input_file(OptionsContext *o, const char *opt, const char *file
         av_dict_free(&opts[i]);
     av_freep(&opts);
 
-    if( output_xml )
-        dump_nlformat(ic, nb_input_files, filename, 0);
+
 
 	reset_options(o, 1);
     return 0;
