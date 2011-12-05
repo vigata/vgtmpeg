@@ -21,10 +21,6 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-/* needed for usleep() */
-#define _XOPEN_SOURCE 600
-#define STATS_DELAY 100000
-
 #include "config.h"
 #include <ctype.h>
 #include <string.h>
@@ -1594,6 +1590,8 @@ static void print_report(OutputFile *output_files,
             av_log(NULL, AV_LOG_WARNING, "Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)\n");
         }
     }
+
+
 }
 
 static void flush_encoders(OutputStream *ost_table, int nb_ostreams)

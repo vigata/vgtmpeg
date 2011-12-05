@@ -24,8 +24,11 @@
 #ifndef __NLREPORT_H
 #define __NLREPORT_H
 
-static void print_nlreport( AVFormatContext **output_files,
-                         OutputStream **ost_table, int nb_ostreams,
+//#define _XOPEN_SOURCE 600
+//#define STATS_DELAY 100000
+#define STATS_DELAY 200000  /* delay between progress info messages */
+static void print_nlreport( OutputFile *output_files,
+                         OutputStream *ost_table, int nb_ostreams,
                          int is_last_report, int64_t timer_start )
 {
     char buf[1024];
@@ -59,17 +62,20 @@ static void print_nlreport( AVFormatContext **output_files,
 
     FFMSG_LOG( FFMSG_NODE_START(progress) );
 
-    oc = output_files[0];
+    oc = output_files[0].ctx;
 
-    total_size = url_fsize(oc->pb);
-    if(total_size<0) // FIXME improve url_fsize() so it works with non seekable output too
-        total_size= url_ftell(oc->pb);
+    total_size = avio_size(oc->pb);
+    if (total_size < 0) { // FIXME improve avio_size() so it works with non seekable output too
+        total_size= avio_tell(oc->pb);
+        if (total_size < 0)
+            total_size = 0;
+    }
 
     buf[0] = '\0';
     ti1 = 1e10;
     vid = 0;
     for(i=0;i<nb_ostreams;i++) {
-        ost = ost_table[i];
+        ost = &ost_table[i];
         enc = ost->st->codec;
         if (vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
             snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
@@ -101,7 +107,7 @@ static void print_nlreport( AVFormatContext **output_files,
     if (ti1 < 0.01)
         ti1 = 0.01;
 
-    if (is_last_report) {
+    if (1) {
         bitrate = (double)(total_size * 8) / ti1 / 1000.0;
 
         snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
@@ -573,6 +579,44 @@ static void show_help_options_json_flagdef() {
             )
 }
 
+static void show_options_children(const AVClass *class, int flags, int addflags, const char  *context_name_def ) {
+    const AVClass *child = NULL;
+    const char *context_name = context_name_def;
+    AVCodec *c;
+    AVOutputFormat *of;
+    AVInputFormat *ifo;
+
+    /* retrieve context name for this class */
+    c = NULL;
+    while((c=av_codec_next(c))) {
+        if(c->priv_class && !strcmp(c->priv_class->class_name, class->class_name)) {
+            context_name = c->name;
+        }
+    }
+
+    /* maybe its a format */
+    of = NULL;
+    while((of=av_oformat_next(of))) {
+        if(of->priv_class && !strcmp(of->priv_class->class_name, class->class_name)) {
+            context_name = of->name;
+        }
+    }
+
+    /* maybe its a format */
+    ifo = NULL;
+    while((ifo=av_iformat_next(ifo))) {
+        if(ifo->priv_class && !strcmp(ifo->priv_class->class_name, class->class_name)) {
+            context_name = ifo->name;
+        }
+    }
+
+    show_avoptions_json(&class, flags, 0, context_name, addflags);
+    printf("\n");
+
+    while (child = av_opt_child_class_next(class, child))
+        show_options_children(child, flags, addflags, child->class_name );
+}
+
 static void show_options_json() {
     /* general options  */
     const OptionDef *po;
@@ -594,28 +638,35 @@ static void show_options_json() {
             }
 
             /* codec options */
-            //show_avoptions_json(avcodec_opts[0], AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, "", 0);
+            show_options_children(avcodec_get_class(), AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM,0, "" );
+            /* muxer options */
+            show_options_children(avformat_get_class(), AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM,AV_OPT_FLAG_FORMAT_PARAM, "" );
+            /* sws */
+            show_options_children(sws_get_class(), AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM,0, sws_get_class()->class_name );
+
+
+            //show_avoptions_json(avcodec_opts[1], , 2, "", 0);
 
             /* individual codec options */
-            c = NULL;
-            while ((c = av_codec_next(c))) {
-                if (c->priv_class) {
-                    show_avoptions_json(&c->priv_class, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, c->name, 0);
-                }
-            }
+            /* c = NULL; */
+            /* while ((c = av_codec_next(c))) { */
+                /* if (c->priv_class) { */
+                    /* show_avoptions_json(&c->priv_class, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, c->name, 0); */
+                /* } */
+            /* } */
 
 
             /*muxer options */
             //show_avoptions_json(avformat_opts, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, "", AV_OPT_FLAG_FORMAT_PARAM );
 
             /* individual muxer options */
-            while ((oformat = av_oformat_next(oformat))) {
-                if (oformat->priv_class) {
-                show_avoptions_json(&oformat->priv_class, AV_OPT_FLAG_ENCODING_PARAM, 0, oformat->name, AV_OPT_FLAG_FORMAT_PARAM );
-                }
-            }
-
-            show_avoptions_json(sws_opts, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, "", AV_OPT_FLAG_FORMAT_PARAM );
+            /* while ((oformat = av_oformat_next(oformat))) { */
+                /* if (oformat->priv_class) { */
+                /* show_avoptions_json(&oformat->priv_class, AV_OPT_FLAG_ENCODING_PARAM, 0, oformat->name, AV_OPT_FLAG_FORMAT_PARAM ); */
+                /* } */
+            /* } */
+/*  */
+            /* show_avoptions_json(sws_opts, AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_DECODING_PARAM, 0, "", AV_OPT_FLAG_FORMAT_PARAM ); */
     ))
         )
 
