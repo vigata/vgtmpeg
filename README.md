@@ -22,7 +22,7 @@ We have precompiled binaries for multiple platforms ( Windows 32/64, MacOS and L
 
   * Alberto Vigata [@godromo](http://twitter.com/godromo) - lead developer
 
-Special thanks to all those who have contributed to ffmpeg over the years making it such a transforming and indispensable library for multimedia projects through the years
+Special thanks to all those who have contributed to ffmpeg over the years making it such a transforming and indispensable library for multimedia projects 
 
 
 ## License
