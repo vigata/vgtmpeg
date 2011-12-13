@@ -31,7 +31,7 @@ static void print_nlreport( OutputFile *output_files,
                          OutputStream *ost_table, int nb_ostreams,
                          int is_last_report, int64_t timer_start )
 {
-    char buf[1024];
+    //char buf[1024];
     OutputStream *ost;
     AVFormatContext *oc;
     int64_t total_size;
@@ -39,7 +39,7 @@ static void print_nlreport( OutputFile *output_files,
     int frame_number, vid, i;
     double bitrate, ti1, pts;
     static int64_t last_time = -1;
-    static int qp_histogram[52];
+    //static int qp_histogram[52];
 
     if (!is_last_report) {
         int64_t cur_time;
@@ -71,22 +71,23 @@ static void print_nlreport( OutputFile *output_files,
             total_size = 0;
     }
 
-    buf[0] = '\0';
+    //buf[0] = '\0';
     ti1 = 1e10;
     vid = 0;
     for(i=0;i<nb_ostreams;i++) {
         ost = &ost_table[i];
         enc = ost->st->codec;
-        if (vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
-            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
-                     !ost->st->stream_copy ?
-                     enc->coded_frame->quality/(float)FF_QP2LAMBDA : -1);
-        }
+//        if (vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
+//            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",
+//                     !ost->st->stream_copy ?
+//                     enc->coded_frame->quality/(float)FF_QP2LAMBDA : -1);
+//        }
         if (!vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
+            int fps;
             float t = (av_gettime()-timer_start) / 1000000.0;
 
             frame_number = ost->frame_number;
-            int fps = (t>1)?(int)(frame_number/t+0.5) : 0;
+            fps = (t>1)?(int)(frame_number/t+0.5) : 0;
             /* snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "frame=%5d fps=%3d q=%3.1f ", */
                      /* frame_number, fps, */
                      /* !ost->st->stream_copy ? */
@@ -95,8 +96,8 @@ static void print_nlreport( OutputFile *output_files,
             FFMSG_LOG( FFMSG_INT32_FMT(curframe), frame_number );
             FFMSG_LOG( FFMSG_INT32_FMT(fps), fps );
 
-            if(is_last_report)
-                snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "L");
+//            if(is_last_report)
+//                snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "L");
             vid = 1;
         }
         /* compute min output value */
@@ -110,9 +111,9 @@ static void print_nlreport( OutputFile *output_files,
     if (1) {
         bitrate = (double)(total_size * 8) / ti1 / 1000.0;
 
-        snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
-            "size=%8.0fkB time=%0.2f bitrate=%6.1fkbits/s",
-            (double)total_size / 1024, ti1, bitrate);
+//        snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf),
+//            "size=%8.0fkB time=%0.2f bitrate=%6.1fkbits/s",
+//            (double)total_size / 1024, ti1, bitrate);
 
         FFMSG_LOG( FFMSG_INTEGER_FMT(size), total_size );
         FFMSG_LOG( FFMSG_INT32_FMT(bitrate), (int)(bitrate*1000.0) );
@@ -121,9 +122,9 @@ static void print_nlreport( OutputFile *output_files,
         FFMSG_LOG( FFMSG_INT32_FMT(is_last_report), is_last_report );
         FFMSG_LOG( FFMSG_INT32_FMT(curtime), (int)(ti1*1000.0) );
 
-        if (nb_frames_dup || nb_frames_drop)
-          snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), " dup=%d drop=%d",
-                  nb_frames_dup, nb_frames_drop);
+//        if (nb_frames_dup || nb_frames_drop)
+//          snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), " dup=%d drop=%d",
+//                  nb_frames_dup, nb_frames_drop);
 
         /* if (verbose >= 0) */
             /* fprintf(stderr, "%s    \r", buf); */
@@ -163,7 +164,8 @@ static void print_nlreport( OutputFile *output_files,
  */
 
 
-/* escape C string so it can be used as a string literal */
+/* escape C string so it can be used as a string literal. Make sure to call
+ * c_strfree to free the string returned by c_strescape  */
 static void c_strfree(char *str) { 
     free(str);
 }
@@ -177,7 +179,7 @@ static char *c_strescape (const char *source)
     //g_return_val_if_fail (source != NULL, NULL);
     if(!source) return NULL;
 
-    p = (unsigned char *) source;
+    p = (const unsigned char *) source;
     /* Each source byte needs maximally four destination chars (\777) */
     q = dest = malloc (strlen (source) * 4 + 1);
 
@@ -378,11 +380,11 @@ static void show_formats_json(void) {
 static void show_avoptions_opt_list_enum(void *obj,  const char *unit,
                      int req_flags, int rej_flags) {
     const AVOption *opt=NULL;
-    char *class_name = (*(AVClass**)obj)->class_name;
+    //const char *class_name = (*(AVClass**)obj)->class_name;
     int first=1;
 
 
-    while ((opt= av_next_option(obj, opt))) {
+    while ((opt= av_opt_next(obj, opt))) {
         if (!(opt->flags & req_flags) || (opt->flags & rej_flags))
             continue;
 
@@ -420,7 +422,7 @@ static void show_avoptions_json(void *obj, int req_flags, int rej_flags, const c
         return;
 
 
-    while ((opt= av_next_option(obj, opt))) {
+    while ((opt= av_opt_next(obj, opt))) {
         if (!(opt->flags & req_flags) || (opt->flags & rej_flags))
             continue;
 
@@ -498,14 +500,15 @@ static void show_avoptions_json(void *obj, int req_flags, int rej_flags, const c
             /* av_log(av_log_obj, AV_LOG_INFO, " %s", opt->help); */
         /* av_log(av_log_obj, AV_LOG_INFO, "\n"); */
 
-            
-            int has_enum = opt->unit && opt->type!=FF_OPT_TYPE_CONST;
-            JSON_PROPERTY( 0, has_enum, JSON_BOOLEAN_C(has_enum) );
+            {
+                int has_enum = opt->unit && opt->type!=FF_OPT_TYPE_CONST;
+                JSON_PROPERTY( 0, has_enum, JSON_BOOLEAN_C(has_enum) );
 
-            if ( has_enum ) {
-                JSON_PROPERTY(0, enums, JSON_ARRAY(
-                            show_avoptions_opt_list_enum(obj,  opt->unit, req_flags, rej_flags);
-                            ));
+                if ( has_enum ) {
+                    JSON_PROPERTY(0, enums, JSON_ARRAY(
+                                show_avoptions_opt_list_enum(obj,  opt->unit, req_flags, rej_flags);
+                                ));
+                }
             }
             )
         );
@@ -527,7 +530,7 @@ static void show_help_options_json(const OptionDef *po)
 }
 
 #define AV_OPT_FLAG_FORMAT_PARAM (1<<17)
-static void avcontext_flagdef() {
+static void avcontext_flagdef(void) {
     JSON_OBJECT(
             JSON_PROPERTY( 1, name, JSON_STRING_C("avflags") );
             JSON_PROPERTY( 0, def,  JSON_OBJECT(
@@ -542,7 +545,7 @@ static void avcontext_flagdef() {
             )
 }
 
-static void avcontext_typedef() {
+static void avcontext_typedef(void) {
     JSON_OBJECT(
             JSON_PROPERTY( 1, name, JSON_STRING_C("avtype") );
             JSON_PROPERTY( 0, def,  JSON_OBJECT(
@@ -558,7 +561,7 @@ static void avcontext_typedef() {
                     ));
             )
 }  
-static void show_help_options_json_flagdef() {
+static void show_help_options_json_flagdef(void) {
     JSON_OBJECT(
             JSON_PROPERTY( 1, name, JSON_STRING_C("gflags") );
             JSON_PROPERTY( 0, def,  JSON_OBJECT(
@@ -617,12 +620,10 @@ static void show_options_children(const AVClass *class, int flags, int addflags,
         show_options_children(child, flags, addflags, child->class_name );
 }
 
-static void show_options_json() {
+static void show_options_json(void) {
     /* general options  */
     const OptionDef *po;
     int first = 1;
-    AVCodec *c;
-    AVOutputFormat *oformat=NULL;
 
     JSON_OBJECT(
             JSON_PROPERTY(1, flagdef, JSON_ARRAY(

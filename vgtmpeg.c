@@ -292,6 +292,7 @@ static int         nb_input_files   = 0;
 int output_xml = 0;
 int server_mode = 0;
 int banner = 0;
+int default_program_id = -1;
 
 static OutputStream *output_streams = NULL;
 static int        nb_output_streams = 0;
@@ -1993,8 +1994,7 @@ fail:
 }
 
 /* disables all programs but the one indicated with the program id */
-static void enable_program(int programid) {
-    int k;
+static void enable_program(int programid ) {
 
     for( int k=0; k<nb_input_files; k++) {
         AVFormatContext *ic = input_files[k].ctx;
@@ -3554,6 +3554,7 @@ static void parse_forced_key_frames(char *kf, OutputStream *ost)
 }
 static void select_default_program(int programid) {
     //default_programid = programid;
+    default_program_id = programid;
 }
 
 
@@ -4122,13 +4123,18 @@ static void opt_output_file(void *optctx, const char *filename)
             input_streams[index].discard = 0;\
         }
 
+        /* if a default program is enabled, disable all streams that don't belong to that program */
+        if(default_program_id>0) 
+            enable_program(default_program_id);
+
         /* video: highest resolution */
         if (!o->video_disable && oc->oformat->video_codec != CODEC_ID_NONE) {
             int area = 0, idx = -1;
             for (i = 0; i < nb_input_streams; i++) {
                 ist = &input_streams[i];
                 if (ist->st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
-                    ist->st->codec->width * ist->st->codec->height > area) {
+                    ist->st->codec->width * ist->st->codec->height > area && 
+                    ist->st->discard != AVDISCARD_ALL /* vgtmpeg */ ) {
                     area = ist->st->codec->width * ist->st->codec->height;
                     idx = i;
                 }
@@ -4142,7 +4148,8 @@ static void opt_output_file(void *optctx, const char *filename)
             for (i = 0; i < nb_input_streams; i++) {
                 ist = &input_streams[i];
                 if (ist->st->codec->codec_type == AVMEDIA_TYPE_AUDIO &&
-                    ist->st->codec->channels > channels) {
+                    ist->st->codec->channels > channels && 
+                    ist->st->discard != AVDISCARD_ALL  /* vgtmpeg */ ) {
                     channels = ist->st->codec->channels;
                     idx = i;
                 }
@@ -4153,7 +4160,8 @@ static void opt_output_file(void *optctx, const char *filename)
         /* subtitles: pick first */
         if (!o->subtitle_disable && (oc->oformat->subtitle_codec != CODEC_ID_NONE || subtitle_codec_name)) {
             for (i = 0; i < nb_input_streams; i++)
-                if (input_streams[i].st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+                if (input_streams[i].st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE &&
+                        input_streams[i].st->discard!=AVDISCARD_ALL  /* vgtmpeg */  ) {
                     NEW_STREAM(subtitle, i);
                     break;
                 }

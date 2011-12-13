@@ -89,7 +89,7 @@ static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int e
         FFMSG_LOG( FFMSG_STRING_FMT(codecname), codec_name );
 
         if (enc->pix_fmt != PIX_FMT_NONE) {
-            FFMSG_LOG( FFMSG_STRING_FMT(picfmt), avcodec_get_pix_fmt_name(enc->pix_fmt) );
+            FFMSG_LOG( FFMSG_STRING_FMT(picfmt), av_get_pix_fmt_name(enc->pix_fmt) );
         }
 
         if (enc->width) {
@@ -125,7 +125,7 @@ static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int e
         FFMSG_LOG( FFMSG_INTEGER_FMT(channel_layout),  enc->channel_layout );
 
         if (enc->sample_fmt != SAMPLE_FMT_NONE) {
-            FFMSG_LOG( FFMSG_STRING_FMT(audfmt), avcodec_get_sample_fmt_name(enc->sample_fmt));
+            FFMSG_LOG( FFMSG_STRING_FMT(audfmt), av_get_sample_fmt_name(enc->sample_fmt));
         }
         break;
     case AVMEDIA_TYPE_DATA:
@@ -156,35 +156,21 @@ static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int e
 
 static void dump_stream_nlformat(AVFormatContext *ic, int i, int index, int is_output)
 {
+    char buf[256];
+    AVStream *st = ic->streams[i];
+    AVDictionaryEntry *lang;
+
     FFMSG_LOG( FFMSG_NODE_START_FMT("stream_%d_%d"), index, i );
     FFMSG_LOG( FFMSG_INT32_FMT(index), index );
     FFMSG_LOG( FFMSG_INT32_FMT(stid), i );
 
-    char buf[256];
-    int flags = (is_output ? ic->oformat->flags : ic->iformat->flags);
-    AVStream *st = ic->streams[i];
-    int g = av_gcd(st->time_base.num, st->time_base.den);
-    AVMetadataTag *lang = av_metadata_get(st->metadata, "language", NULL, 0);
     avcodec_nlstring(buf, sizeof(buf), st->codec, is_output);
- 
- 
+
+    lang = av_dict_get(ic->metadata, "language", 0, 0);
     if (lang) {
-        FFMSG_LOG( FFMSG_STRING_FMT(lang), lang->value );
+        FFMSG_LOG(FFMSG_STRING_FMT(lang), lang->value);
     }
  
-    /* av_log(NULL, AV_LOG_DEBUG, ", %d, %d/%d", st->codec_info_nb_frames, st->time_base.num/g, st->time_base.den/g); */
-    /* av_log(NULL, AV_LOG_INFO, ": %s", buf); */
-    /* if (st->sample_aspect_ratio.num && // default */
-        /* av_cmp_q(st->sample_aspect_ratio, st->codec->sample_aspect_ratio)) { */
-        /* AVRational display_aspect_ratio; */
-        /* av_reduce(&display_aspect_ratio.num, &display_aspect_ratio.den, */
-                  /* st->codec->width*st->sample_aspect_ratio.num, */
-                  /* st->codec->height*st->sample_aspect_ratio.den, */
-                  /* 1024*1024); */
-        /* av_log(NULL, AV_LOG_INFO, ", PAR %d:%d DAR %d:%d", */
-                 /* st->sample_aspect_ratio.num, st->sample_aspect_ratio.den, */
-                 /* display_aspect_ratio.num, display_aspect_ratio.den); */
-    /* } */
     if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO){
         if(st->avg_frame_rate.den && st->avg_frame_rate.num) {
             FFMSG_LOG( FFMSG_INT32_FMT(avg_framerate_num), st->avg_frame_rate.num );
@@ -252,10 +238,10 @@ static void dump_nlformat(AVFormatContext *ic,
     }
 
     if(ic->nb_programs) {
-        FFMSG_LOG( FFMSG_NODE_START(programs) );
         int j, k, total = 0;
+        FFMSG_LOG( FFMSG_NODE_START(programs) );
         for(j=0; j<ic->nb_programs; j++) {
-            AVMetadataTag *name = av_metadata_get(ic->programs[j]->metadata,  "name", NULL, 0);
+            AVDictionaryEntry *name = av_dict_get(ic->programs[j]->metadata,  "name", NULL, 0);
             FFMSG_LOG( FFMSG_NODE_START_FMT("id%d"), ic->programs[j]->id );
             FFMSG_LOG( FFMSG_INTEGER_FMT(id), (int64_t) ic->programs[j]->id );
             FFMSG_LOG( FFMSG_STRING_FMT(name), name ? name->value : ""  );
