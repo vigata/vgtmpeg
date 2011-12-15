@@ -3418,7 +3418,8 @@ static int parse_input_file(OptionsContext *o, const char *opt, const char *file
         filename = "pipe:";
 
     using_stdin |= !strncmp(filename, "pipe:", 5) ||
-                    !strcmp(filename, "/dev/stdin");
+                    !strcmp(filename, "/dev/stdin") ||
+                    server_mode /* vgtmpeg */;
 
     /* get default parameters from command line */
     ic = avformat_alloc_context();
