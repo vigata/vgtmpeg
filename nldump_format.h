@@ -166,7 +166,7 @@ static void dump_stream_nlformat(AVFormatContext *ic, int i, int index, int is_o
 
     avcodec_nlstring(buf, sizeof(buf), st->codec, is_output);
 
-    lang = av_dict_get(ic->metadata, "language", 0, 0);
+    lang = av_dict_get(st->metadata, "language", 0, 0);
     if (lang) {
         FFMSG_LOG(FFMSG_STRING_FMT(lang), lang->value);
     }
