@@ -25,9 +25,24 @@
 #define __NLINPUT_H
 
 #include "nlffmsg.h"
+#include "config.h"
 
+#ifndef attribute_align_arg
+#if ARCH_X86_32 && AV_GCC_VERSION_AT_LEAST(4,2)
+#    define attribute_align_arg __attribute__((force_align_arg_pointer))
+#else
+#    define attribute_align_arg
+#endif
+#endif
 
+#if HAVE_PTHREADS
 #include <pthread.h>
+#elif HAVE_W32THREADS
+#include "libavcodec/w32pthreads.h"
+#elif HAVE_OS2THREADS
+#include "os2threads.h"
+#endif
+
 #include <stdio.h>
 
 
@@ -90,22 +105,25 @@ static void *nlinput_start(void *c) {
        }
     }
 
-    pthread_exit(NULL);
+    return 0;
+    
+    // pthread_exit(NULL);
 }
 
 /* static objects to be imported on module */
 static nlinput_t nli;
 static pthread_t nlin_th;
-static pthread_attr_t nlin_attr;
+// static pthread_attr_t nlin_attr;
+//
 
 /* fires up input thread */
 static void nlinput_prepare(void) {
     /* starting nlinput */
     memset( &nli, 0, sizeof (nlinput_t) );
 
-    pthread_attr_init(&nlin_attr);
-    pthread_attr_setdetachstate(&nlin_attr, PTHREAD_CREATE_JOINABLE );
-    pthread_create( &nlin_th, &nlin_attr, nlinput_start, (void *)&nli );
+    //pthread_attr_init(&nlin_attr);
+    //pthread_attr_setdetachstate(&nlin_attr, PTHREAD_CREATE_JOINABLE );
+    pthread_create( &nlin_th, NULL /*nlin_attr*/, nlinput_start, (void *)&nli );
 }
 
 /* shutdown input thread */
@@ -114,7 +132,7 @@ static void nlinput_cancel(void) {
     printf("nlinput_cancel\n");
 
     pthread_join( nlin_th, &status );
-    pthread_attr_destroy(&nlin_attr);
+    //pthread_attr_destroy(&nlin_attr);
 }
 
 
