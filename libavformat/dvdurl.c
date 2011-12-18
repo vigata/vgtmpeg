@@ -609,7 +609,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
 
         lang = lang_for_code( vts->vtsi_mat->vts_audio_attr[i].lang_code );
 
-        snprintf( audio->config.lang.description, sizeof( audio->config.lang.description ), "%s ",
+        snprintf( audio->config.lang.description, sizeof( audio->config.lang.description ), "%s",
             strlen(lang->native_name) ? lang->native_name : lang->eng_name,
             audio->config.in.codec == HB_ACODEC_AC3 ? "AC3" : ( audio->config.in.codec ==
                 HB_ACODEC_DCA ? "DTS" : ( audio->config.in.codec ==

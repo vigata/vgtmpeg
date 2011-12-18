@@ -24,6 +24,8 @@
 #ifndef __NLDUMP_FORMAT_H
 #define __NLDUMP_FORMAT_H
 
+#include "libavutil/dict.h"
+
 static int get_bit_rate(AVCodecContext *ctx)
 {
     int bit_rate;
@@ -45,6 +47,25 @@ static int get_bit_rate(AVCodecContext *ctx)
         break;
     }
     return bit_rate;
+}
+
+static void nl_dump_metadata(AVDictionary *m)
+{
+    if(m ){
+        AVDictionaryEntry *tag=NULL;
+
+        FFMSG_LOG(FFMSG_NODE_START(metadata));
+
+        while((tag=av_dict_get(m, "", tag, AV_DICT_IGNORE_SUFFIX))) {
+            char tmp[1024];
+            int i;
+            av_strlcpy(tmp, tag->value, sizeof(tmp));
+            for(i=0; i<strlen(tmp); i++) if(tmp[i]==0xd) tmp[i]=' ';
+
+            FFMSG_STRING_VALUE(tag->key, tmp);
+        }
+        FFMSG_LOG(FFMSG_NODE_STOP(metadata));
+    }
 }
 
 static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int encode) {
@@ -166,6 +187,7 @@ static void dump_stream_nlformat(AVFormatContext *ic, int i, int index, int is_o
 
     avcodec_nlstring(buf, sizeof(buf), st->codec, is_output);
 
+    nl_dump_metadata(st->metadata);
     lang = av_dict_get(st->metadata, "language", 0, 0);
     if (lang) {
         FFMSG_LOG(FFMSG_STRING_FMT(lang), lang->value);

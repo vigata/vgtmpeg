@@ -274,7 +274,10 @@ static void dvd_create_streams(AVFormatContext *s) {
 
 			st = dvd_add_stream(s, 0, PRIVATE_STREAM_1, DVDAUDIO_STARTCODE_FROM_HB_ID(as->id), DVD_AVID(title->index,DVDAUDIO_STARTCODE_FROM_HB_ID(as->id)) ); /* mpeg 2 stream type works for mpeg1/2 */
 			if(st) {
-			    av_dict_set(&st->metadata, "language", as->config.lang.description, 0);
+			    av_dict_set(&st->metadata, "language", as->config.lang.iso639_2, 0);
+			    av_dict_set(&st->metadata, "language-iso639_2", as->config.lang.iso639_2, 0);
+			    av_dict_set(&st->metadata, "language-simple", as->config.lang.simple, 0);
+			    av_dict_set(&st->metadata, "language-description", as->config.lang.description, 0);
 			    st->duration = duration; // the 90khz base was set in dvd_add_stream
 			    ff_program_add_stream_index(s, title->index, st->index);
 			}
