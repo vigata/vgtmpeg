@@ -41,11 +41,14 @@
 #define FFMSG_NODE_START_FMT(x) "<" x ">\n"
 #define FFMSG_NODE_STOP_FMT(x)   "</" x ">\n" 
 
+
 #define FFMSG_STRING_FMT(name) "<" #name " type=\"string\" val=\"%s\"/>\n"
 #define FFMSG_INTEGER_FMT(name) "<" #name " type=\"integer\" val=\"%" PRIi64 "\"/>\n"
 #define FFMSG_INT32_FMT(name) "<" #name " type=\"integer\" val=\"%d\"/>\n"
 
 #define FFMSG_LOG(...)  av_log ( NULL, AV_LOG_INFO, __VA_ARGS__ )
+
+
 
 #define FFMSG_START_MSGTYPE( type, mainkey) \
     FFMSG_LOG( FFMSG_START );   \
@@ -58,6 +61,41 @@
     FFMSG_LOG( FFMSG_NODE_STOP(mainkey) ); \
     FFMSG_LOG( FFMSG_STOP );
 
+/* buffer to use for escaped xml strings. this allows for a maximum of 2048 escaped characters */
+#define MAX_FFGMT_STRING_LEN 2048
+static char xmlesc1[MAX_FFGMT_STRING_LEN*6];
+static char xmlesc2[MAX_FFGMT_STRING_LEN*6];
+
+static char *xescape(char *buf, char *s) {
+	int i=MAX_FFGMT_STRING_LEN;
+	char *o = buf;
+	while(i-- && *s ) {
+		switch(*s) {
+		case '<':
+			*o++ = '&'; *o++ = 'l'; *o++ = 't';
+			break;
+		case '>':
+			*o++ = '&'; *o++ = 'g'; *o++ = 't';
+			break;
+		case '"':
+			*o++ = '&'; *o++ = 'q'; *o++ = 'u'; *o++ = 'o'; *o++ = 't';
+			break;
+		case '\'':
+			*o++ = '&'; *o++ = 'a'; *o++ = 'p'; *o++ = 'o'; *o++ = 's';
+			break;
+		case '&':
+			*o++ = '&'; *o++ = 'a'; *o++ = 'm'; *o++ = 'p';
+			break;
+		default:
+			*o++ = *s++;
+			break;
+		}
+	}
+	*o=0;
+	return buf;
+}
+
+#define FFMSG_STRING_VALUE(name,value) {FFMSG_LOG("<%s type=\"string\" val=\"%s\"/>\n", xescape(xmlesc1,name), xescape(xmlesc2,value));}
 /* definitions 
  *
  * ffnlmsg.version.major        (integer)

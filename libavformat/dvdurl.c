@@ -273,7 +273,7 @@ hb_dvd_t * hb_dvdread_init( char * path )
 
     path = get_root_dvd_path(path);
 
-    e = calloc( sizeof( hb_dvd_t ), 1 );
+    e = av_calloc( sizeof( hb_dvd_t ), 1 );
     d = &(e->dvdread);
 
 	/* Log DVD drive region code */
@@ -535,7 +535,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
 
         hb_log_level( loglevel, "scan: checking audio %d", i + 1 );
 
-        audio = calloc( sizeof( hb_audio_t ), 1 );
+        audio = av_calloc( sizeof( hb_audio_t ), 1 );
 
         audio_format  = vts->vtsi_mat->vts_audio_attr[i].audio_format;
         //lang_code     = vts->vtsi_mat->vts_audio_attr[i].lang_code;
@@ -609,7 +609,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
 
         lang = lang_for_code( vts->vtsi_mat->vts_audio_attr[i].lang_code );
 
-        snprintf( audio->config.lang.description, sizeof( audio->config.lang.description ), "%s ",
+        snprintf( audio->config.lang.description, sizeof( audio->config.lang.description ), "%s",
             strlen(lang->native_name) ? lang->native_name : lang->eng_name,
             audio->config.in.codec == HB_ACODEC_AC3 ? "AC3" : ( audio->config.in.codec ==
                 HB_ACODEC_DCA ? "DTS" : ( audio->config.in.codec ==
@@ -688,7 +688,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
 
         lang = lang_for_code( vts->vtsi_mat->vts_subp_attr[i].lang_code );
 
-        subtitle = calloc( sizeof( hb_subtitle_t ), 1 );
+        subtitle = av_calloc( sizeof( hb_subtitle_t ), 1 );
         subtitle->track = i+1;
         subtitle->id = ( ( 0x20 + position ) << 8 ) | 0xbd;
         snprintf( subtitle->lang, sizeof( subtitle->lang ), "%s",
@@ -764,7 +764,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
     for( i = 0, c = 1;
          i < vts->vts_ptt_srpt->title[title->ttn-1].nr_of_ptts; i++ )
     {
-        chapter = calloc( sizeof( hb_chapter_t ), 1 );
+        chapter = av_calloc( sizeof( hb_chapter_t ), 1 );
         /* remember the on-disc chapter number */
         chapter->index = i + 1;
 

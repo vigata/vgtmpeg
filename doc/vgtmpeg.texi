@@ -21,6 +21,7 @@ vgtmpeg [global options] [[infile options][@option{-i} @var{infile}]]... @{[outf
 
 @chapter Description
 @c man begin DESCRIPTION
+vgtmpeg is a ffmpeg/avconv clone that adds a number of additional features to the stock ffmpeg and libavformat/libavcodec libraries augmenting its functionality. One of the most important ones being support for DVD folders/ISO input.
 
 vgtmpeg is a very fast video and audio converter that can also grab from
 a live audio/video source. It can also convert between arbitrary sample
@@ -1163,6 +1164,7 @@ the input file in reverse order.
 @end itemize
 @c man end EXAMPLES
 
+@include vgtmpeg_dvd.texi
 @include eval.texi
 @include decoders.texi
 @include encoders.texi
@@ -1179,6 +1181,7 @@ the input file in reverse order.
 
 @setfilename vgtmpeg
 @settitle vgtmpeg video converter
+@documentencoding UTF-8
 
 @c man begin SEEALSO
 ffplay(1), ffprobe(1), ffserver(1) and the FFmpeg HTML documentation

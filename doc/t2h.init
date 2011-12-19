@@ -43,9 +43,9 @@ sub FFmpeg_print_page_head($$)
          ($description ne '');
     $description = $Texi2HTML::THISDOC{'documentdescription'} if (defined($Texi2HTML::THISDOC{'documentdescription'}));
     my $encoding = '';
-    $encoding = "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=$ENCODING\">" if (defined($ENCODING) and ($ENCODING ne ''));
+    $encoding = "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">";
     $longtitle =~ s/Documentation.*//g;
-    $longtitle = "FFmpeg documentation : " . $longtitle;
+    $longtitle = "vgtmpeg documentation : " . $longtitle;
 
     print $fh <<EOT;
 $DOCTYPE
