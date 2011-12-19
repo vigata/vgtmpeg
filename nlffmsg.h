@@ -72,24 +72,25 @@ static char *xescape(char *buf, char *s) {
 	while(i-- && *s ) {
 		switch(*s) {
 		case '<':
-			*o++ = '&'; *o++ = 'l'; *o++ = 't';
+			*o++ = '&'; *o++ = 'l'; *o++ = 't'; *o++ = ';';
 			break;
 		case '>':
-			*o++ = '&'; *o++ = 'g'; *o++ = 't';
+			*o++ = '&'; *o++ = 'g'; *o++ = 't'; *o++ = ';';
 			break;
 		case '"':
-			*o++ = '&'; *o++ = 'q'; *o++ = 'u'; *o++ = 'o'; *o++ = 't';
+			*o++ = '&'; *o++ = 'q'; *o++ = 'u'; *o++ = 'o'; *o++ = 't'; *o++ = ';';
 			break;
 		case '\'':
-			*o++ = '&'; *o++ = 'a'; *o++ = 'p'; *o++ = 'o'; *o++ = 's';
+			*o++ = '&'; *o++ = 'a'; *o++ = 'p'; *o++ = 'o'; *o++ = 's'; *o++ = ';';
 			break;
 		case '&':
-			*o++ = '&'; *o++ = 'a'; *o++ = 'm'; *o++ = 'p';
+			*o++ = '&'; *o++ = 'a'; *o++ = 'm'; *o++ = 'p'; *o++ = ';';
 			break;
 		default:
-			*o++ = *s++;
+			*o++ = *s;
 			break;
 		}
+		s++;
 	}
 	*o=0;
 	return buf;
