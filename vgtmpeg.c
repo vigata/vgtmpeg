@@ -291,7 +291,7 @@ static int         nb_input_files   = 0;
 #include "vgtmpeg.h"
 int output_xml = 0;
 int server_mode = 0;
-int banner = 0;
+int banner = 1;
 int default_program_id = -1;
 
 static OutputStream *output_streams = NULL;
