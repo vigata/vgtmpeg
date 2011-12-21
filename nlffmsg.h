@@ -85,9 +85,10 @@ static char *xescape(char *buf, char *s) {
 			break;
 		case '&':
 			*o++ = '&'; *o++ = 'a'; *o++ = 'm'; *o++ = 'p'; *o++ = ';';
-			break;
+			break;        
 		default:
-			*o++ = *s;
+            /* ignore not allowed xml characters */
+            if( ((unsigned char)(*s)) >= 0x20 ) *o++ = *s;
 			break;
 		}
 		s++;
