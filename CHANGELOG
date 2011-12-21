@@ -1,2 +1,5 @@
 1.2.10
 - Fixed bug that was reporting incorrent duration of streams and DVD titles
+
+1.2.9
+- Initial public release with DVD support
