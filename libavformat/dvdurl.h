@@ -73,25 +73,26 @@ union hb_dvd_s
 
 typedef union  hb_dvd_s hb_dvd_t;
 
-struct hb_dvd_func_s
-{
-    hb_dvd_t *    (* init)        ( char * );
-    void          (* close)       ( hb_dvd_t ** );
-    char        * (* name)        ( char * );
-    int           (* title_count) ( hb_dvd_t * );
-    hb_title_t  * (* title_scan)  ( hb_dvd_t *, int, uint64_t );
-    int           (* start)       ( hb_dvd_t *, hb_title_t *, int );
-    void          (* stop)        ( hb_dvd_t * );
-    int           (* seek)        ( hb_dvd_t *, float );
-    hb_buffer_t * (* read)        ( hb_dvd_t * );
-    int           (* chapter)     ( hb_dvd_t * );
-    int           (* angle_count) ( hb_dvd_t * );
-    void          (* set_angle)   ( hb_dvd_t *, int );
-    int           (* main_feature)( hb_dvd_t *, hb_list_t * );
-};
-typedef struct hb_dvd_func_s hb_dvd_func_t;
-
-hb_dvd_func_t * hb_dvdread_methods( void );
+//struct hb_dvd_func_s
+//{
+//    hb_dvd_t *    (* init)        ( char * );
+//    void          (* close)       ( hb_dvd_t ** );
+//    char        * (* name)        ( char * );
+//    int           (* title_count) ( hb_dvd_t * );
+//    hb_title_t  * (* title_scan)  ( hb_dvd_t *, int, uint64_t );
+//    int           (* start)       ( hb_dvd_t *, hb_title_t *, int );
+//    void          (* stop)        ( hb_dvd_t * );
+//    int           (* seek)        ( hb_dvd_t *, float );
+//    hb_buffer_t * (* read)        ( hb_dvd_t * );
+//    int           (* chapter)     ( hb_dvd_t * );
+//    int           (* angle_count) ( hb_dvd_t * );
+//    void          (* set_angle)   ( hb_dvd_t *, int );
+//    int           (* main_feature)( hb_dvd_t *, hb_list_t * );
+//};
+//typedef struct hb_dvd_func_s hb_dvd_func_t;
+//
+//hb_dvd_func_t * hb_dvdread_methods( void );
+hb_optmedia_func_t *hb_optmedia_dvd_methods(void);
 
 
 

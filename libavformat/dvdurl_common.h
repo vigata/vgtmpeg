@@ -35,6 +35,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
+#include "optmedia.h"
+
 #if defined( __GNUC__ ) && !(defined( _WIN32 ) || defined( __MINGW32__ ))
 #   define HB_WPRINTF(s,v) __attribute__((format(printf,s,v)))
 #else
@@ -785,14 +787,34 @@ struct hb_buffer_s
     hb_buffer_t * next;
 };
 
+typedef void * om_handle_t;
+struct hb_optmedia_func_s
+{
+	om_handle_t *    	  (* init)        ( char * );
+    void          (* close)       ( om_handle_t ** );
+    int           (* title_count) ( om_handle_t * );
+    hb_title_t  * (* title_scan)  ( om_handle_t *, int, uint64_t );
+    int           (* main_feature)( om_handle_t *, hb_list_t * );
+};
+
+typedef struct hb_optmedia_func_s hb_optmedia_func_t;
 
 extern int hb_global_verbosity_level;
 #define HB_LOG_INFO      AV_LOG_INFO
 #define HB_LOG_VERBOSE   AV_LOG_VERBOSE
 #define HB_LOG_ERROR     AV_LOG_ERROR
 
+/* parses a 'filename' that can be a dvd://.. , bd:// ..a file://... url or a file name
+ * and returns the decoded path to the resource, and optionally a title
+ */
 char *url_encode(char *str);
 char *url_decode(char *str);
+int url_parse(const char *proto, const char *filename, const char **urlpath, int *title );
+
+typedef hb_buffer_t* (* fragread_t)(void *ctx);
+/* reads size bytes into buffer doing continuous reads if necessary.
+ * calls the read function passed with the context */
+int fragmented_read(void *ctx, fragread_t read, hb_buffer_t **cur_read_buffer, unsigned char *buf, int size);
 
 /* logging */
 #ifdef __GNUC__

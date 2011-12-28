@@ -3558,26 +3558,22 @@ static void select_default_program(int programid) {
     default_program_id = programid;
 }
 
-
-
 static int parse_file_veneer(void *ctx, char *opt, char *filename) {
     return parse_input_file((OptionsContext *)ctx, opt, filename);
 }
-static int opt_input_file(OptionsContext *o, const char *opt, const char *filename)
-{
 
+static ff_input_func_t ff_input_funcs = {
+		parse_file_veneer,
+		select_default_program
+};
+static int opt_input_file(OptionsContext *o, const char *opt, const char *filename) {
 
-    #if CONFIG_DVD_PROTOCOL
-    extern  int parse_dvd_path(void *ctx, char *opt, const char *path,  int (* parse_file)(void *ctx, char *opt, char *filename), void (* select_default_program)(int programid) );
-        /* make filename a dvd url if it's a dvd image */
-        if( !parse_dvd_path(o, opt, filename, parse_file_veneer, select_default_program) ) {
-            return parse_input_file(o, opt, filename);
-        }
-    #else
-        return parse_input_file(o, opt, filename);
-    #endif
-
-    return 0;
+#if CONFIG_DVD_PROTOCOL || CONFIG_BD_PROTOCOL
+	if (parse_optmedia_path(o, opt, filename, &ff_input_funcs)) {
+		return 1;
+	}
+#endif
+	return parse_input_file(o, opt, filename);
 }
 
 

@@ -3112,6 +3112,7 @@ enabled openssl    && { check_lib openssl/ssl.h SSL_library_init -lssl -lcrypto 
                         die "ERROR: openssl not found"; }
 
 enabled dvd_protocol && require libdvdread  dvdread/dvd_reader.h DVDOpenFile -ldvdread $ldl 
+enabled bd_protocol && require libbluray  libbluray/bluray.h bd_open -lbluray $ldl 
 
 
 SDL_CONFIG="${cross_prefix}sdl-config"

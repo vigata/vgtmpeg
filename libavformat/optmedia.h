@@ -21,16 +21,24 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __VGTMPEG_H
-#define __VGTMPEG_H
+#ifndef OPTMEDIA_H
+#define OPTMEDIA_H
 
-/* nl addons */
-#include "nlffmsg.h"
-#include "nlinput.h"
-#include "nldump_format.h"
-#include "nlreport.h"
+/* public functions of optical media protocols */
+struct ff_input_func_s
+{
+	int (* parse_file)(void *ctx, char *opt, char *filename);
+	void (* select_default_program)(int programid);
+};
 
-/* optical media public functions */
-#include "libavformat/optmedia.h"
+typedef struct ff_input_func_s ff_input_func_t;
 
-#endif
+/* returns 0 if path is not an optical media supported
+ * if its an optical media path, calls parse_file with the right url for the optical media
+ *
+ * It will also call select_default_program
+ * */
+int parse_optmedia_path( void *ctx, char *opt, const char *path, ff_input_func_t *ff_input_func );
+
+#endif //!OPTMEDIA_H
+

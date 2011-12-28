@@ -21,16 +21,44 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __VGTMPEG_H
-#define __VGTMPEG_H
+#ifndef HB_BDURL_H
+#define HB_BDURL_H
 
-/* nl addons */
-#include "nlffmsg.h"
-#include "nlinput.h"
-#include "nldump_format.h"
-#include "nlreport.h"
+#include "dvdurl_common.h"
+#include "libbluray/bluray.h"
 
-/* optical media public functions */
-#include "libavformat/optmedia.h"
+struct hb_bd_s
+{
+    char         * path;
+    BLURAY       * bd;
+    int            title_count;
+    BLURAY_TITLE_INFO  ** title_info;
+    uint64_t       pkt_count;
+//    hb_stream_t  * stream;
+    int            chapter;
+    int            next_chap;
 
-#endif
+    /* vgtmpeg */
+    hb_buffer_t     *read_buffer;
+};
+
+typedef struct hb_bd_s hb_bd_t;
+
+hb_optmedia_func_t *hb_optmedia_bd_methods(void);
+
+typedef struct bdurl {
+	const AVClass *class;
+    hb_bd_t *hb_bd;
+    hb_list_t *list_title;
+    hb_title_t *selected_title;
+    //int selected_title_idx;
+    int selected_chapter;
+    hb_buffer_t *cur_read_buffer;
+    int wide_support;
+    int min_title_duration;
+} bdurl_t;
+
+
+#endif // HB_BDURL_H
+
+

@@ -30,6 +30,8 @@
 #include "libavutil/avstring.h"
 #include "dvdurl_common.h"
 #include "dvdurl_lang.h"
+#include "dvdurl.h"
+#include "bdurl.h"
 
 int hb_global_verbosity_level=1; //Necessary for hb_deep_log
 
@@ -1472,7 +1474,170 @@ char *url_decode(char *str) {
   return buf;
 }
 
+/* parses a 'filename' that can be a dvd://.. , a file://... url or a file name
+ * and returns the decoded path to the resource, and optionally a title
+ */
+int url_parse(const char *proto, const char *filename, const char **urlpath, int *title ) {
+    const char *pathstart;
+    *title = 0;
+    const char *protourl = av_asprintf("%s://",proto);
+
+    if( av_strstart(filename, protourl, &pathstart) ) {
+        av_free(protourl);
+        const char *path = strdup(pathstart);
+        char *query,*tq;
+
+        /* remove query from path */
+        tq = strchr(path, '?');
+        if(tq) *tq = 0;
+        *urlpath = url_decode(path);
 
 
+        query = strchr(pathstart,'?');
+        // is url
+        // is title specified in query string
+        if( query && ((tq=strstr(query, "?title=")) || (tq=strstr(query, "&title=")))) {
+            tq+=7;
+            *title = atoi(tq);
+        }
+    } else if( av_strstart(filename, "file://", &pathstart) ) {
+        return 0;
+        //*urlpath = url_decode(pathstart);
+    } else {
+        /* assume raw file name */
+        *urlpath = filename;
+    }
+    return 1;
+}
 
+#define bdurl_max(a,b) ((a)>(b)?(a):(b))
+#define bdurl_min(a,b) ((a)<(b)?(a):(b))
+
+/* reads size bytes into buffer doing continuous reads if necessary.
+ * calls the read function passed with the context */
+int fragmented_read(void *ctx, fragread_t read, hb_buffer_t **cur_read_buffer, unsigned char *buf, int size)
+{
+    unsigned char *bufptr = buf;
+    unsigned char *bufend = buf + size;
+
+    while( bufptr < bufend ) {
+        /* if there is still a buffer we were reading */
+        if( *cur_read_buffer ) {
+            hb_buffer_t *cur_hb_buffer = *cur_read_buffer;
+            int left_dstbytes = bufend - bufptr;
+            int left_srcbytes = cur_hb_buffer->size - cur_hb_buffer->cur;
+
+            int readmax = bdurl_min( left_srcbytes, left_dstbytes );
+
+            memcpy(bufptr, cur_hb_buffer->data + cur_hb_buffer->cur, readmax );
+
+            bufptr += readmax;
+            cur_hb_buffer->cur += readmax;
+
+            if( cur_hb_buffer->cur == cur_hb_buffer->size ) {
+                *cur_read_buffer = 0;
+            }
+        } else {
+            /* reading fresh data from bdread. this must return a buffer if succesful */
+            *cur_read_buffer = read(ctx); //hb_bd_read( ctx->hb_bd );
+            if(!(*cur_read_buffer)) {
+                hb_log_level(HB_LOG_VERBOSE,"fragmented_read: EOF");
+                break;
+            }
+            (*cur_read_buffer)->cur = 0;
+        }
+    }
+    return bufptr - buf;
+}
+
+static int __parse_optmedia_path(const char *proto, void *ctx, char *opt, const char *path, ff_input_func_t *ff ){
+	om_handle_t *c;
+    int min_title_duration = 15*90000;
+    //const char *fpath;
+    // static char dfname[4096];
+    const char *urlpath;
+    int urltitle=0;
+
+    hb_optmedia_func_t *om;
+    if(!strcmp(proto,"dvd")) {
+    	om = hb_optmedia_dvd_methods();
+    } else if(!strcmp(proto,"bd")){
+    	om = hb_optmedia_bd_methods();;
+    } else {
+    	return 0;
+    }
+
+    if(!url_parse(proto, path, &urlpath, &urltitle))
+        return 0;
+
+    c = om->init(urlpath);
+    if(c) {
+        int tc = om->title_count(c);
+        int i;
+        hb_title_t *longest_title;
+        int longest_title_idx;
+        if (ff->parse_file) {
+            char *efilename;
+
+            hb_list_t *list_title = hb_list_init();
+
+            if( urltitle && urltitle>0 && urltitle<=tc ) {
+                hb_title_t *t = om->title_scan(c, urltitle, min_title_duration);
+                if (t) {
+                    hb_list_add(list_title, t);
+                } else {
+                    hb_error("parse_optmedia_path: couldn't open title %d. Does title exist in %s?", urltitle, proto);
+                    return 0;
+                }
+            } else {
+                /* retrieve title information */
+                for (i = 1; i <= tc; i++) {
+                    hb_title_t *t = om->title_scan(c, i, min_title_duration);
+                    if (t) {
+                        hb_list_add(list_title, t);
+                    }
+                }
+            }
+            longest_title_idx = om->main_feature(c,list_title);
+            for (i = 0; i < hb_list_count(list_title); i++) {
+            	if( ((hb_title_t *)hb_list_item(list_title, i))->index == longest_title_idx ) {
+            		longest_title = hb_list_item(list_title,i);
+            		break;
+            	}
+            }
+
+            hb_log_level(HB_LOG_VERBOSE, "parse_optmedia_path: calling parse file");
+            /* call parse file */
+            efilename = url_encode(urlpath);
+            for (i = 0; i < hb_list_count(list_title); i++) {
+                hb_title_t *t = hb_list_item(list_title,i);
+                //dfname[0] = 0;
+                char *ppf = av_asprintf("%s://%s?title=%d",proto,efilename,t->index);
+                //av_strlcat(dfname, "dvd://", 7);
+                //av_strlcat(dfname, efilename, 2048 - 7);
+                //av_strlcatf(dfname, 2048, "?title=%d", t->index);
+                ff->parse_file(ctx, opt, ppf );
+                av_free(ppf);
+            }
+            av_free(efilename);
+
+            if( urltitle && urltitle>0 && urltitle<=tc ) {
+                ff->select_default_program(urltitle);
+            }else if( longest_title ) {
+                ff->select_default_program(longest_title->index);
+            }
+        }
+        om->close(&c);
+        return tc;
+    }
+    return 0;
+}
+
+int parse_optmedia_path(void *ctx, char *opt, const char *path, ff_input_func_t *ff ){
+	if(!__parse_optmedia_path("dvd",ctx,opt,path,ff) &&
+			!__parse_optmedia_path("bd",ctx,opt,path,ff) ) {
+		return 0;
+	}
+	return 1;
+}
 
