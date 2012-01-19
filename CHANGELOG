@@ -1,3 +1,6 @@
+1.3.22
+- Added experimental bluray support. Bluray support can be used through the bluray url protocol. bd://
+
 1.2.11
 - Added xvid 1.3.2 encoder as a supported format. Xvid is supported in multithread mode in all platforms and architectures.
 - Fixed character encoding issue between DVD audio languages and ffmpeg metadata. Now when converting to mp4 or other output muxes supporting language metadata, the language metadata is fully preserved from the DVD source.
