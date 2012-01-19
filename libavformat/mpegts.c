@@ -182,6 +182,35 @@ typedef struct PESContext {
 
 extern AVInputFormat ff_mpegts_demuxer;
 
+/* vgtmpeg */
+#include "bdurl.h"
+
+
+/* DVDURL support routines */
+static bdurl_t *get_bdurl_ctx(AVFormatContext *s) {
+	URLContext *uc = s->pb->opaque;
+	bdurl_t * du = uc->priv_data;
+	if(strcmp(uc->prot->name,"bd")){
+	    return 0;
+	}
+
+	if(du) {
+		return strstr(du->class->class_name, "BDURL")==NULL  ? 0 : du;
+	} else {
+		return 0;
+	}
+}
+
+static unsigned int get_ff_program_id_from_sid(MpegTSContext *ts, unsigned int sid )
+{
+	bdurl_t *bdurl = get_bdurl_ctx(ts->stream);
+	if(bdurl && bdurl->selected_title ) {
+		return bdurl->selected_title->index;
+	} else {
+		return sid;
+	}
+}
+
 static void clear_program(MpegTSContext *ts, unsigned int programid)
 {
     int i;
@@ -1510,7 +1539,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
         add_pid_to_pmt(ts, h->id, pid);
 
-        ff_program_add_stream_index(ts->stream, h->id, st->index);
+        ff_program_add_stream_index(ts->stream, get_ff_program_id_from_sid(ts, h->id), st->index);
 
         desc_list_len = get16(&p, p_end) & 0xfff;
         if (desc_list_len < 0)
@@ -1524,7 +1553,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 break;
 
             if (pes && prog_reg_desc == AV_RL32("HDMV") && stream_type == 0x83 && pes->sub_st) {
-                ff_program_add_stream_index(ts->stream, h->id, pes->sub_st->index);
+                ff_program_add_stream_index(ts->stream, get_ff_program_id_from_sid(ts, h->id), pes->sub_st->index);
                 pes->sub_st->codec->codec_tag = st->codec->codec_tag;
             }
         }
@@ -1570,7 +1599,7 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         if (sid == 0x0000) {
             /* NIT info */
         } else {
-            program = av_new_program(ts->stream, sid);
+            program = av_new_program(ts->stream, get_ff_program_id_from_sid(ts,sid));
             program->program_num = sid;
             program->pmt_pid = pmt_pid;
             if (ts->pids[pmt_pid])
@@ -1641,7 +1670,7 @@ static void sdt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                     break;
                 name = getstr8(&p, p_end);
                 if (name) {
-                    AVProgram *program = av_new_program(ts->stream, sid);
+                    AVProgram *program = av_new_program(ts->stream, get_ff_program_id_from_sid(ts, sid));
                     if(program) {
                         av_dict_set(&program->metadata, "service_name", name, 0);
                         av_dict_set(&program->metadata, "service_provider", provider_name, 0);
