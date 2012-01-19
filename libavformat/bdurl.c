@@ -835,13 +835,15 @@ static int title_info_compare_mpls(const void *va, const void *vb)
 
 
 static int64_t hb_bd_cur_title_size( hb_bd_t *e ) {
-    hb_log_level(gloglevel, "hb_bd_cur_title_size not implemented");
-    return (int64_t)0;
+	int64_t s = bd_get_title_size(e->bd);
+    hb_log_level(gloglevel, "hb_bd_cur_title_size: %"PRId64,s);
+    return s;
 }
 
 static int64_t hb_bd_seek_bytes( hb_bd_t *e, int64_t off, int mode ) {
-    hb_log_level(gloglevel, "hb_bd_seek_bytes not implemented");      
-    return (int64_t)0;
+	int64_t r = bd_seek(e->bd, off);
+    hb_log_level(gloglevel, "hb_bd_seek_bytes: off %"PRId64"  ret %"PRId64, off, r);
+    return (int64_t)r;
 }
 
 /* optmedia exports */
