@@ -5194,14 +5194,15 @@ int main(int argc, char **argv)
     av_register_all();
     avformat_network_init();
 
-	/* --vgtmpeg */
-    if(banner )
-        show_banner(argc, argv, options);
 
     term_init();
 
     /* parse options */
     parse_options(&o, argc, argv, options, opt_output_file);
+
+	/* --vgtmpeg */
+    if(banner )
+        show_banner(argc, argv, options);
 
 	/* --vgtmpeg */
     if( server_mode ) 
