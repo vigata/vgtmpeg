@@ -24,6 +24,7 @@
 #ifndef HB_DVD_H
 #define HB_DVD_H
 
+#include "url.h"
 #include "dvdurl_common.h"
 #include "dvdread/ifo_read.h"
 #include "dvdread/nav_read.h"

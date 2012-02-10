@@ -145,7 +145,7 @@ static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int e
         //avcodec_get_channel_layout_string(buf , buf_size , enc->channels, enc->channel_layout);
         FFMSG_LOG( FFMSG_INTEGER_FMT(channel_layout),  enc->channel_layout );
 
-        if (enc->sample_fmt != SAMPLE_FMT_NONE) {
+        if (enc->sample_fmt != AV_SAMPLE_FMT_NONE) {
             FFMSG_LOG( FFMSG_STRING_FMT(audfmt), av_get_sample_fmt_name(enc->sample_fmt));
         }
         break;

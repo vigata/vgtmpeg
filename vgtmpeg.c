@@ -46,6 +46,7 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/avstring.h"
 #include "libavutil/libm.h"
+#include "libavutil/imgutils.h"
 #include "libavformat/os_support.h"
 #include "libswresample/swresample.h"
 
@@ -56,6 +57,7 @@
 # include "libavfilter/avfilter.h"
 # include "libavfilter/avfiltergraph.h"
 # include "libavfilter/buffersink.h"
+# include "libavfilter/buffersrc.h"
 # include "libavfilter/vsrc_buffer.h"
 #endif
 
@@ -95,7 +97,7 @@
 #define VSYNC_VFR         2
 #define VSYNC_DROP        0xff
 
-const char program_name[] = "ffmpeg";
+const char program_name[] = "vgtmpeg";
 const int program_birth_year = 2000;
 
 /* select an input stream for an output stream */
@@ -130,8 +132,6 @@ static int video_discard = 0;
 static int same_quant = 0;
 static int do_deinterlace = 0;
 static int intra_dc_precision = 8;
-static int loop_input = 0;
-static int loop_output = AVFMT_NOOUTPUTLOOP;
 static int qp_hist = 0;
 static int intra_only = 0;
 static const char *video_codec_name    = NULL;
@@ -175,7 +175,6 @@ static int print_stats = 1;
 static uint8_t *audio_buf;
 static unsigned int allocated_audio_buf_size;
 
-static void *samples;
 static uint8_t *input_tmp= NULL;
 
 #define DEFAULT_PASS_LOGFILENAME_PREFIX "ffmpeg2pass"
@@ -199,6 +198,8 @@ typedef struct InputStream {
     int discard;             /* true if stream data should be discarded */
     int decoding_needed;     /* true if the packets must be decoded in 'raw_fifo' */
     AVCodec *dec;
+    AVFrame *decoded_frame;
+    AVFrame *filtered_frame;
 
     int64_t       start;     /* time when read started */
     /* predicted dts of the next packet read for this stream or (when there are
@@ -239,7 +240,6 @@ typedef struct OutputStream {
     int frame_number;
     /* input pts and corresponding output pts
        for A/V sync */
-    //double sync_ipts;        /* dts from the AVPacket of the demuxer in second units */
     struct InputStream *sync_ist; /* input stream to sync against */
     int64_t sync_opts;       /* output frame counter, could be changed to some true timestamp */ // FIXME look at frame_number
     AVBitStreamFilterContext *bitstream_filters;
@@ -309,7 +309,7 @@ typedef struct OutputFile {
     int64_t recording_time; /* desired length of the resulting file in microseconds */
     int64_t start_time;     /* start time in microseconds */
     uint64_t limit_filesize; /* filesize limit expressed in bytes */
-    int wrote_header; /* flag indicated that the header was already written.  vgtmpeg */
+    int wrote_header; /* flag indicated that the header was already written.  --vgtmpeg */
 } OutputFile;
 
 static InputStream *input_streams   = NULL;
