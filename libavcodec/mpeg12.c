@@ -25,12 +25,15 @@
  * MPEG-1/2 decoder
  */
 
+#define UNCHECKED_BITSTREAM_READER 1
+
 //#define DEBUG
 #include "internal.h"
 #include "avcodec.h"
 #include "dsputil.h"
 #include "mpegvideo.h"
 #include "libavutil/avassert.h"
+#include "libavutil/timecode.h"
 
 #include "mpeg12.h"
 #include "mpeg12data.h"
@@ -1271,7 +1274,7 @@ static int mpeg_decode_postinit(AVCodecContext *avctx)
 
         /* low_delay may be forced, in this case we will have B-frames
          * that behave like P-frames. */
-        avctx->has_b_frames = !(s->low_delay);
+        avctx->has_b_frames = !s->low_delay;
 
         assert((avctx->sub_id == 1) == (avctx->codec_id == CODEC_ID_MPEG1VIDEO));
         if (avctx->codec_id == CODEC_ID_MPEG1VIDEO) {
@@ -1494,7 +1497,7 @@ static int load_matrix(MpegEncContext *s, uint16_t matrix0[64], uint16_t matrix1
             return -1;
         }
         if (intra && i == 0 && v != 8) {
-            av_log(s->avctx, AV_LOG_ERROR, "intra matrix invalid, ignoring\n");
+            av_log(s->avctx, AV_LOG_ERROR, "intra matrix specifies invalid DC quantizer %d, ignoring", v);
             v = 8; // needed by pink.mpg / issue1046
         }
         matrix0[j] = v;
@@ -1653,9 +1656,10 @@ static int mpeg_field_start(MpegEncContext *s, const uint8_t *buf, int buf_size)
 #define DECODE_SLICE_OK     0
 
 /**
- * decodes a slice. MpegEncContext.mb_y must be set to the MB row from the startcode
- * @return DECODE_SLICE_ERROR if the slice is damaged<br>
- *         DECODE_SLICE_OK if this slice is ok<br>
+ * Decode a slice.
+ * MpegEncContext.mb_y must be set to the MB row from the startcode.
+ * @return DECODE_SLICE_ERROR if the slice is damaged,
+ *         DECODE_SLICE_OK if this slice is OK
  */
 static int mpeg_decode_slice(MpegEncContext *s, int mb_y,
                              const uint8_t **buf, int buf_size)
@@ -1691,7 +1695,7 @@ static int mpeg_decode_slice(MpegEncContext *s, int mb_y,
     if (mb_y == 0 && s->codec_tag == AV_RL32("SLIF")) {
         skip_bits1(&s->gb);
     } else {
-        for (;;) {
+        while (get_bits_left(&s->gb) > 0) {
             int code = get_vlc2(&s->gb, mbincr_vlc.table, MBINCR_VLC_BITS, 2);
             if (code < 0) {
                 av_log(s->avctx, AV_LOG_ERROR, "first mb_incr damaged\n");
@@ -1899,9 +1903,9 @@ static int slice_decode_thread(AVCodecContext *c, void *arg)
             if (c->err_recognition & AV_EF_EXPLODE)
                 return ret;
             if (s->resync_mb_x >= 0 && s->resync_mb_y >= 0)
-                ff_er_add_slice(s, s->resync_mb_x, s->resync_mb_y, s->mb_x, s->mb_y, AC_ERROR | DC_ERROR | MV_ERROR);
+                ff_er_add_slice(s, s->resync_mb_x, s->resync_mb_y, s->mb_x, s->mb_y, ER_AC_ERROR | ER_DC_ERROR | ER_MV_ERROR);
         } else {
-            ff_er_add_slice(s, s->resync_mb_x, s->resync_mb_y, s->mb_x-1, s->mb_y, AC_END | DC_END | MV_END);
+            ff_er_add_slice(s, s->resync_mb_x, s->resync_mb_y, s->mb_x-1, s->mb_y, ER_AC_END | ER_DC_END | ER_MV_END);
         }
 
         if (s->mb_y == s->end_mb_y)
@@ -2030,6 +2034,7 @@ static int mpeg1_decode_sequence(AVCodecContext *avctx,
     s->progressive_sequence = 1;
     s->progressive_frame    = 1;
     s->picture_structure    = PICT_FRAME;
+    s->first_field          = 0;
     s->frame_pred_frame_dct = 1;
     s->chroma_format        = 1;
     s->codec_id             = s->avctx->codec_id = CODEC_ID_MPEG1VIDEO;
@@ -2071,8 +2076,6 @@ static int vcr2_init_sequence(AVCodecContext *avctx)
 
     if (MPV_common_init(s) < 0)
         return -1;
-    exchange_uv(s); // common init reset pblocks, so we swap them here
-    s->swap_uv = 1; // in case of xvmc we need to swap uv for each MB
     s1->mpeg_enc_ctx_allocated = 1;
 
     for (i = 0; i < 64; i++) {
@@ -2089,10 +2092,18 @@ static int vcr2_init_sequence(AVCodecContext *avctx)
     s->progressive_sequence  = 1;
     s->progressive_frame     = 1;
     s->picture_structure     = PICT_FRAME;
+    s->first_field           = 0;
     s->frame_pred_frame_dct  = 1;
     s->chroma_format         = 1;
-    s->codec_id              = s->avctx->codec_id = CODEC_ID_MPEG2VIDEO;
-    avctx->sub_id            = 2; /* indicates MPEG-2 */
+    if (s->codec_tag == AV_RL32("BW10")) {
+        s->codec_id              = s->avctx->codec_id = CODEC_ID_MPEG1VIDEO;
+        avctx->sub_id            = 1; /* indicates MPEG-1 */
+    } else {
+        exchange_uv(s); // common init reset pblocks, so we swap them here
+        s->swap_uv = 1; // in case of xvmc we need to swap uv for each MB
+        s->codec_id              = s->avctx->codec_id = CODEC_ID_MPEG2VIDEO;
+        avctx->sub_id            = 2; /* indicates MPEG-2 */
+    }
     s1->save_width           = s->width;
     s1->save_height          = s->height;
     s1->save_progressive_seq = s->progressive_sequence;
@@ -2155,15 +2166,11 @@ static void mpeg_decode_gop(AVCodecContext *avctx,
     broken_link = get_bits1(&s->gb);
 
     if (s->avctx->debug & FF_DEBUG_PICT_INFO) {
-        int time_code_hours    = tc>>19 & 0x1f;
-        int time_code_minutes  = tc>>13 & 0x3f;
-        int time_code_seconds  = tc>>6  & 0x3f;
-        int drop_frame_flag    = tc     & 1<<24;
-        int time_code_pictures = tc     & 0x3f;
-        av_log(s->avctx, AV_LOG_DEBUG, "GOP (%02d:%02d:%02d%c%02d) closed_gop=%d broken_link=%d\n",
-               time_code_hours, time_code_minutes, time_code_seconds,
-               drop_frame_flag ? ';' : ':',
-               time_code_pictures, s->closed_gop, broken_link);
+        char tcbuf[AV_TIMECODE_STR_SIZE];
+        av_timecode_make_mpeg_tc_string(tcbuf, tc);
+        av_log(s->avctx, AV_LOG_DEBUG,
+               "GOP (%s) closed_gop=%d broken_link=%d\n",
+               tcbuf, s->closed_gop, broken_link);
     }
 }
 /**
@@ -2206,6 +2213,7 @@ int ff_mpeg1_find_frame_end(ParseContext *pc, const uint8_t *buf, int buf_size, 
                 pc->frame_start_found = 4;
             }
             if (state == SEQ_END_CODE) {
+                pc->frame_start_found = 0;
                 pc->state=-1;
                 return i+1;
             }
@@ -2263,7 +2271,10 @@ static int mpeg_decode_frame(AVCodecContext *avctx,
             return buf_size;
     }
 
-    if (s->mpeg_enc_ctx_allocated == 0 && avctx->codec_tag == AV_RL32("VCR2"))
+    s2->codec_tag = avpriv_toupper4(avctx->codec_tag);
+    if (s->mpeg_enc_ctx_allocated == 0 && (   s2->codec_tag == AV_RL32("VCR2")
+                                           || s2->codec_tag == AV_RL32("BW10")
+                                          ))
         vcr2_init_sequence(avctx);
 
     s->slice_count = 0;
@@ -2480,7 +2491,9 @@ static int decode_chunks(AVCodecContext *avctx,
                 }
 
                 if (HAVE_THREADS && (avctx->active_thread_type & FF_THREAD_SLICE)) {
-                    int threshold= (s2->mb_height*s->slice_count + avctx->thread_count/2) / avctx->thread_count;
+                    int threshold = (s2->mb_height * s->slice_count +
+                                     s2->slice_context_count / 2) /
+                                    s2->slice_context_count;
                     av_assert0(avctx->thread_count > 1);
                     if (threshold <= mb_y) {
                         MpegEncContext *thread_context = s2->thread_context[s->slice_count];
@@ -2503,9 +2516,9 @@ static int decode_chunks(AVCodecContext *avctx,
                         if (avctx->err_recognition & AV_EF_EXPLODE)
                             return ret;
                         if (s2->resync_mb_x >= 0 && s2->resync_mb_y >= 0)
-                            ff_er_add_slice(s2, s2->resync_mb_x, s2->resync_mb_y, s2->mb_x, s2->mb_y, AC_ERROR | DC_ERROR | MV_ERROR);
+                            ff_er_add_slice(s2, s2->resync_mb_x, s2->resync_mb_y, s2->mb_x, s2->mb_y, ER_AC_ERROR | ER_DC_ERROR | ER_MV_ERROR);
                     } else {
-                        ff_er_add_slice(s2, s2->resync_mb_x, s2->resync_mb_y, s2->mb_x-1, s2->mb_y, AC_END | DC_END | MV_END);
+                        ff_er_add_slice(s2, s2->resync_mb_x, s2->resync_mb_y, s2->mb_x-1, s2->mb_y, ER_AC_END | ER_DC_END | ER_MV_END);
                     }
                 }
             }
@@ -2652,4 +2665,3 @@ AVCodec ff_mpeg1_vdpau_decoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("MPEG-1 video (VDPAU acceleration)"),
 };
 #endif
-

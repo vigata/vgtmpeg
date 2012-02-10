@@ -30,7 +30,7 @@
 #include "riff.h"
 #include "isom.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/intfloat_readwrite.h"
+#include "libavutil/intfloat.h"
 #include "libavutil/dict.h"
 #include "caf.h"
 
@@ -68,7 +68,7 @@ static int read_desc_chunk(AVFormatContext *s)
 
     /* parse format description */
     st->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
-    st->codec->sample_rate = av_int2dbl(avio_rb64(pb));
+    st->codec->sample_rate = av_int2double(avio_rb64(pb));
     st->codec->codec_tag   = avio_rl32(pb);
     flags = avio_rb32(pb);
     caf->bytes_per_packet  = avio_rb32(pb);
@@ -198,14 +198,13 @@ static void read_info_chunk(AVFormatContext *s, int64_t size)
     for (i = 0; i < nb_entries; i++) {
         char key[32];
         char value[1024];
-        get_strz(pb, key, sizeof(key));
-        get_strz(pb, value, sizeof(value));
+        avio_get_str(pb, INT_MAX, key, sizeof(key));
+        avio_get_str(pb, INT_MAX, value, sizeof(value));
         av_dict_set(&s->metadata, key, value, 0);
     }
 }
 
-static int read_header(AVFormatContext *s,
-                       AVFormatParameters *ap)
+static int read_header(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     CaffContext *caf  = s->priv_data;

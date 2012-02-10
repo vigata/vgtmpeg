@@ -653,7 +653,7 @@ static void decode_gains(AMRContext *p, const AMRNBSubframe *amr_subframe,
 static void apply_ir_filter(float *out, const AMRFixed *in,
                             const float *filter)
 {
-    float filter1[AMR_SUBFRAME_SIZE],     //!< filters at pitch lag*1 and *2
+    float filter1[AMR_SUBFRAME_SIZE],     ///< filters at pitch lag*1 and *2
           filter2[AMR_SUBFRAME_SIZE];
     int   lag = in->pitch_lag;
     float fac = in->pitch_fac;
@@ -978,6 +978,10 @@ static int amrnb_decode_frame(AVCodecContext *avctx, void *data,
 
         pitch_sharpening(p, subframe, p->cur_frame_mode, &fixed_sparse);
 
+        if (fixed_sparse.pitch_lag == 0) {
+            av_log(avctx, AV_LOG_ERROR, "The file is corrupted, pitch_lag = 0 is not allowed\n");
+            return AVERROR_INVALIDDATA;
+        }
         ff_set_fixed_vector(p->fixed_vector, &fixed_sparse, 1.0,
                             AMR_SUBFRAME_SIZE);
 

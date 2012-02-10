@@ -21,14 +21,14 @@
 
 #include "avutil.h"
 #include "common.h"
-//! Avoid e.g. MPlayers fast_memcpy, it slows things down here.
+/// Avoid e.g. MPlayers fast_memcpy, it slows things down here.
 #undef memcpy
 #include <string.h>
 #include "lzo.h"
 
-//! Define if we may write up to 12 bytes beyond the output buffer.
+/// Define if we may write up to 12 bytes beyond the output buffer.
 #define OUTBUF_PADDED 1
-//! Define if we may read up to 8 bytes beyond the input buffer.
+/// Define if we may read up to 8 bytes beyond the input buffer.
 #define INBUF_PADDED 1
 typedef struct LZOContext {
     const uint8_t *in, *in_end;
@@ -112,7 +112,7 @@ static inline void memcpy_backptr(uint8_t *dst, int back, int cnt);
 
 /**
  * @brief Copies previously decoded bytes to current position.
- * @param back how many bytes back we start
+ * @param back how many bytes back we start, must be > 0
  * @param cnt number of bytes to copy, must be >= 0
  *
  * cnt > back is valid, this will copy the bytes we just copied,
@@ -135,7 +135,7 @@ static inline void copy_backptr(LZOContext *c, int back, int cnt) {
 
 static inline void memcpy_backptr(uint8_t *dst, int back, int cnt) {
     const uint8_t *src = &dst[-back];
-    if (back == 1) {
+    if (back <= 1) {
         memset(dst, *src, cnt);
     } else {
 #ifdef OUTBUF_PADDED

@@ -70,7 +70,7 @@ static const AVClass flavor ## _context_class = {\
     .item_name      = av_default_item_name,\
     .option         = options,\
     .version        = LIBAVUTIL_VERSION_INT,\
-};
+}
 
 HTTP_CLASS(http);
 HTTP_CLASS(https);
@@ -569,6 +569,7 @@ URLProtocol ff_http_protocol = {
     .url_get_file_handle = http_get_file_handle,
     .priv_data_size      = sizeof(HTTPContext),
     .priv_data_class     = &http_context_class,
+    .flags               = URL_PROTOCOL_FLAG_NETWORK,
 };
 #endif
 #if CONFIG_HTTPS_PROTOCOL
@@ -582,6 +583,7 @@ URLProtocol ff_https_protocol = {
     .url_get_file_handle = http_get_file_handle,
     .priv_data_size      = sizeof(HTTPContext),
     .priv_data_class     = &https_context_class,
+    .flags               = URL_PROTOCOL_FLAG_NETWORK,
 };
 #endif
 
@@ -697,5 +699,6 @@ URLProtocol ff_httpproxy_protocol = {
     .url_close           = http_proxy_close,
     .url_get_file_handle = http_get_file_handle,
     .priv_data_size      = sizeof(HTTPContext),
+    .flags               = URL_PROTOCOL_FLAG_NETWORK,
 };
 #endif

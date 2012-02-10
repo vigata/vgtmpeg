@@ -20,7 +20,7 @@
  */
 
 #include "libavutil/intreadwrite.h"
-#include "libavutil/intfloat_readwrite.h"
+#include "libavutil/intfloat.h"
 #include "avformat.h"
 #include "flv.h"
 #include "internal.h"
@@ -39,6 +39,7 @@ static const AVCodecTag flv_video_codec_ids[] = {
     {CODEC_ID_FLASHSV2, FLV_CODECID_SCREEN2},
     {CODEC_ID_VP6F,    FLV_CODECID_VP6   },
     {CODEC_ID_VP6,     FLV_CODECID_VP6   },
+    {CODEC_ID_VP6A,    FLV_CODECID_VP6A  },
     {CODEC_ID_H264,    FLV_CODECID_H264  },
     {CODEC_ID_NONE,    0}
 };
@@ -93,6 +94,7 @@ static int get_audio_flags(AVCodecContext *enc){
         case    11025:
             flags |= FLV_SAMPLERATE_11025HZ;
             break;
+        case    16000: //nellymoser only
         case     8000: //nellymoser only
         case     5512: //not mp3
             if(enc->codec_id != CODEC_ID_MP3){
@@ -128,6 +130,8 @@ static int get_audio_flags(AVCodecContext *enc){
     case CODEC_ID_NELLYMOSER:
         if (enc->sample_rate == 8000) {
             flags |= FLV_CODECID_NELLYMOSER_8KHZ_MONO | FLV_SAMPLESSIZE_16BIT;
+        } else if (enc->sample_rate == 16000) {
+            flags |= FLV_CODECID_NELLYMOSER_16KHZ_MONO | FLV_SAMPLESSIZE_16BIT;
         } else {
             flags |= FLV_CODECID_NELLYMOSER | FLV_SAMPLESSIZE_16BIT;
         }
@@ -165,7 +169,7 @@ static void put_avc_eos_tag(AVIOContext *pb, unsigned ts) {
 static void put_amf_double(AVIOContext *pb, double d)
 {
     avio_w8(pb, AMF_DATA_TYPE_NUMBER);
-    avio_wb64(pb, av_dbl2int(d));
+    avio_wb64(pb, av_double2int(d));
 }
 
 static void put_amf_bool(AVIOContext *pb, int b) {
@@ -380,7 +384,7 @@ static int flv_write_trailer(AVFormatContext *s)
 
     file_size = avio_tell(pb);
 
-    /* update informations */
+    /* update information */
     avio_seek(pb, flv->duration_offset, SEEK_SET);
     put_amf_double(pb, flv->duration / (double)1000);
     avio_seek(pb, flv->filesize_offset, SEEK_SET);
@@ -404,7 +408,7 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
 //    av_log(s, AV_LOG_DEBUG, "type:%d pts: %"PRId64" size:%d\n", enc->codec_type, timestamp, size);
 
     if(enc->codec_id == CODEC_ID_VP6 || enc->codec_id == CODEC_ID_VP6F ||
-       enc->codec_id == CODEC_ID_AAC)
+       enc->codec_id == CODEC_ID_VP6A || enc->codec_id == CODEC_ID_AAC)
         flags_size= 2;
     else if(enc->codec_id == CODEC_ID_H264 || enc->codec_id == CODEC_ID_MPEG4)
         flags_size= 5;
@@ -476,7 +480,7 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (enc->codec_id == CODEC_ID_VP6)
         avio_w8(pb,0);
-    if (enc->codec_id == CODEC_ID_VP6F)
+    if (enc->codec_id == CODEC_ID_VP6F || enc->codec_id == CODEC_ID_VP6A)
         avio_w8(pb, enc->extradata_size ? enc->extradata[0] : 0);
     else if (enc->codec_id == CODEC_ID_AAC)
         avio_w8(pb,1); // AAC raw

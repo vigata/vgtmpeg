@@ -26,7 +26,7 @@
 
 #include "libavcodec/bytestream.h"
 #include "libavutil/avstring.h"
-#include "libavutil/intfloat_readwrite.h"
+#include "libavutil/intfloat.h"
 #include "libavutil/lfg.h"
 #include "libavutil/sha.h"
 #include "avformat.h"
@@ -75,6 +75,7 @@ typedef struct RTMPContext {
     uint8_t       flv_header[11];             ///< partial incoming flv packet header
     int           flv_header_bytes;           ///< number of initialized bytes in flv_header
     int           nb_invokes;                 ///< keeps track of invoke messages
+    int           create_stream_invoke;       ///< invoke id for the create stream command
 } RTMPContext;
 
 #define PLAYER_KEY_OPEN_PART_LEN 30   ///< length of partial key used for first client digest signing
@@ -115,7 +116,7 @@ static void gen_connect(URLContext *s, RTMPContext *rt, const char *proto,
 
     ff_url_join(tcurl, sizeof(tcurl), proto, NULL, host, port, "/%s", rt->app);
     ff_amf_write_string(&p, "connect");
-    ff_amf_write_number(&p, 1.0);
+    ff_amf_write_number(&p, ++rt->nb_invokes);
     ff_amf_write_object_start(&p);
     ff_amf_write_field_name(&p, "app");
     ff_amf_write_string(&p, rt->app);
@@ -237,6 +238,7 @@ static void gen_create_stream(URLContext *s, RTMPContext *rt)
     ff_amf_write_string(&p, "createStream");
     ff_amf_write_number(&p, ++rt->nb_invokes);
     ff_amf_write_null(&p);
+    rt->create_stream_invoke = rt->nb_invokes;
 
     ff_rtmp_packet_write(rt->stream, &pkt, rt->chunk_size, rt->prev_pkt[1]);
     ff_rtmp_packet_destroy(&pkt);
@@ -257,7 +259,7 @@ static void gen_delete_stream(URLContext *s, RTMPContext *rt)
 
     p = pkt.data;
     ff_amf_write_string(&p, "deleteStream");
-    ff_amf_write_number(&p, 0.0);
+    ff_amf_write_number(&p, ++rt->nb_invokes);
     ff_amf_write_null(&p);
     ff_amf_write_number(&p, rt->main_channel_id);
 
@@ -281,7 +283,7 @@ static void gen_play(URLContext *s, RTMPContext *rt)
 
     p = pkt.data;
     ff_amf_write_string(&p, "play");
-    ff_amf_write_number(&p, 0.0);
+    ff_amf_write_number(&p, ++rt->nb_invokes);
     ff_amf_write_null(&p);
     ff_amf_write_string(&p, rt->playpath);
 
@@ -315,7 +317,7 @@ static void gen_publish(URLContext *s, RTMPContext *rt)
 
     p = pkt.data;
     ff_amf_write_string(&p, "publish");
-    ff_amf_write_number(&p, 0.0);
+    ff_amf_write_number(&p, ++rt->nb_invokes);
     ff_amf_write_null(&p);
     ff_amf_write_string(&p, rt->playpath);
     ff_amf_write_string(&p, "live");
@@ -613,8 +615,8 @@ static int rtmp_parse_result(URLContext *s, RTMPContext *rt, RTMPPacket *pkt)
                 /* hack for Wowza Media Server, it does not send result for
                  * releaseStream and FCPublish calls */
                 if (!pkt->data[10]) {
-                    int pkt_id = (int) av_int2dbl(AV_RB64(pkt->data + 11));
-                    if (pkt_id == 4)
+                    int pkt_id = av_int2double(AV_RB64(pkt->data + 11));
+                    if (pkt_id == rt->create_stream_invoke)
                         rt->state = STATE_CONNECTING;
                 }
                 if (rt->state != STATE_CONNECTING)
@@ -624,7 +626,7 @@ static int rtmp_parse_result(URLContext *s, RTMPContext *rt, RTMPPacket *pkt)
                 if (pkt->data[10] || pkt->data[19] != 5 || pkt->data[20]) {
                     av_log(s, AV_LOG_WARNING, "Unexpected reply on connect()\n");
                 } else {
-                    rt->main_channel_id = (int) av_int2dbl(AV_RB64(pkt->data + 21));
+                    rt->main_channel_id = av_int2double(AV_RB64(pkt->data + 21));
                 }
                 if (rt->is_input) {
                     gen_play(s, rt);
@@ -698,7 +700,7 @@ static int get_packet(URLContext *s, int for_header)
             }
         }
         rt->bytes_read += ret;
-        if (rt->bytes_read > rt->last_bytes_read + rt->client_report_size) {
+        if (rt->bytes_read - rt->last_bytes_read > rt->client_report_size) {
             av_log(s, AV_LOG_DEBUG, "Sending bytes read report\n");
             gen_bytes_read(s, rt, rpkt.timestamp + 1);
             rt->last_bytes_read = rt->bytes_read;
@@ -998,4 +1000,5 @@ URLProtocol ff_rtmp_protocol = {
     .url_write      = rtmp_write,
     .url_close      = rtmp_close,
     .priv_data_size = sizeof(RTMPContext),
+    .flags          = URL_PROTOCOL_FLAG_NETWORK,
 };

@@ -38,7 +38,7 @@ static int tta_probe(AVProbeData *p)
     return 0;
 }
 
-static int tta_read_header(AVFormatContext *s, AVFormatParameters *ap)
+static int tta_read_header(AVFormatContext *s)
 {
     TTAContext *c = s->priv_data;
     AVStream *st;
@@ -125,8 +125,8 @@ static int tta_read_packet(AVFormatContext *s, AVPacket *pkt)
     int size, ret;
 
     // FIXME!
-    if (c->currentframe > c->totalframes)
-        return -1;
+    if (c->currentframe >= c->totalframes)
+        return AVERROR_EOF;
 
     size = st->index_entries[c->currentframe].size;
 

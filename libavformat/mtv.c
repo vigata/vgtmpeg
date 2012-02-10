@@ -53,7 +53,7 @@ typedef struct MTVDemuxContext {
 static int mtv_probe(AVProbeData *p)
 {
     /* Magic is 'AMV' */
-    if(*(p->buf) != 'A' || *(p->buf+1) != 'M' || *(p->buf+2) != 'V')
+    if (*p->buf != 'A' || *(p->buf + 1) != 'M' || *(p->buf + 2) != 'V')
         return 0;
 
     /* Check for nonzero in bpp and (width|height) header fields */
@@ -75,7 +75,7 @@ static int mtv_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
-static int mtv_read_header(AVFormatContext *s, AVFormatParameters *ap)
+static int mtv_read_header(AVFormatContext *s)
 {
     MTVDemuxContext *mtv = s->priv_data;
     AVIOContext   *pb  = s->pb;
@@ -96,16 +96,28 @@ static int mtv_read_header(AVFormatContext *s, AVFormatParameters *ap)
 
     /* Calculate width and height if missing from header */
 
-    if(!mtv->img_width)
+    if(mtv->img_bpp>>3){
+    if(!mtv->img_width && mtv->img_height)
         mtv->img_width=mtv->img_segment_size / (mtv->img_bpp>>3)
                         / mtv->img_height;
 
-    if(!mtv->img_height)
+    if(!mtv->img_height && mtv->img_width)
         mtv->img_height=mtv->img_segment_size / (mtv->img_bpp>>3)
                         / mtv->img_width;
+    }
+    if(!mtv->img_height || !mtv->img_width){
+        av_log(s, AV_LOG_ERROR, "width or height is invalid and I cannot calculate them from other information\n");
+        return AVERROR(EINVAL);
+    }
 
     avio_skip(pb, 4);
     audio_subsegments = avio_rl16(pb);
+
+    if (audio_subsegments == 0) {
+        av_log_ask_for_sample(s, "MTV files without audio are not supported\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     mtv->full_segment_size =
         audio_subsegments * (MTV_AUDIO_PADDING_SIZE + MTV_ASUBCHUNK_DATA_SIZE) +
         mtv->img_segment_size;
@@ -186,7 +198,7 @@ static int mtv_read_packet(AVFormatContext *s, AVPacket *pkt)
          * just swap bytes as they come
          */
 
-        for(i=0;i<mtv->img_segment_size/2;i++)
+        for(i=0;i<ret/2;i++)
             *((uint16_t *)pkt->data+i) = av_bswap16(*((uint16_t *)pkt->data+i));
 #endif
         pkt->stream_index = 0;

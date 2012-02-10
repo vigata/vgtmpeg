@@ -36,7 +36,7 @@
 #include "parser.h"
 #include "mpeg12data.h"
 #include "rl.h"
-#include "timecode.h"
+#include "libavutil/timecode.h"
 
 #define FRAME_SKIPPED 100 ///< return value for header parsers if frame is not coded
 
@@ -270,6 +270,7 @@ typedef struct MpegEncContext {
     int start_mb_y;            ///< start mb_y of this thread (so current thread should process start_mb_y <= row < end_mb_y)
     int end_mb_y;              ///< end   mb_y of this thread (so current thread should process start_mb_y <= row < end_mb_y)
     struct MpegEncContext *thread_context[MAX_THREADS];
+    int slice_context_count;   ///< number of used thread_contexts
 
     /**
      * copy of the previous picture structure.
@@ -311,8 +312,6 @@ typedef struct MpegEncContext {
     uint8_t *coded_block;          ///< used for coded block pattern prediction (msmpeg4v3, wmv1)
     int16_t (*ac_val_base)[16];
     int16_t (*ac_val[3])[16];      ///< used for for mpeg4 AC prediction, all 3 arrays must be continuous
-    uint8_t *prev_pict_types;     ///< previous picture types in bitstream order, used for mb skip
-#define PREV_PICT_TYPES_BUFFER_SIZE 256
     int mb_skipped;                ///< MUST BE SET only during DECODING
     uint8_t *mbskip_table;        /**< used to avoid copy if macroblock skipped (for black regions for example)
                                    and used for b-frame encoding & decoding (contains skip table of next P Frame) */
@@ -479,20 +478,22 @@ typedef struct MpegEncContext {
     int error_count, error_occurred;
     uint8_t *error_status_table;       ///< table of the error status of each MB
 #define VP_START            1          ///< current MB is the first after a resync marker
-#define AC_ERROR            2
-#define DC_ERROR            4
-#define MV_ERROR            8
-#define AC_END              16
-#define DC_END              32
-#define MV_END              64
-//FIXME some prefix?
+#define ER_AC_ERROR            2
+#define ER_DC_ERROR            4
+#define ER_MV_ERROR            8
+#define ER_AC_END              16
+#define ER_DC_END              32
+#define ER_MV_END              64
+
+#define ER_MB_ERROR (ER_AC_ERROR|ER_DC_ERROR|ER_MV_ERROR)
+#define ER_MB_END   (ER_AC_END|ER_DC_END|ER_MV_END)
 
     int resync_mb_x;                 ///< x position of last resync marker
     int resync_mb_y;                 ///< y position of last resync marker
     GetBitContext last_resync_gb;    ///< used to search for the next resync marker
     int mb_num_left;                 ///< number of MBs left in this video packet (for partitioned Slices only)
     int next_p_frame_damaged;        ///< set if the next p frame is damaged, to avoid showing trashed b frames
-    int error_recognition;
+    int err_recognition;
 
     ParseContext parse_context;
 
@@ -648,7 +649,8 @@ typedef struct MpegEncContext {
     /* RTP specific */
     int rtp_mode;
 
-    struct ff_timecode tc;
+    char *tc_opt_str;        ///< timecode option string
+    AVTimecode tc;           ///< timecode context
 
     uint8_t *ptr_lastgob;
     int swap_uv;             //vcr2 codec is an MPEG-2 variant with U and V swapped
@@ -703,7 +705,6 @@ int MPV_encode_end(AVCodecContext *avctx);
 int MPV_encode_picture(AVCodecContext *avctx, unsigned char *buf, int buf_size, void *data);
 void MPV_common_init_mmx(MpegEncContext *s);
 void MPV_common_init_axp(MpegEncContext *s);
-void MPV_common_init_mlib(MpegEncContext *s);
 void MPV_common_init_mmi(MpegEncContext *s);
 void MPV_common_init_arm(MpegEncContext *s);
 void MPV_common_init_altivec(MpegEncContext *s);
@@ -735,8 +736,8 @@ void ff_init_block_index(MpegEncContext *s);
 void ff_copy_picture(Picture *dst, Picture *src);
 
 /**
- * allocates a Picture
- * The pixels are allocated/set by calling get_buffer() if shared=0
+ * Allocate a Picture.
+ * The pixels are allocated/set by calling get_buffer() if shared = 0.
  */
 int ff_alloc_picture(MpegEncContext *s, Picture *pic, int shared);
 

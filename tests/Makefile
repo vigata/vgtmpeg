@@ -4,8 +4,8 @@ AREF = fate-acodec-aref
 VREF = fate-vsynth1-vref fate-vsynth2-vref
 REFS = $(AREF) $(VREF)
 
-$(VREF): avconv$(EXESUF) tests/vsynth1/00.pgm tests/vsynth2/00.pgm
-$(AREF): avconv$(EXESUF) tests/data/asynth1.sw
+$(VREF): ffmpeg$(EXESUF) tests/vsynth1/00.pgm tests/vsynth2/00.pgm
+$(AREF): ffmpeg$(EXESUF) tests/data/asynth1.sw
 
 ffservertest: ffserver$(EXESUF) tests/vsynth1/00.pgm tests/data/asynth1.sw
 	@echo
@@ -14,20 +14,18 @@ ffservertest: ffserver$(EXESUF) tests/vsynth1/00.pgm tests/data/asynth1.sw
 	@echo
 	$(SRC_PATH)/tests/ffserver-regression.sh $(FFSERVER_REFFILE) $(SRC_PATH)/tests/ffserver.conf
 
-tests/vsynth1/00.pgm: tests/videogen$(HOSTEXESUF)
-	@mkdir -p tests/vsynth1
+OBJDIRS += tests/data tests/vsynth1 tests/vsynth2
+
+tests/vsynth1/00.pgm: tests/videogen$(HOSTEXESUF) | tests/vsynth1
 	$(M)./$< 'tests/vsynth1/'
 
-tests/vsynth2/00.pgm: tests/rotozoom$(HOSTEXESUF)
-	@mkdir -p tests/vsynth2
+tests/vsynth2/00.pgm: tests/rotozoom$(HOSTEXESUF) | tests/vsynth2
 	$(M)./$< 'tests/vsynth2/' $(SRC_PATH)/tests/lena.pnm
 
-tests/data/asynth1.sw: tests/audiogen$(HOSTEXESUF)
-	@mkdir -p tests/data
+tests/data/asynth1.sw: tests/audiogen$(HOSTEXESUF) | tests/data
 	$(M)./$< $@
 
-tests/data/asynth-16000-1.sw: tests/audiogen$(HOSTEXESUF)
-	@mkdir -p tests/data
+tests/data/asynth-16000-1.sw: tests/audiogen$(HOSTEXESUF) | tests/data
 	$(M)./$< $@ 16000 1
 
 tests/data/mapchan-6ch.sw: tests/audiogen$(HOSTEXESUF)
@@ -38,23 +36,46 @@ tests/data/mapchan-mono.sw: tests/audiogen$(HOSTEXESUF)
 	@mkdir -p tests/data
 	$(M)./$< $@ 22050 1
 
-tests/data/asynth%.sw tests/vsynth%/00.pgm: TAG = GEN
-
-include $(SRC_PATH)/tests/fate.mak
-include $(SRC_PATH)/tests/fate2.mak
+tests/data/%.sw tests/vsynth%/00.pgm: TAG = GEN
 
 include $(SRC_PATH)/tests/fate/aac.mak
+include $(SRC_PATH)/tests/fate/ac3.mak
+include $(SRC_PATH)/tests/fate/adpcm.mak
 include $(SRC_PATH)/tests/fate/als.mak
 include $(SRC_PATH)/tests/fate/amrnb.mak
 include $(SRC_PATH)/tests/fate/amrwb.mak
+include $(SRC_PATH)/tests/fate/atrac.mak
+include $(SRC_PATH)/tests/fate/audio.mak
 include $(SRC_PATH)/tests/fate/dct.mak
+include $(SRC_PATH)/tests/fate/demux.mak
+include $(SRC_PATH)/tests/fate/dfa.mak
+include $(SRC_PATH)/tests/fate/dpcm.mak
+include $(SRC_PATH)/tests/fate/ea.mak
 include $(SRC_PATH)/tests/fate/fft.mak
 include $(SRC_PATH)/tests/fate/h264.mak
+include $(SRC_PATH)/tests/fate/image.mak
+include $(SRC_PATH)/tests/fate/indeo.mak
+include $(SRC_PATH)/tests/fate/libavcodec.mak
 include $(SRC_PATH)/tests/fate/libavutil.mak
+include $(SRC_PATH)/tests/fate/mapchan.mak
+include $(SRC_PATH)/tests/fate/lossless-audio.mak
+include $(SRC_PATH)/tests/fate/lossless-video.mak
+include $(SRC_PATH)/tests/fate/microsoft.mak
 include $(SRC_PATH)/tests/fate/mp3.mak
+include $(SRC_PATH)/tests/fate/mpc.mak
+include $(SRC_PATH)/tests/fate/pcm.mak
 include $(SRC_PATH)/tests/fate/prores.mak
+include $(SRC_PATH)/tests/fate/qt.mak
+include $(SRC_PATH)/tests/fate/qtrle.mak
+include $(SRC_PATH)/tests/fate/real.mak
+include $(SRC_PATH)/tests/fate/screen.mak
+include $(SRC_PATH)/tests/fate/utvideo.mak
+include $(SRC_PATH)/tests/fate/video.mak
+include $(SRC_PATH)/tests/fate/voice.mak
 include $(SRC_PATH)/tests/fate/vorbis.mak
-include $(SRC_PATH)/tests/fate/vp8.mak
+include $(SRC_PATH)/tests/fate/vpx.mak
+include $(SRC_PATH)/tests/fate/vqf.mak
+include $(SRC_PATH)/tests/fate/wma.mak
 
 FATE_ACODEC  = $(ACODEC_TESTS:%=fate-acodec-%)
 FATE_VSYNTH1 = $(VCODEC_TESTS:%=fate-vsynth1-%)
@@ -99,6 +120,8 @@ FATE += $(FATE_TESTS) $(FATE_TESTS-yes)
 fate-rsync:
 	rsync -vaLW --timeout=60 --contimeout=60 rsync://fate.ffmpeg.org/fate-suite/ $(SAMPLES)
 else
+fate::
+	@echo "warning: only a subset of the fate tests will be run because SAMPLES is not specified"
 fate-rsync:
 	@echo "use 'make fate-rsync SAMPLES=/path/to/samples' to sync the fate suite"
 $(FATE_TESTS):
@@ -109,7 +132,7 @@ FATE_UTILS = base64 tiny_psnr
 
 TOOL = ffmpeg
 
-fate: $(FATE)
+fate:: $(FATE)
 
 $(FATE): $(TOOL)$(EXESUF) $(FATE_UTILS:%=tests/%$(HOSTEXESUF))
 	@echo "TEST    $(@:fate-%=%)"

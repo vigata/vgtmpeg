@@ -214,7 +214,9 @@ void ff_mjpeg_encode_picture_header(MpegEncContext *s)
     }
 
     put_bits(&s->pb, 16, 17);
-    if(lossless && s->avctx->pix_fmt == PIX_FMT_BGRA)
+    if(lossless && (s->avctx->pix_fmt == PIX_FMT_BGR0
+                    || s->avctx->pix_fmt == PIX_FMT_BGRA
+                    || s->avctx->pix_fmt == PIX_FMT_BGR24))
         put_bits(&s->pb, 8, 9); /* 9 bits/component RCT */
     else
         put_bits(&s->pb, 8, 8); /* 8 bits/component */
@@ -490,5 +492,6 @@ AVCodec ff_amv_encoder = {
     .init           = MPV_encode_init,
     .encode         = amv_encode_picture,
     .close          = MPV_encode_end,
-    .pix_fmts= (enum PixelFormat[]){PIX_FMT_YUVJ420P, PIX_FMT_YUVJ422P, -1},
+    .pix_fmts= (const enum PixelFormat[]){PIX_FMT_YUVJ420P, PIX_FMT_YUVJ422P, PIX_FMT_NONE},
+    .long_name      = NULL_IF_CONFIG_SMALL("AMV Video"),
 };

@@ -2,16 +2,76 @@ Never assume the API of libav* to be stable unless at least 1 month has passed
 since the last major version increase.
 
 The last version increases were:
-libavcodec:  2011-04-18
+libavcodec:  2012-01-27
 libavdevice: 2011-04-18
 libavfilter: 2011-04-18
-libavformat: 2011-04-18
+libavformat: 2012-01-27
 libpostproc: 2011-04-18
 libswscale:  2011-06-20
 libavutil:   2011-04-18
 
 
 API changes, most recent first:
+
+2012-02-09 - xxxxxxx - lavu 51.39.100
+  Add a new installed header libavutil/timestamp.h with timestamp
+  utilities.
+
+2012-02-06 - xxxxxxx - lavu 51.38.100
+  Add av_parse_ratio() function to parseutils.h.
+
+2012-02-06 - xxxxxxx - lavu 51.38.100
+  Add AV_LOG_MAX_OFFSET macro to log.h.
+
+2012-02-02 - xxxxxxx - lavu 51.37.100
+  Add public timecode helpers.
+
+2012-01-24 - xxxxxxx - lavfi 2.60.100
+  Add avfilter_graph_dump.
+
+2012-02-xx - xxxxxxx - lavu 51.22.1 - pixdesc.h
+  Add PIX_FMT_PSEUDOPAL flag.
+
+2012-02-01 - xxxxxxx - lavc 54.01.0
+  Add avcodec_encode_video2() and deprecate avcodec_encode_video().
+
+2012-02-01 - 316fc74 - lavc 54.01.0
+  Add av_fast_padded_malloc() as alternative for av_realloc() when aligned
+  memory is required. The buffer will always have FF_INPUT_BUFFER_PADDING_SIZE
+  zero-padded bytes at the end.
+
+2012-01-31 - dd6d3b0 - lavf 54.01.0
+  Add avformat_get_riff_video_tags() and avformat_get_riff_audio_tags().
+
+2012-01-31 - af08d9a - lavc 54.01.0
+  Add avcodec_is_open() function.
+
+2012-01-30 - 8b93312 - lavu 51.22.0 - intfloat.h
+  Add a new installed header libavutil/intfloat.h with int/float punning
+  functions.
+
+2012-01-25 - lavf 53.22.0
+  f1caf01 Allow doing av_write_frame(ctx, NULL) for flushing possible
+          buffered data within a muxer. Added AVFMT_ALLOW_FLUSH for
+          muxers supporting it (av_write_frame makes sure it is called
+          only for muxers with this flag).
+
+2012-01-15 - lavc 53.34.0
+  New audio encoding API:
+  b2c75b6 Add CODEC_CAP_VARIABLE_FRAME_SIZE capability for use by audio
+          encoders.
+  5ee5fa0 Add avcodec_fill_audio_frame() as a convenience function.
+  b2c75b6 Add avcodec_encode_audio2() and deprecate avcodec_encode_audio().
+          Add AVCodec.encode2().
+
+2012-01-12 - 3167dc9 - lavfi 2.15.0
+  Add a new installed header -- libavfilter/version.h -- with version macros.
+
+2011-12-08 - a502939 - lavfi 2.52.0
+  Add av_buffersink_poll_frame() to buffersink.h.
+
+2011-12-08 - xxxxxxx - lavu 51.31.0
+  Add av_log_format_line.
 
 2011-12-03 - xxxxxxx - lavu 51.30.0
   Add AVERROR_BUG.
@@ -25,14 +85,24 @@ API changes, most recent first:
 2011-10-20 - b35e9e1 - lavu 51.22.0
   Add av_strtok() to avstring.h.
 
-2011-xx-xx - xxxxxxx - lavc 53.25.0
+2011-01-03 - b73ec05 - lavu 51.21.0
+  Add av_popcount64
+
+2011-12-18 - 8400b12 - lavc 53.28.1
+  Deprecate AVFrame.age. The field is unused.
+
+2011-12-12 - 5266045 - lavf 53.17.0
+  Add avformat_close_input().
+  Deprecate av_close_input_file() and av_close_input_stream().
+
+2011-12-02 - 0eea212 - lavc 53.25.0
   Add nb_samples and extended_data fields to AVFrame.
   Deprecate AVCODEC_MAX_AUDIO_FRAME_SIZE.
   Deprecate avcodec_decode_audio3() in favor of avcodec_decode_audio4().
   avcodec_decode_audio4() writes output samples to an AVFrame, which allows
   audio decoders to use get_buffer().
 
-2011-xx-xx - xxxxxxx - lavc 53.24.0
+2011-12-04 - 560f773 - lavc 53.24.0
   Change AVFrame.data[4]/base[4]/linesize[4]/error[4] to [8] at next major bump.
   Change AVPicture.data[4]/linesize[4] to [8] at next major bump.
   Change AVCodecContext.error[4] to [8] at next major bump.
@@ -73,7 +143,7 @@ API changes, most recent first:
   Add av_toupper()/av_tolower()
 
 2011-11-05 - b6d08f4 - lavf 53.13.0
-  Add avformat_network_init()/avformat_network_uninit()
+  Add avformat_network_init()/avformat_network_deinit()
 
 2011-10-27 - 512557b - lavc 53.15.0
   Remove avcodec_parse_frame.
@@ -158,6 +228,10 @@ API changes, most recent first:
 2011-08-14 - 323b930 - lavu 51.12.0
   Add av_fifo_peek2(), deprecate av_fifo_peek().
 
+2011-08-26 - lavu 51.9.0
+  - add41de..abc78a5 Do not include intfloat_readwrite.h,
+    mathematics.h, rational.h, pixfmt.h, or log.h from avutil.h.
+
 2011-08-16 - 48f9e45 - lavf 53.8.0
   Add avformat_query_codec().
 
@@ -183,6 +257,8 @@ API changes, most recent first:
 
 2011-07-10 - 0b950fe - lavc 53.8.0
   Add avcodec_open2(), deprecate avcodec_open().
+  Add avcodec_alloc_context3. Deprecate avcodec_alloc_context() and
+  avcodec_alloc_context2().
 
 2011-07-01 - b442ca6 - lavf 53.5.0 - avformat.h
   Add function av_get_output_timestamp().

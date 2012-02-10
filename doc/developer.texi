@@ -77,6 +77,11 @@ Use the JavaDoc/Doxygen  format (see examples below) so that code documentation
 can be generated automatically. All nontrivial functions should have a comment
 above them explaining what the function does, even if it is just one sentence.
 All structures and their member variables should be documented, too.
+
+Avoid Qt-style and similar Doxygen syntax with @code{!} in it, i.e. replace
+@code{//!} with @code{///} and similar.  Also @@ syntax should be employed
+for markup commands, i.e. use @code{@@param} and not @code{\param}.
+
 @example
 /**
  * @@file
@@ -174,6 +179,31 @@ Casts should be used only when necessary. Unneeded parentheses
 should also be avoided if they don't make the code easier to understand.
 @end itemize
 
+@subsection Editor configuration
+In order to configure Vim to follow FFmpeg formatting conventions, paste
+the following snippet into your @file{.vimrc}:
+@example
+" indentation rules for FFmpeg: 4 spaces, no tabs
+set expandtab
+set shiftwidth=4
+set softtabstop=4
+" allow tabs in Makefiles
+autocmd FileType make set noexpandtab shiftwidth=8 softtabstop=8
+" Trailing whitespace and tabs are forbidden, so highlight them.
+highlight ForbiddenWhitespace ctermbg=red guibg=red
+match ForbiddenWhitespace /\s\+$\|\t/
+" Do not highlight spaces at the end of line while typing on that line.
+autocmd InsertEnter * match ForbiddenWhitespace /\t\|\s\+\%#\@@<!$/
+@end example
+
+For Emacs, add these roughly equivalent lines to your @file{.emacs.d/init.el}:
+@example
+(setq c-default-style "k&r")
+(setq-default c-basic-offset 4)
+(setq-default indent-tabs-mode nil)
+(setq-default show-trailing-whitespace t)
+@end example
+
 @section Development Policy
 
 @enumerate
@@ -269,7 +299,7 @@ should also be avoided if they don't make the code easier to understand.
     always check values read from some untrusted source before using them
     as array index or other risky things.
 @item
-    Remember to check if you need to bump versions for the specific libav
+    Remember to check if you need to bump versions for the specific libav*
     parts (libavutil, libavcodec, libavformat) you are changing. You need
     to change the version integer.
     Incrementing the first component means no backward compatibility to
@@ -315,7 +345,7 @@ for us and greatly increases your chances of getting your patch applied.
 Use the patcheck tool of FFmpeg to check your patch.
 The tool is located in the tools directory.
 
-Run the @ref{Regression Tests} before submitting a patch in order to verify
+Run the @ref{Regression tests} before submitting a patch in order to verify
 it does not cause unexpected problems.
 
 Patches should be posted as base64 encoded attachments (or any other
@@ -478,12 +508,13 @@ not related to the comments received during review. Such patches will
 be rejected. Instead, submit significant changes or new features as
 separate patches.
 
+@anchor{Regression tests}
 @section Regression tests
 
 Before submitting a patch (or committing to the repository), you should at least
 test that you did not break anything.
 
-Running 'make fate' accomplishes this, please see @file{doc/fate.txt} for details.
+Running 'make fate' accomplishes this, please see @url{fate.html} for details.
 
 [Of course, some patches may change the results of the regression tests. In
 this case, the reference results of the regression tests shall be modified

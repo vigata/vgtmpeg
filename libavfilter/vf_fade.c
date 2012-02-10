@@ -149,7 +149,7 @@ static av_cold void uninit(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    const static enum PixelFormat pix_fmts[] = {
+    static const enum PixelFormat pix_fmts[] = {
         PIX_FMT_YUV444P,  PIX_FMT_YUV422P,  PIX_FMT_YUV420P,
         PIX_FMT_YUV411P,  PIX_FMT_YUV410P,
         PIX_FMT_YUVJ444P, PIX_FMT_YUVJ422P, PIX_FMT_YUVJ420P,
@@ -278,7 +278,7 @@ static void end_frame(AVFilterLink *inlink)
 
 AVFilter avfilter_vf_fade = {
     .name          = "fade",
-    .description   = NULL_IF_CONFIG_SMALL("Fade in/out input video"),
+    .description   = NULL_IF_CONFIG_SMALL("Fade in/out input video."),
     .init          = init,
     .uninit        = uninit,
     .priv_size     = sizeof(FadeContext),

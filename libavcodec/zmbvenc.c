@@ -265,16 +265,16 @@ static av_cold int encode_init(AVCodecContext *avctx)
         lvl = avctx->compression_level;
     if(lvl < 0 || lvl > 9){
         av_log(avctx, AV_LOG_ERROR, "Compression level should be 0-9, not %i\n", lvl);
-        return -1;
+        return AVERROR(EINVAL);
     }
 
     // Needed if zlib unused or init aborted before deflateInit
-    memset(&(c->zstream), 0, sizeof(z_stream));
+    memset(&c->zstream, 0, sizeof(z_stream));
     c->comp_size = avctx->width * avctx->height + 1024 +
         ((avctx->width + ZMBV_BLOCK - 1) / ZMBV_BLOCK) * ((avctx->height + ZMBV_BLOCK - 1) / ZMBV_BLOCK) * 2 + 4;
     if ((c->work_buf = av_malloc(c->comp_size)) == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Can't allocate work buffer.\n");
-        return -1;
+        return AVERROR(ENOMEM);
     }
     /* Conservative upper bound taken from zlib v1.2.1 source via lcl.c */
     c->comp_size = c->comp_size + ((c->comp_size + 7) >> 3) +
@@ -283,18 +283,18 @@ static av_cold int encode_init(AVCodecContext *avctx)
     /* Allocate compression buffer */
     if ((c->comp_buf = av_malloc(c->comp_size)) == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Can't allocate compression buffer.\n");
-        return -1;
+        return AVERROR(ENOMEM);
     }
     c->pstride = FFALIGN(avctx->width, 16);
     if ((c->prev = av_malloc(c->pstride * avctx->height)) == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Can't allocate picture.\n");
-        return -1;
+        return AVERROR(ENOMEM);
     }
 
     c->zstream.zalloc = Z_NULL;
     c->zstream.zfree = Z_NULL;
     c->zstream.opaque = Z_NULL;
-    zret = deflateInit(&(c->zstream), lvl);
+    zret = deflateInit(&c->zstream, lvl);
     if (zret != Z_OK) {
         av_log(avctx, AV_LOG_ERROR, "Inflate init error: %d\n", zret);
         return -1;
@@ -317,7 +317,7 @@ static av_cold int encode_end(AVCodecContext *avctx)
     av_freep(&c->comp_buf);
     av_freep(&c->work_buf);
 
-    deflateEnd(&(c->zstream));
+    deflateEnd(&c->zstream);
     av_freep(&c->prev);
 
     return 0;

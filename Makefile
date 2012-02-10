@@ -8,9 +8,9 @@ vpath %.S    $(SRC_PATH)
 vpath %.asm  $(SRC_PATH)
 vpath %.v    $(SRC_PATH)
 vpath %.texi $(SRC_PATH)
+vpath %/fate_config.sh.template $(SRC_PATH)
 
 PROGS-$(CONFIG_FFMPEG)   += vgtmpeg
-PROGS-$(CONFIG_AVCONV)   += avconv
 PROGS-$(CONFIG_FFPLAY)   += ffplay
 PROGS-$(CONFIG_FFPROBE)  += ffprobe
 PROGS-$(CONFIG_FFSERVER) += ffserver
@@ -23,7 +23,7 @@ HOSTPROGS  := $(TESTTOOLS:%=tests/%)
 TOOLS       = qt-faststart trasher
 TOOLS-$(CONFIG_ZLIB) += cws2fws
 
-BASENAMES   = ffmpeg avconv ffplay ffprobe ffserver
+BASENAMES   = ffmpeg ffplay ffprobe ffserver
 ALLPROGS    = $(BASENAMES:%=%$(PROGSSUF)$(EXESUF))
 ALLPROGS_G  = $(BASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
 ALLMANPAGES = $(BASENAMES:%=%.1)
@@ -38,7 +38,7 @@ FFLIBS-$(CONFIG_SWSCALE)  += swscale
 
 FFLIBS := avutil
 
-DATA_FILES := $(wildcard $(SRC_PATH)/presets/*.ffpreset)
+DATA_FILES := $(wildcard $(SRC_PATH)/presets/*.ffpreset) $(SRC_PATH)/doc/ffprobe.xsd
 
 SKIPHEADERS = cmdutils_common_opts.h
 
@@ -65,7 +65,7 @@ config.h: .config
 	@-tput sgr0 2>/dev/null
 
 SUBDIR_VARS := OBJS FFLIBS CLEANFILES DIRS TESTPROGS EXAMPLES SKIPHEADERS \
-               ALTIVEC-OBJS MMX-OBJS NEON-OBJS X86-OBJS YASM-OBJS-FFT YASM-OBJS \
+               ALTIVEC-OBJS MMX-OBJS NEON-OBJS YASM-OBJS                  \
                HOSTPROGS BUILT_HEADERS TESTOBJS ARCH_HEADERS ARMV6-OBJS TOOLS
 
 define RESET
@@ -77,6 +77,8 @@ define DOSUBDIR
 $(foreach V,$(SUBDIR_VARS),$(eval $(call RESET,$(V))))
 SUBDIR := $(1)/
 include $(SRC_PATH)/$(1)/Makefile
+-include $(SRC_PATH)/$(1)/$(ARCH)/Makefile
+include $(SRC_PATH)/library.mak
 endef
 
 $(foreach D,$(FFLIBS),$(eval $(call DOSUBDIR,lib$(D))))
@@ -137,6 +139,8 @@ clean::
 	$(RM) $(CLEANSUFFIXES)
 	$(RM) $(TOOLS)
 	$(RM) $(CLEANSUFFIXES:%=tools/%)
+	$(RM) coverage.info
+	$(RM) -r coverage-html
 
 distclean::
 	$(RM) $(DISTCLEANSUFFIXES)
@@ -144,6 +148,15 @@ distclean::
 
 config:
 	$(SRC_PATH)/configure $(value FFMPEG_CONFIGURATION)
+
+# Without the sed genthml thinks "libavutil" and "./libavutil" are two different things
+coverage.info: $(wildcard *.gcda *.gcno */*.gcda */*.gcno */*/*.gcda */*/*.gcno)
+	$(Q)lcov -c -d . -b . | sed -e 's#/./#/#g' > $@
+
+coverage-html: coverage.info
+	$(Q)mkdir -p $@
+	$(Q)genhtml -o $@ $<
+	$(Q)touch $@
 
 include $(SRC_PATH)/doc/Makefile
 include $(SRC_PATH)/tests/Makefile

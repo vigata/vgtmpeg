@@ -138,8 +138,7 @@ static int idcin_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX / 2;
 }
 
-static int idcin_read_header(AVFormatContext *s,
-                             AVFormatParameters *ap)
+static int idcin_read_header(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     IdcinDemuxContext *idcin = s->priv_data;
@@ -248,7 +247,9 @@ static int idcin_read_packet(AVFormatContext *s,
                 r = palette_buffer[i * 3    ] << palette_scale;
                 g = palette_buffer[i * 3 + 1] << palette_scale;
                 b = palette_buffer[i * 3 + 2] << palette_scale;
-                palette[i] = (r << 16) | (g << 8) | (b);
+                palette[i] = (0xFFU << 24) | (r << 16) | (g << 8) | (b);
+                if (palette_scale == 2)
+                    palette[i] |= palette[i] >> 6 & 0x30303;
             }
         }
 
@@ -264,8 +265,8 @@ static int idcin_read_packet(AVFormatContext *s,
 
             pal = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE,
                                           AVPALETTE_SIZE);
-            if (ret < 0)
-                return ret;
+            if (!pal)
+                return AVERROR(ENOMEM);
             memcpy(pal, palette, AVPALETTE_SIZE);
         }
         pkt->stream_index = idcin->video_stream_index;

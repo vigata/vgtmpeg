@@ -1012,7 +1012,7 @@ static void zero_remaining(unsigned int b, unsigned int b_max,
     unsigned int count = 0;
 
     while (b < b_max)
-        count += div_blocks[b];
+        count += div_blocks[b++];
 
     if (count)
         memset(buf, 0, sizeof(*buf) * count);
@@ -1755,4 +1755,3 @@ AVCodec ff_als_decoder = {
     .capabilities = CODEC_CAP_SUBFRAMES | CODEC_CAP_DR1,
     .long_name = NULL_IF_CONFIG_SMALL("MPEG-4 Audio Lossless Coding (ALS)"),
 };
-

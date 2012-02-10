@@ -37,7 +37,7 @@ typedef struct MXGContext {
     unsigned int cache_size;
 } MXGContext;
 
-static int mxg_read_header(AVFormatContext *s, AVFormatParameters *ap)
+static int mxg_read_header(AVFormatContext *s)
 {
     AVStream *video_st, *audio_st;
     MXGContext *mxg = s->priv_data;
@@ -104,7 +104,7 @@ static int mxg_update_cache(AVFormatContext *s, unsigned int cache_size)
     /* reallocate internal buffer */
     if (current_pos > current_pos + cache_size)
         return AVERROR(ENOMEM);
-    if (mxg->soi_ptr) soi_pos = mxg->soi_ptr - mxg->buffer;
+    soi_pos = mxg->soi_ptr - mxg->buffer;
     mxg->buffer = av_fast_realloc(mxg->buffer, &mxg->buffer_size,
                                   current_pos + cache_size +
                                   FF_INPUT_BUFFER_PADDING_SIZE);

@@ -135,6 +135,8 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { CODEC_ID_MPEG2VIDEO,   MKTAG('E', 'M', '2', 'V') },
     { CODEC_ID_MPEG2VIDEO,   MKTAG('M', '7', '0', '1') }, /* Matrox MPEG2 intra-only */
     { CODEC_ID_MPEG2VIDEO,   MKTAG('m', 'p', 'g', 'v') },
+    { CODEC_ID_MPEG1VIDEO,   MKTAG('B', 'W', '1', '0') },
+    { CODEC_ID_MPEG1VIDEO,   MKTAG('X', 'M', 'P', 'G') }, /* Xing MPEG intra only */
     { CODEC_ID_MJPEG,        MKTAG('M', 'J', 'P', 'G') },
     { CODEC_ID_MJPEG,        MKTAG('L', 'J', 'P', 'G') },
     { CODEC_ID_MJPEG,        MKTAG('d', 'm', 'b', '1') },
@@ -174,6 +176,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { CODEC_ID_RAWVIDEO,     MKTAG('2', 'V', 'u', '1') },
     { CODEC_ID_RAWVIDEO,     MKTAG('2', 'v', 'u', 'y') },
     { CODEC_ID_RAWVIDEO,     MKTAG('y', 'u', 'v', 's') },
+    { CODEC_ID_RAWVIDEO,     MKTAG('y', 'u', 'v', '2') },
     { CODEC_ID_RAWVIDEO,     MKTAG('P', '4', '2', '2') },
     { CODEC_ID_RAWVIDEO,     MKTAG('Y', 'V', '1', '2') },
     { CODEC_ID_RAWVIDEO,     MKTAG('Y', 'V', '1', '6') },
@@ -198,6 +201,11 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { CODEC_ID_R10K,         MKTAG('R', '1', '0', 'k') },
     { CODEC_ID_R210,         MKTAG('r', '2', '1', '0') },
     { CODEC_ID_V210,         MKTAG('v', '2', '1', '0') },
+    { CODEC_ID_V308,         MKTAG('v', '3', '0', '8') },
+    { CODEC_ID_V408,         MKTAG('v', '4', '0', '8') },
+    { CODEC_ID_AYUV,         MKTAG('A', 'Y', 'U', 'V') },
+    { CODEC_ID_V410,         MKTAG('v', '4', '1', '0') },
+    { CODEC_ID_YUV4,         MKTAG('y', 'u', 'v', '4') },
     { CODEC_ID_INDEO3,       MKTAG('I', 'V', '3', '1') },
     { CODEC_ID_INDEO3,       MKTAG('I', 'V', '3', '2') },
     { CODEC_ID_INDEO4,       MKTAG('I', 'V', '4', '1') },
@@ -234,6 +242,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { CODEC_ID_SNOW,         MKTAG('S', 'N', 'O', 'W') },
     { CODEC_ID_4XM,          MKTAG('4', 'X', 'M', 'V') },
     { CODEC_ID_FLV1,         MKTAG('F', 'L', 'V', '1') },
+    { CODEC_ID_FLV1,         MKTAG('S', '2', '6', '3') },
     { CODEC_ID_FLASHSV,      MKTAG('F', 'S', 'V', '1') },
     { CODEC_ID_SVQ1,         MKTAG('s', 'v', 'q', '1') },
     { CODEC_ID_TSCC,         MKTAG('t', 's', 'c', 'c') },
@@ -266,7 +275,7 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { CODEC_ID_TARGA,        MKTAG('t', 'g', 'a', ' ') },
     { CODEC_ID_PNG,          MKTAG('M', 'P', 'N', 'G') },
     { CODEC_ID_PNG,          MKTAG('P', 'N', 'G', '1') },
-    { CODEC_ID_CLJR,         MKTAG('c', 'l', 'j', 'r') },
+    { CODEC_ID_CLJR,         MKTAG('C', 'L', 'J', 'R') },
     { CODEC_ID_DIRAC,        MKTAG('d', 'r', 'a', 'c') },
     { CODEC_ID_RPZA,         MKTAG('a', 'z', 'p', 'r') },
     { CODEC_ID_RPZA,         MKTAG('R', 'P', 'Z', 'A') },
@@ -286,6 +295,9 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'Y', '0') },
     { CODEC_ID_UTVIDEO,      MKTAG('U', 'L', 'Y', '2') },
     { CODEC_ID_VBLE,         MKTAG('V', 'B', 'L', 'E') },
+    { CODEC_ID_ESCAPE130,    MKTAG('E', '1', '3', '0') },
+    { CODEC_ID_DXTORY,       MKTAG('x', 't', 'o', 'r') },
+    { CODEC_ID_Y41P,         MKTAG('Y', '4', '1', 'P') },
     { CODEC_ID_NONE,         0 }
 };
 
@@ -515,7 +527,7 @@ void ff_put_bmp_header(AVIOContext *pb, AVCodecContext *enc, const AVCodecTag *t
     avio_wl16(pb, enc->bits_per_coded_sample ? enc->bits_per_coded_sample : 24); /* depth */
     /* compression type */
     avio_wl32(pb, enc->codec_tag);
-    avio_wl32(pb, enc->width * enc->height * 3);
+    avio_wl32(pb, (enc->width * enc->height * (enc->bits_per_coded_sample ? enc->bits_per_coded_sample : 24)+7) / 8);
     avio_wl32(pb, 0);
     avio_wl32(pb, 0);
     avio_wl32(pb, 0);
@@ -666,7 +678,8 @@ void ff_parse_specific_params(AVCodecContext *stream, int *au_rate, int *au_ssiz
 void ff_get_guid(AVIOContext *s, ff_asf_guid *g)
 {
     assert(sizeof(*g) == 16);
-    avio_read(s, *g, sizeof(*g));
+    if (avio_read(s, *g, sizeof(*g)) < (int)sizeof(*g))
+        memset(*g, 0, sizeof(*g));
 }
 
 enum CodecID ff_codec_guid_get_id(const AVCodecGuid *guids, ff_asf_guid guid)
@@ -711,8 +724,7 @@ int ff_read_riff_info(AVFormatContext *s, int64_t size)
         AV_WL32(key, chunk_code);
 
         if (avio_read(pb, value, chunk_size) != chunk_size) {
-            av_freep(key);
-            av_freep(value);
+            av_freep(&value);
             av_log(s, AV_LOG_ERROR, "premature end of file while reading INFO tag\n");
             return AVERROR_INVALIDDATA;
         }

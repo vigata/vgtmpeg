@@ -43,6 +43,11 @@ extern const char program_name[];
  */
 extern const int program_birth_year;
 
+/**
+ * this year, defined by the program for show_banner()
+ */
+extern const int this_year;
+
 extern AVCodecContext *avcodec_opts[AVMEDIA_TYPE_NB];
 extern AVFormatContext *avformat_opts;
 extern struct SwsContext *sws_opts;
@@ -76,6 +81,10 @@ int opt_default(const char *opt, const char *arg);
  */
 int opt_loglevel(const char *opt, const char *arg);
 
+int opt_report(const char *opt);
+
+int opt_max_alloc(const char *opt, const char *arg);
+
 int opt_codec_debug(const char *opt, const char *arg);
 
 /**
@@ -89,14 +98,15 @@ int opt_timelimit(const char *opt, const char *arg);
  * parsed or the corresponding value is invalid.
  *
  * @param context the context of the value to be set (e.g. the
- * corresponding commandline option name)
+ * corresponding command line option name)
  * @param numstr the string to be parsed
  * @param type the type (OPT_INT64 or OPT_FLOAT) as which the
  * string should be parsed
  * @param min the minimum valid accepted value
  * @param max the maximum valid accepted value
  */
-double parse_number_or_die(const char *context, const char *numstr, int type, double min, double max);
+double parse_number_or_die(const char *context, const char *numstr, int type,
+                           double min, double max);
 
 /**
  * Parse a string specifying a time and return its corresponding
@@ -104,7 +114,7 @@ double parse_number_or_die(const char *context, const char *numstr, int type, do
  * the string cannot be correctly parsed.
  *
  * @param context the context of the value to be set (e.g. the
- * corresponding commandline option name)
+ * corresponding command line option name)
  * @param timestr the string to be parsed
  * @param is_duration a flag which tells how to interpret timestr, if
  * not zero timestr is interpreted as a duration, otherwise as a
@@ -112,7 +122,8 @@ double parse_number_or_die(const char *context, const char *numstr, int type, do
  *
  * @see parse_date()
  */
-int64_t parse_time_or_die(const char *context, const char *timestr, int is_duration);
+int64_t parse_time_or_die(const char *context, const char *timestr,
+                          int is_duration);
 
 typedef struct SpecifierOpt {
     char *specifier;    /**< stream/chapter/program/... specifier */
@@ -158,7 +169,8 @@ typedef struct {
     const char *argname;
 } OptionDef;
 
-void show_help_options(const OptionDef *options, const char *msg, int mask, int value);
+void show_help_options(const OptionDef *options, const char *msg, int mask,
+                       int value);
 
 /**
  * Show help for all options with given flags in class and all its
@@ -184,10 +196,11 @@ void parse_options(void *optctx, int argc, char **argv, const OptionDef *options
  *
  * @return on success 1 if arg was consumed, 0 otherwise; negative number on error
  */
-int parse_option(void *optctx, const char *opt, const char *arg, const OptionDef *options);
+int parse_option(void *optctx, const char *opt, const char *arg,
+                 const OptionDef *options);
 
 /**
- * Find the '-loglevel' option in the commandline args and apply it.
+ * Find the '-loglevel' option in the command line args and apply it.
  */
 void parse_loglevel(int argc, char **argv, const OptionDef *options);
 
@@ -196,7 +209,7 @@ void parse_loglevel(int argc, char **argv, const OptionDef *options);
  *
  * @param s  Corresponding format context.
  * @param st Stream from s to be checked.
- * @param spec A stream specifier of the [v|a|s|d]:[<stream index>] form.
+ * @param spec A stream specifier of the [v|a|s|d]:[\<stream index\>] form.
  *
  * @return 1 if the stream matches, 0 if it doesn't, <0 on error
  */
@@ -212,7 +225,8 @@ int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec);
  * @param st A stream from s for which the options should be filtered.
  * @return a pointer to the created dictionary
  */
-AVDictionary *filter_codec_opts(AVDictionary *opts, AVCodec *codec, AVFormatContext *s, AVStream *st);
+AVDictionary *filter_codec_opts(AVDictionary *opts, AVCodec *codec,
+                                AVFormatContext *s, AVStream *st);
 
 /**
  * Setup AVCodecContext options for avformat_find_stream_info().
@@ -225,7 +239,8 @@ AVDictionary *filter_codec_opts(AVDictionary *opts, AVCodec *codec, AVFormatCont
  * @return pointer to the created array of dictionaries, NULL if it
  * cannot be created
  */
-AVDictionary **setup_find_stream_info_opts(AVFormatContext *s, AVDictionary *codec_opts);
+AVDictionary **setup_find_stream_info_opts(AVFormatContext *s,
+                                           AVDictionary *codec_opts);
 
 /**
  * Print an error message to stderr, indicating filename and a human
@@ -243,7 +258,7 @@ void print_error(const char *filename, int err);
  * current version of the repository and of the libav* libraries used by
  * the program.
  */
-void show_banner(void);
+void show_banner(int argc, char **argv, const OptionDef *options);
 
 /**
  * Print the version of the program to stdout. The version message

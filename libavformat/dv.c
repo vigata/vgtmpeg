@@ -34,7 +34,9 @@
 #include "libavcodec/dvdata.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mathematics.h"
+#include "libavutil/timecode.h"
 #include "dv.h"
+#include "libavutil/avassert.h"
 
 struct DVDemuxContext {
     const DVprofile*  sys;    /* Current DV profile. E.g.: 525/60, 625/50 */
@@ -87,6 +89,9 @@ static const uint8_t* dv_extract_pack(uint8_t* frame, enum dv_pack_type t)
     case dv_video_control:
         offs = (80*5 + 48 + 5);
         break;
+    case dv_timecode:
+        offs = (80*1 + 3 + 3);
+        break;
     default:
         return NULL;
     }
@@ -127,15 +132,20 @@ static int dv_extract_audio(uint8_t* frame, uint8_t* ppcm[4],
     /* We work with 720p frames split in half, thus even frames have
      * channels 0,1 and odd 2,3. */
     ipcm = (sys->height == 720 && !(frame[1] & 0x0C)) ? 2 : 0;
-    pcm  = ppcm[ipcm++];
 
     /* for each DIF channel */
     for (chan = 0; chan < sys->n_difchan; chan++) {
+        av_assert0(ipcm<4);
+        pcm = ppcm[ipcm++];
+        if (!pcm)
+            break;
+
         /* for each DIF segment */
         for (i = 0; i < sys->difseg_size; i++) {
             frame += 6 * 80; /* skip DIF segment header */
             if (quant == 1 && i == half_ch) {
                 /* next stereo channel (12bit mode only) */
+                av_assert0(ipcm<4);
                 pcm = ppcm[ipcm++];
                 if (!pcm)
                     break;
@@ -178,11 +188,6 @@ static int dv_extract_audio(uint8_t* frame, uint8_t* ppcm[4],
                 frame += 16 * 80; /* 15 Video DIFs + 1 Audio DIF */
             }
         }
-
-        /* next stereo channel (50Mbps and 100Mbps only) */
-        pcm = ppcm[ipcm++];
-        if (!pcm)
-            break;
     }
 
     return size;
@@ -203,6 +208,12 @@ static int dv_extract_audio_info(DVDemuxContext* c, uint8_t* frame)
     freq  = (as_pack[4] >> 3) & 0x07; /* 0 - 48kHz, 1 - 44,1kHz, 2 - 32kHz */
     stype = (as_pack[3] & 0x1f);      /* 0 - 2CH, 2 - 4CH, 3 - 8CH */
     quant =  as_pack[4] & 0x07;       /* 0 - 16bit linear, 1 - 12bit nonlinear */
+
+    if (stype > 3) {
+        av_log(c->fctx, AV_LOG_ERROR, "stype %d is invalid\n", stype);
+        c->ach = 0;
+        return 0;
+    }
 
     /* note: ach counts PAIRS of channels (i.e. stereo channels) */
     ach = ((int[4]){  1,  0,  2,  4})[stype];
@@ -248,10 +259,8 @@ static int dv_extract_video_info(DVDemuxContext *c, uint8_t* frame)
         avpriv_set_pts_info(c->vst, 64, c->sys->time_base.num,
                         c->sys->time_base.den);
         avctx->time_base= c->sys->time_base;
-        if (!avctx->width){
-            avctx->width = c->sys->width;
-            avctx->height = c->sys->height;
-        }
+        if (!avctx->width)
+            avcodec_set_dimensions(avctx, c->sys->width, c->sys->height);
         avctx->pix_fmt = c->sys->pix_fmt;
 
         /* finding out SAR is a little bit messy */
@@ -265,6 +274,22 @@ static int dv_extract_video_info(DVDemuxContext *c, uint8_t* frame)
         size = c->sys->frame_size;
     }
     return size;
+}
+
+static int dv_extract_timecode(DVDemuxContext* c, uint8_t* frame, char *tc)
+{
+    const uint8_t *tc_pack;
+
+    // For PAL systems, drop frame bit is replaced by an arbitrary
+    // bit so its value should not be considered. Drop frame timecode
+    // is only relevant for NTSC systems.
+    int prevent_df = c->sys->ltc_divisor == 25 || c->sys->ltc_divisor == 50;
+
+    tc_pack = dv_extract_pack(frame, dv_timecode);
+    if (!tc_pack)
+        return 0;
+    av_timecode_make_smpte_tc_string(tc, AV_RB32(tc_pack + 1), prevent_df);
+    return 1;
 }
 
 /*
@@ -338,7 +363,8 @@ int avpriv_dv_produce_packet(DVDemuxContext *c, AVPacket *pkt,
        c->audio_pkt[i].pts  = c->abytes * 30000*8 / c->ast[i]->codec->bit_rate;
        ppcm[i] = c->audio_buf[i];
     }
-    dv_extract_audio(buf, ppcm, c->sys);
+    if (c->ach)
+        dv_extract_audio(buf, ppcm, c->sys);
 
     /* We work with 720p frames split in half, thus even frames have
      * channels 0,1 and odd 2,3. */
@@ -404,8 +430,39 @@ typedef struct RawDVContext {
     uint8_t         buf[DV_MAX_FRAME_SIZE];
 } RawDVContext;
 
-static int dv_read_header(AVFormatContext *s,
-                          AVFormatParameters *ap)
+static int dv_read_timecode(AVFormatContext *s) {
+    int ret;
+    char timecode[AV_TIMECODE_STR_SIZE];
+    int64_t pos = avio_tell(s->pb);
+
+    // Read 3 DIF blocks: Header block and 2 Subcode blocks.
+    int partial_frame_size = 3 * 80;
+    uint8_t *partial_frame = av_mallocz(sizeof(*partial_frame) *
+                                        partial_frame_size);
+
+    RawDVContext *c = s->priv_data;
+    ret = avio_read(s->pb, partial_frame, partial_frame_size);
+    if (ret < 0)
+        goto finish;
+
+    if (ret < partial_frame_size) {
+        ret = -1;
+        goto finish;
+    }
+
+    ret = dv_extract_timecode(c->dv_demux, partial_frame, timecode);
+    if (ret)
+        av_dict_set(&s->metadata, "timecode", timecode, 0);
+    else if (ret < 0)
+        av_log(s, AV_LOG_ERROR, "Detected timecode is invalid");
+
+finish:
+    av_free(partial_frame);
+    avio_seek(s->pb, pos, SEEK_SET);
+    return ret;
+}
+
+static int dv_read_header(AVFormatContext *s)
 {
     unsigned state, marker_pos = 0;
     RawDVContext *c = s->priv_data;
@@ -443,6 +500,9 @@ static int dv_read_header(AVFormatContext *s,
 
     s->bit_rate = av_rescale_q(c->dv_demux->sys->frame_size, (AVRational){8,1},
                                c->dv_demux->sys->time_base);
+
+    if (s->pb->seekable)
+        dv_read_timecode(s);
 
     return 0;
 }

@@ -86,6 +86,7 @@ typedef struct ShortenContext {
     int channels;
 
     int32_t *decoded[MAX_CHANNELS];
+    int32_t *decoded_base[MAX_CHANNELS];
     int32_t *offset[MAX_CHANNELS];
     int *coeffs;
     uint8_t *bitstream;
@@ -140,13 +141,13 @@ static int allocate_buffers(ShortenContext *s)
             return AVERROR(ENOMEM);
         s->offset[chan] = tmp_ptr;
 
-        tmp_ptr = av_realloc(s->decoded[chan], sizeof(int32_t)*(s->blocksize + s->nwrap));
+        tmp_ptr = av_realloc(s->decoded_base[chan], sizeof(int32_t)*(s->blocksize + s->nwrap));
         if (!tmp_ptr)
             return AVERROR(ENOMEM);
-        s->decoded[chan] = tmp_ptr;
+        s->decoded_base[chan] = tmp_ptr;
         for (i=0; i<s->nwrap; i++)
-            s->decoded[chan][i] = 0;
-        s->decoded[chan] += s->nwrap;
+            s->decoded_base[chan][i] = 0;
+        s->decoded[chan] = s->decoded_base[chan] + s->nwrap;
     }
 
     coeffs = av_realloc(s->coeffs, s->nwrap * sizeof(*s->coeffs));
@@ -176,7 +177,7 @@ static void fix_bitshift(ShortenContext *s, int32_t *buffer)
 }
 
 
-static void init_offset(ShortenContext *s)
+static int init_offset(ShortenContext *s)
 {
     int32_t mean = 0;
     int  chan, i;
@@ -190,12 +191,13 @@ static void init_offset(ShortenContext *s)
             break;
         default:
             av_log(s->avctx, AV_LOG_ERROR, "unknown audio type");
-            abort();
+            return AVERROR_INVALIDDATA;
     }
 
     for (chan = 0; chan < s->channels; chan++)
         for (i = 0; i < nblock; i++)
             s->offset[chan][i] = mean;
+    return 0;
 }
 
 static int decode_wave_header(AVCodecContext *avctx, const uint8_t *header,
@@ -203,7 +205,7 @@ static int decode_wave_header(AVCodecContext *avctx, const uint8_t *header,
 {
     int len;
     short wave_format;
-
+    const uint8_t *end= header + header_size;
 
     if (bytestream_get_le32(&header) != MKTAG('R','I','F','F')) {
         av_log(avctx, AV_LOG_ERROR, "missing RIFF tag\n");
@@ -219,6 +221,8 @@ static int decode_wave_header(AVCodecContext *avctx, const uint8_t *header,
 
     while (bytestream_get_le32(&header) != MKTAG('f','m','t',' ')) {
         len = bytestream_get_le32(&header);
+        if(len<0 || end - header - 8 < len)
+            return AVERROR_INVALIDDATA;
         header += len;
     }
     len = bytestream_get_le32(&header);
@@ -331,7 +335,6 @@ static int read_header(ShortenContext *s)
 
     s->lpcqoffset = 0;
     s->blocksize = DEFAULT_BLOCK_SIZE;
-    s->channels = 1;
     s->nmean = -1;
     s->version = get_bits(&s->gb, 8);
     s->internal_ftype = get_uint(s, TYPESIZE);
@@ -368,7 +371,8 @@ static int read_header(ShortenContext *s)
     if ((ret = allocate_buffers(s)) < 0)
         return ret;
 
-    init_offset(s);
+    if ((ret = init_offset(s)) < 0)
+        return ret;
 
     if (s->version > 1)
         s->lpcqoffset = V2LPCQOFFSET;
@@ -614,8 +618,8 @@ static av_cold int shorten_decode_close(AVCodecContext *avctx)
     int i;
 
     for (i = 0; i < s->channels; i++) {
-        s->decoded[i] -= s->nwrap;
-        av_freep(&s->decoded[i]);
+        s->decoded[i] = NULL;
+        av_freep(&s->decoded_base[i]);
         av_freep(&s->offset[i]);
     }
     av_freep(&s->bitstream);

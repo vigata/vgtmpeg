@@ -47,7 +47,7 @@ static int probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX/2;
 }
 
-static int read_header(AVFormatContext *s, AVFormatParameters *ap)
+static int read_header(AVFormatContext *s)
 {
     AVStream* st;
 
@@ -113,7 +113,7 @@ AVInputFormat ff_bit_demuxer = {
     .extensions  = "bit",
 };
 
-#ifdef CONFIG_MUXERS
+#if CONFIG_MUXERS
 static int write_header(AVFormatContext *s)
 {
     AVCodecContext *enc = s->streams[0]->codec;

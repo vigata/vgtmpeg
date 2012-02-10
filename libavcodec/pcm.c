@@ -27,13 +27,14 @@
 #include "avcodec.h"
 #include "libavutil/common.h" /* for av_reverse */
 #include "bytestream.h"
+#include "internal.h"
 #include "pcm_tablegen.h"
 
 #define MAX_CHANNELS 64
 
 static av_cold int pcm_encode_init(AVCodecContext *avctx)
 {
-    avctx->frame_size = 1;
+    avctx->frame_size = 0;
     switch(avctx->codec->id) {
     case CODEC_ID_PCM_ALAW:
         pcm_alaw_tableinit();
@@ -48,7 +49,8 @@ static av_cold int pcm_encode_init(AVCodecContext *avctx)
     avctx->bits_per_coded_sample = av_get_bits_per_sample(avctx->codec->id);
     avctx->block_align = avctx->channels * avctx->bits_per_coded_sample/8;
     avctx->coded_frame= avcodec_alloc_frame();
-    avctx->coded_frame->key_frame= 1;
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -77,10 +79,10 @@ static av_cold int pcm_encode_close(AVCodecContext *avctx)
         bytestream_put_##endian(&dst, v); \
     }
 
-static int pcm_encode_frame(AVCodecContext *avctx,
-                            unsigned char *frame, int buf_size, void *data)
+static int pcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
+                            const AVFrame *frame, int *got_packet_ptr)
 {
-    int n, sample_size, v;
+    int n, sample_size, v, ret;
     const short *samples;
     unsigned char *dst;
     const uint8_t *srcu8;
@@ -91,9 +93,14 @@ static int pcm_encode_frame(AVCodecContext *avctx,
     const uint32_t *samples_uint32_t;
 
     sample_size = av_get_bits_per_sample(avctx->codec->id)/8;
-    n = buf_size / sample_size;
-    samples = data;
-    dst = frame;
+    n           = frame->nb_samples * avctx->channels;
+    samples     = (const short *)frame->data[0];
+
+    if ((ret = ff_alloc_packet(avpkt, n * sample_size))) {
+        av_log(avctx, AV_LOG_ERROR, "Error getting output packet\n");
+        return ret;
+    }
+    dst = avpkt->data;
 
     switch(avctx->codec->id) {
     case CODEC_ID_PCM_U32LE:
@@ -130,7 +137,7 @@ static int pcm_encode_frame(AVCodecContext *avctx,
         ENCODE(uint16_t, be16, samples, dst, n, 0, 0x8000)
         break;
     case CODEC_ID_PCM_S8:
-        srcu8= data;
+        srcu8 = frame->data[0];
         for(;n>0;n--) {
             v = *srcu8++;
             *dst++ = v - 128;
@@ -186,9 +193,9 @@ static int pcm_encode_frame(AVCodecContext *avctx,
     default:
         return -1;
     }
-    //avctx->frame_size = (dst - frame) / (sample_size * avctx->channels);
 
-    return dst - frame;
+    *got_packet_ptr = 1;
+    return 0;
 }
 
 typedef struct PCMDecode {
@@ -474,8 +481,9 @@ AVCodec ff_ ## name_ ## _encoder = {            \
     .type        = AVMEDIA_TYPE_AUDIO,          \
     .id          = id_,                         \
     .init        = pcm_encode_init,             \
-    .encode      = pcm_encode_frame,            \
+    .encode2     = pcm_encode_frame,            \
     .close       = pcm_encode_close,            \
+    .capabilities = CODEC_CAP_VARIABLE_FRAME_SIZE, \
     .sample_fmts = (const enum AVSampleFormat[]){sample_fmt_,AV_SAMPLE_FMT_NONE}, \
     .long_name = NULL_IF_CONFIG_SMALL(long_name_), \
 }
@@ -504,14 +512,14 @@ AVCodec ff_ ## name_ ## _decoder = {            \
     PCM_ENCODER(id,sample_fmt_,name,long_name_); PCM_DECODER(id,sample_fmt_,name,long_name_)
 
 /* Note: Do not forget to add new entries to the Makefile as well. */
-PCM_CODEC  (CODEC_ID_PCM_ALAW,  AV_SAMPLE_FMT_S16, pcm_alaw, "PCM A-law");
+PCM_CODEC  (CODEC_ID_PCM_ALAW,  AV_SAMPLE_FMT_S16, pcm_alaw, "PCM A-law / G.711 A-law");
 PCM_DECODER(CODEC_ID_PCM_DVD,   AV_SAMPLE_FMT_S32, pcm_dvd, "PCM signed 20|24-bit big-endian");
 PCM_CODEC  (CODEC_ID_PCM_F32BE, AV_SAMPLE_FMT_FLT, pcm_f32be, "PCM 32-bit floating point big-endian");
 PCM_CODEC  (CODEC_ID_PCM_F32LE, AV_SAMPLE_FMT_FLT, pcm_f32le, "PCM 32-bit floating point little-endian");
 PCM_CODEC  (CODEC_ID_PCM_F64BE, AV_SAMPLE_FMT_DBL, pcm_f64be, "PCM 64-bit floating point big-endian");
 PCM_CODEC  (CODEC_ID_PCM_F64LE, AV_SAMPLE_FMT_DBL, pcm_f64le, "PCM 64-bit floating point little-endian");
 PCM_DECODER(CODEC_ID_PCM_LXF,   AV_SAMPLE_FMT_S32, pcm_lxf, "PCM signed 20-bit little-endian planar");
-PCM_CODEC  (CODEC_ID_PCM_MULAW, AV_SAMPLE_FMT_S16, pcm_mulaw, "PCM mu-law");
+PCM_CODEC  (CODEC_ID_PCM_MULAW, AV_SAMPLE_FMT_S16, pcm_mulaw, "PCM mu-law / G.711 mu-law");
 PCM_CODEC  (CODEC_ID_PCM_S8,    AV_SAMPLE_FMT_U8,  pcm_s8, "PCM signed 8-bit");
 PCM_CODEC  (CODEC_ID_PCM_S16BE, AV_SAMPLE_FMT_S16, pcm_s16be, "PCM signed 16-bit big-endian");
 PCM_CODEC  (CODEC_ID_PCM_S16LE, AV_SAMPLE_FMT_S16, pcm_s16le, "PCM signed 16-bit little-endian");

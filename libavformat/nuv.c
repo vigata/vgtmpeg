@@ -20,7 +20,7 @@
  */
 
 #include "libavutil/intreadwrite.h"
-#include "libavutil/intfloat_readwrite.h"
+#include "libavutil/intfloat.h"
 #include "avformat.h"
 #include "internal.h"
 #include "riff.h"
@@ -47,7 +47,7 @@ static int nuv_probe(AVProbeData *p) {
     return 0;
 }
 
-//! little macro to sanitize packet size
+/// little macro to sanitize packet size
 #define PKTSIZE(s) (s &  0xffffff)
 
 /**
@@ -122,7 +122,7 @@ static int get_codec_data(AVIOContext *pb, AVStream *vst,
     return 0;
 }
 
-static int nuv_header(AVFormatContext *s, AVFormatParameters *ap) {
+static int nuv_header(AVFormatContext *s) {
     NUVContext *ctx = s->priv_data;
     AVIOContext *pb = s->pb;
     char id_string[12];
@@ -140,10 +140,10 @@ static int nuv_header(AVFormatContext *s, AVFormatParameters *ap) {
     avio_rl32(pb); // unused, "desiredheight"
     avio_r8(pb); // 'P' == progressive, 'I' == interlaced
     avio_skip(pb, 3); // padding
-    aspect = av_int2dbl(avio_rl64(pb));
+    aspect = av_int2double(avio_rl64(pb));
     if (aspect > 0.9999 && aspect < 1.0001)
         aspect = 4.0 / 3.0;
-    fps = av_int2dbl(avio_rl64(pb));
+    fps = av_int2double(avio_rl64(pb));
 
     // number of packets per stream type, -1 means unknown, e.g. streaming
     v_packs = avio_rl32(pb);

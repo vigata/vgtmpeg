@@ -30,6 +30,7 @@
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
+#include "avio_internal.h"
 
 #define FILM_TAG MKBETAG('F', 'I', 'L', 'M')
 #define FDSC_TAG MKBETAG('F', 'D', 'S', 'C')
@@ -75,8 +76,7 @@ static int film_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
-static int film_read_header(AVFormatContext *s,
-                            AVFormatParameters *ap)
+static int film_read_header(AVFormatContext *s)
 {
     FilmDemuxContext *film = s->priv_data;
     AVIOContext *pb = s->pb;
@@ -264,6 +264,8 @@ static int film_read_packet(AVFormatContext *s,
         (film->audio_type != CODEC_ID_ADPCM_ADX)) {
         /* stereo PCM needs to be interleaved */
 
+        if (ffio_limit(pb, sample->sample_size) != sample->sample_size)
+            return AVERROR(EIO);
         if (av_new_packet(pkt, sample->sample_size))
             return AVERROR(ENOMEM);
 

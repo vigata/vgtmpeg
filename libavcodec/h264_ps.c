@@ -229,7 +229,8 @@ static inline int decode_vui_parameters(H264Context *h, SPS *sps){
     if(sps->nal_hrd_parameters_present_flag || sps->vcl_hrd_parameters_present_flag)
         get_bits1(&s->gb);     /* low_delay_hrd_flag */
     sps->pic_struct_present_flag = get_bits1(&s->gb);
-
+    if(!get_bits_left(&s->gb))
+        return 0;
     sps->bitstream_restriction_flag = get_bits1(&s->gb);
     if(sps->bitstream_restriction_flag){
         get_bits1(&s->gb);     /* motion_vectors_over_pic_boundaries_flag */
@@ -347,6 +348,10 @@ int ff_h264_decode_seq_parameter_set(H264Context *h){
 
     if(sps->profile_idc >= 100){ //high profile
         sps->chroma_format_idc= get_ue_golomb_31(&s->gb);
+        if (sps->chroma_format_idc > 3U) {
+            av_log(h->s.avctx, AV_LOG_ERROR, "chroma_format_idc %d is illegal\n", sps->chroma_format_idc);
+            goto fail;
+        }
         if(sps->chroma_format_idc == 3)
             sps->residual_color_transform_flag = get_bits1(&s->gb);
         sps->bit_depth_luma   = get_ue_golomb(&s->gb) + 8;

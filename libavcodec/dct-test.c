@@ -48,8 +48,6 @@
 void ff_mmx_idct(DCTELEM *data);
 void ff_mmxext_idct(DCTELEM *data);
 
-void odivx_idct_c(short *block);
-
 // BFIN
 void ff_bfin_idct(DCTELEM *block);
 void ff_bfin_fdct(DCTELEM *block);
@@ -169,8 +167,6 @@ static const struct algo idct_tab[] = {
 };
 
 #define AANSCALE_BITS 12
-
-uint8_t cropTbl[256 + 2 * MAX_NEG_CROP];
 
 static int64_t gettime(void)
 {
@@ -556,13 +552,6 @@ int main(int argc, char **argv)
 
     ff_ref_dct_init();
     idct_mmx_init();
-
-    for (i = 0; i < 256; i++)
-        cropTbl[i + MAX_NEG_CROP] = i;
-    for (i = 0; i < MAX_NEG_CROP; i++) {
-        cropTbl[i] = 0;
-        cropTbl[i + MAX_NEG_CROP + 256] = 255;
-    }
 
     for (;;) {
         c = getopt(argc, argv, "ih4t");

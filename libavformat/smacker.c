@@ -98,7 +98,7 @@ static int smacker_probe(AVProbeData *p)
         return 0;
 }
 
-static int smacker_read_header(AVFormatContext *s, AVFormatParameters *ap)
+static int smacker_read_header(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     SmackerContext *smk = s->priv_data;
@@ -255,6 +255,8 @@ static int smacker_read_packet(AVFormatContext *s, AVPacket *pkt)
             memcpy(oldpal, pal, 768);
             size = avio_r8(s->pb);
             size = size * 4 - 1;
+            if(size + 1 > frame_size)
+                return AVERROR_INVALIDDATA;
             frame_size -= size;
             frame_size--;
             sz = 0;
@@ -289,10 +291,12 @@ static int smacker_read_packet(AVFormatContext *s, AVPacket *pkt)
         /* if audio chunks are present, put them to stack and retrieve later */
         for(i = 0; i < 7; i++) {
             if(flags & 1) {
-                int size;
+                unsigned int size;
                 uint8_t *tmpbuf;
 
                 size = avio_rl32(s->pb) - 4;
+                if(size + 4L > frame_size)
+                    return AVERROR_INVALIDDATA;
                 frame_size -= size;
                 frame_size -= 4;
                 smk->curstream++;

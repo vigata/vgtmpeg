@@ -21,7 +21,7 @@
 
 #include "avcodec.h"
 
-#define ALT_BITSTREAM_READER_LE
+#define BITSTREAM_READER_LE
 #include "get_bits.h"
 
 typedef union MacroBlock {
@@ -376,4 +376,3 @@ AVCodec ff_escape124_decoder = {
     .capabilities   = CODEC_CAP_DR1,
     .long_name = NULL_IF_CONFIG_SMALL("Escape 124"),
 };
-

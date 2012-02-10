@@ -37,7 +37,7 @@ typedef struct {
     AVFrame frame;
     DSPContext dsp;
     /* input data */
-    uint8_t buffer[32];
+    DECLARE_ALIGNED(16, uint8_t, buffer)[32];
     int16_t vector[8];  ///< input vector: 5/5/4/4/4/3/3/3
     int offset1[2];     ///< 8-bit value, used in one copying offset
     int offset2[4];     ///< 7-bit value, encodes offsets for copying and for two-point filter
@@ -179,6 +179,7 @@ static void truespeech_apply_twopoint_filter(TSContext *dec, int quart)
     for(i = 0; i < 146; i++)
         tmp[i] = dec->filtbuf[i];
     off = (t / 25) + dec->offset1[quart >> 1] + 18;
+    off = av_clip(off, 0, 145);
     ptr0 = tmp + 145 - off;
     ptr1 = tmp + 146;
     filter = (const int16_t*)ts_order2_coeffs + (t % 25) * 2;

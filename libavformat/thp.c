@@ -20,7 +20,7 @@
  */
 
 #include "libavutil/intreadwrite.h"
-#include "libavutil/intfloat_readwrite.h"
+#include "libavutil/intfloat.h"
 #include "avformat.h"
 #include "internal.h"
 
@@ -41,7 +41,7 @@ typedef struct ThpDemuxContext {
     unsigned char    components[16];
     AVStream*        vst;
     int              has_audio;
-    int              audiosize;
+    unsigned         audiosize;
 } ThpDemuxContext;
 
 
@@ -54,12 +54,12 @@ static int thp_probe(AVProbeData *p)
         return 0;
 }
 
-static int thp_read_header(AVFormatContext *s,
-                           AVFormatParameters *ap)
+static int thp_read_header(AVFormatContext *s)
 {
     ThpDemuxContext *thp = s->priv_data;
     AVStream *st;
     AVIOContext *pb = s->pb;
+    int64_t fsize= avio_size(pb);
     int i;
 
     /* Read the file header.  */
@@ -69,10 +69,12 @@ static int thp_read_header(AVFormatContext *s,
                            avio_rb32(pb); /* Max buf size.  */
                            avio_rb32(pb); /* Max samples.  */
 
-    thp->fps             = av_d2q(av_int2flt(avio_rb32(pb)), INT_MAX);
+    thp->fps             = av_d2q(av_int2float(avio_rb32(pb)), INT_MAX);
     thp->framecnt        = avio_rb32(pb);
     thp->first_framesz   = avio_rb32(pb);
-                           avio_rb32(pb); /* Data size.  */
+    pb->maxsize          = avio_rb32(pb);
+    if(fsize>0 && (!pb->maxsize || fsize < pb->maxsize))
+        pb->maxsize= fsize;
 
     thp->compoff         = avio_rb32(pb);
                            avio_rb32(pb); /* offsetDataOffset.  */
@@ -143,7 +145,7 @@ static int thp_read_packet(AVFormatContext *s,
 {
     ThpDemuxContext *thp = s->priv_data;
     AVIOContext *pb = s->pb;
-    int size;
+    unsigned int size;
     int ret;
 
     if (thp->audiosize == 0) {

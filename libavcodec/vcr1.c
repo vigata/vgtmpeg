@@ -56,6 +56,11 @@ static int decode_frame(AVCodecContext *avctx,
     if(p->data[0])
         avctx->release_buffer(avctx, p);
 
+    if(buf_size < 16 + avctx->height + avctx->width*avctx->height*5/8){
+        av_log(avctx, AV_LOG_ERROR, "Insufficient input data.\n");
+        return AVERROR(EINVAL);
+    }
+
     p->reference= 0;
     if(avctx->get_buffer(avctx, p) < 0){
         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
@@ -114,8 +119,6 @@ static int decode_frame(AVCodecContext *avctx,
     *picture= *(AVFrame*)&a->picture;
     *data_size = sizeof(AVPicture);
 
-    emms_c();
-
     return buf_size;
 }
 
@@ -129,8 +132,6 @@ static int encode_frame(AVCodecContext *avctx, unsigned char *buf, int buf_size,
     *p = *pict;
     p->pict_type= AV_PICTURE_TYPE_I;
     p->key_frame= 1;
-
-    emms_c();
 
     avpriv_align_put_bits(&a->pb);
     while(get_bit_count(&a->pb)&31)

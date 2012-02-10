@@ -31,8 +31,9 @@
 
 /**
  * @file
- * X11 frame device demuxer by Clemens Fruhwirth <clemens@endorphin.org>
- * and Edouard Gomez <ed.gomez@free.fr>.
+ * X11 frame device demuxer
+ * @author Clemens Fruhwirth <clemens@endorphin.org>
+ * @author Edouard Gomez <ed.gomez@free.fr>
  */
 
 #include "config.h"
@@ -153,7 +154,7 @@ x11grab_region_win_init(struct x11_grab *s)
  *         </ul>
  */
 static int
-x11grab_read_header(AVFormatContext *s1, AVFormatParameters *ap)
+x11grab_read_header(AVFormatContext *s1)
 {
     struct x11_grab *x11grab = s1->priv_data;
     Display *dpy;
@@ -294,7 +295,7 @@ x11grab_read_header(AVFormatContext *s1, AVFormatParameters *ap)
         }
         break;
     case 32:
-        input_pixfmt = PIX_FMT_RGB32;
+        input_pixfmt = PIX_FMT_0RGB32;
         break;
     default:
         av_log(s1, AV_LOG_ERROR, "image depth %i not supported ... aborting\n", image->bits_per_pixel);
@@ -538,8 +539,6 @@ x11grab_read_packet(AVFormatContext *s1, AVPacket *pkt)
             av_log (s1, AV_LOG_INFO, "XGetZPixmap() failed\n");
         }
     }
-    if (image->bits_per_pixel == 32)
-        XAddPixel(image, 0xFF000000);
 
     if (s->draw_mouse) {
         paint_mouse_pointer(image, s);

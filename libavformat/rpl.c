@@ -58,7 +58,7 @@ static int read_line(AVIOContext * pb, char* line, int bufsize)
             break;
         if (b == '\n') {
             line[i] = '\0';
-            return 0;
+            return url_feof(pb) ? -1 : 0;
         }
         line[i] = b;
     }
@@ -110,7 +110,7 @@ static AVRational read_fps(const char* line, int* error)
     return result;
 }
 
-static int rpl_read_header(AVFormatContext *s, AVFormatParameters *ap)
+static int rpl_read_header(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     RPLContext *rpl = s->priv_data;
@@ -164,11 +164,9 @@ static int rpl_read_header(AVFormatContext *s, AVFormatParameters *ap)
             // The header is wrong here, at least sometimes
             vst->codec->bits_per_coded_sample = 16;
             break;
-#if 0
         case 130:
             vst->codec->codec_id = CODEC_ID_ESCAPE130;
             break;
-#endif
         default:
             av_log(s, AV_LOG_WARNING,
                    "RPL video format %i not supported yet!\n",
@@ -254,7 +252,7 @@ static int rpl_read_header(AVFormatContext *s, AVFormatParameters *ap)
     // Read the index
     avio_seek(pb, chunk_catalog_offset, SEEK_SET);
     total_audio_size = 0;
-    for (i = 0; i < number_of_chunks; i++) {
+    for (i = 0; !error && i < number_of_chunks; i++) {
         int64_t offset, video_size, audio_size;
         error |= read_line(pb, line, sizeof(line));
         if (3 != sscanf(line, "%"PRId64" , %"PRId64" ; %"PRId64,

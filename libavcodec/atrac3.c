@@ -402,6 +402,8 @@ static int decodeTonalComponents (GetBitContext *gb, tonal_component *pComponent
 
             for (k=0; k<coded_components; k++) {
                 sfIndx = get_bits(gb,6);
+                if(component_count>=64)
+                    return AVERROR_INVALIDDATA;
                 pComponent[component_count].pos = j * 64 + (get_bits(gb,6));
                 max_coded_values = SAMPLES_PER_FRAME - pComponent[component_count].pos;
                 coded_values = coded_values_per_component + 1;
@@ -708,9 +710,10 @@ static int decodeChannelSoundUnit (ATRAC3Context *q, GetBitContext *gb, channel_
             memset(pSnd->IMDCT_buf, 0, 512 * sizeof(float));
 
         /* gain compensation and overlapping */
-        gainCompensateAndOverlap (pSnd->IMDCT_buf, &(pSnd->prevFrame[band*256]), &(pOut[band*256]),
-                                    &((pSnd->gainBlock[1 - (pSnd->gcBlkSwitch)]).gBlock[band]),
-                                    &((pSnd->gainBlock[pSnd->gcBlkSwitch]).gBlock[band]));
+        gainCompensateAndOverlap(pSnd->IMDCT_buf, &pSnd->prevFrame[band * 256],
+                                 &pOut[band * 256],
+                                 &pSnd->gainBlock[1 - pSnd->gcBlkSwitch].gBlock[band],
+                                 &pSnd->gainBlock[    pSnd->gcBlkSwitch].gBlock[band]);
     }
 
     /* Swap the gain control buffers for the next frame. */
@@ -741,7 +744,7 @@ static int decodeFrame(ATRAC3Context *q, const uint8_t* databuf,
 
         result = decodeChannelSoundUnit(q,&q->gb, q->pUnits, out_samples[0], 0, JOINT_STEREO);
         if (result != 0)
-            return (result);
+            return result;
 
         /* Framedata of the su2 in the joint-stereo mode is encoded in
          * reverse byte order so we need to swap it first. */
@@ -782,7 +785,7 @@ static int decodeFrame(ATRAC3Context *q, const uint8_t* databuf,
         /* Decode Sound Unit 2. */
         result = decodeChannelSoundUnit(q,&q->gb, &q->pUnits[1], out_samples[1], 1, JOINT_STEREO);
         if (result != 0)
-            return (result);
+            return result;
 
         /* Reconstruct the channel coefficients. */
         reverseMatrixing(out_samples[0], out_samples[1], q->matrix_coeff_index_prev, q->matrix_coeff_index_now);
@@ -795,11 +798,13 @@ static int decodeFrame(ATRAC3Context *q, const uint8_t* databuf,
         for (i=0 ; i<q->channels ; i++) {
 
             /* Set the bitstream reader at the start of a channel sound unit. */
-            init_get_bits(&q->gb, databuf+((i*q->bytes_per_frame)/q->channels), (q->bits_per_frame)/q->channels);
+            init_get_bits(&q->gb,
+                          databuf + i * q->bytes_per_frame / q->channels,
+                          q->bits_per_frame / q->channels);
 
             result = decodeChannelSoundUnit(q,&q->gb, &q->pUnits[i], out_samples[i], i, q->codingMode);
             if (result != 0)
-                return (result);
+                return result;
         }
     }
 

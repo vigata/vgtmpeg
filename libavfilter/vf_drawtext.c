@@ -29,13 +29,18 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "config.h"
+#include "libavutil/avstring.h"
 #include "libavutil/colorspace.h"
 #include "libavutil/file.h"
 #include "libavutil/eval.h"
 #include "libavutil/opt.h"
+#include "libavutil/random_seed.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/timecode.h"
 #include "libavutil/tree.h"
+#include "libavutil/lfg.h"
 #include "avfilter.h"
 #include "drawutils.h"
 
@@ -47,8 +52,8 @@
 #include FT_GLYPH_H
 
 static const char * const var_names[] = {
-    "main_w", "w",            ///< width  of the input video
-    "main_h", "h",            ///< height of the input video
+    "main_w", "w", "W",       ///< width  of the input video
+    "main_h", "h", "H",       ///< height of the input video
     "tw", "text_w",           ///< width  of the rendered text
     "th", "text_h",           ///< height of the rendered text
     "max_glyph_w",            ///< max glyph width
@@ -67,9 +72,25 @@ static const char * const var_names[] = {
     NULL
 };
 
+static const char *fun2_names[] = {
+    "rand",
+};
+
+static double drand(void *opaque, double min, double max)
+{
+    return min + (max-min) / UINT_MAX * av_lfg_get(opaque);
+}
+
+typedef double (*eval_func2)(void *, double a, double b);
+
+static const eval_func2 fun2[] = {
+    drand,
+    NULL
+};
+
 enum var_name {
-    VAR_MAIN_W, VAR_W,
-    VAR_MAIN_H, VAR_H,
+    VAR_MAIN_W, VAR_w, VAR_W,
+    VAR_MAIN_H, VAR_h, VAR_H,
     VAR_TW, VAR_TEXT_W,
     VAR_TH, VAR_TEXT_H,
     VAR_MAX_GLYPH_W,
@@ -118,6 +139,7 @@ typedef struct {
     short int draw_box;             ///< draw box around text - true or false
     int use_kerning;                ///< font kerning is used - true/false
     int tabsize;                    ///< tab size
+    int fix_bounds;                 ///< do we let it go out of frame bounds - t/f
 
     FT_Library library;             ///< freetype font library handle
     FT_Face face;                   ///< freetype font face handle
@@ -132,6 +154,14 @@ typedef struct {
     AVExpr *x_pexpr, *y_pexpr;      ///< parsed expressions for x and y
     int64_t basetime;               ///< base pts time in the real world for display
     double var_values[VAR_VARS_NB];
+    char   *d_expr;
+    AVExpr *d_pexpr;
+    int draw;                       ///< set to zero to prevent drawing
+    AVLFG  prng;                    ///< random
+    char       *tc_opt_string;      ///< specified timecode option string
+    AVRational  tc_rate;            ///< frame rate for timecode
+    AVTimecode  tc;                 ///< timecode context
+    int frame_id;
 } DrawTextContext;
 
 #define OFFSET(x) offsetof(DrawTextContext, x)
@@ -151,7 +181,12 @@ static const AVOption drawtext_options[]= {
 {"shadowy",  "set y",                OFFSET(shadowy),            AV_OPT_TYPE_INT,    {.dbl=0},     INT_MIN,  INT_MAX  },
 {"tabsize",  "set tab size",         OFFSET(tabsize),            AV_OPT_TYPE_INT,    {.dbl=4},     0,        INT_MAX  },
 {"basetime", "set base time",        OFFSET(basetime),           AV_OPT_TYPE_INT64,  {.dbl=AV_NOPTS_VALUE},     INT64_MIN,        INT64_MAX  },
-
+{"draw",     "if false do not draw", OFFSET(d_expr),             AV_OPT_TYPE_STRING, {.str="1"},   CHAR_MIN, CHAR_MAX },
+{"timecode", "set initial timecode", OFFSET(tc_opt_string),      AV_OPT_TYPE_STRING, {.str=NULL},  CHAR_MIN, CHAR_MAX },
+{"r",        "set rate (timecode only)", OFFSET(tc_rate),        AV_OPT_TYPE_RATIONAL, {.dbl=0},          0,  INT_MAX },
+{"rate",     "set rate (timecode only)", OFFSET(tc_rate),        AV_OPT_TYPE_RATIONAL, {.dbl=0},          0,  INT_MAX },
+{"fix_bounds", "if true, check and fix text coords to avoid clipping",
+                                     OFFSET(fix_bounds),         AV_OPT_TYPE_INT,    {.dbl=1},     0,        1        },
 
 /* FT_LOAD_* flags */
 {"ft_load_flags", "set font loading flags for libfreetype",   OFFSET(ft_load_flags),  AV_OPT_TYPE_FLAGS,  {.dbl=FT_LOAD_DEFAULT|FT_LOAD_RENDER}, 0, INT_MAX, 0, "ft_load_flags" },
@@ -311,9 +346,18 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
         av_file_unmap(textbuf, textbuf_size);
     }
 
+    if (dtext->tc_opt_string) {
+        int ret = av_timecode_init_from_string(&dtext->tc, dtext->tc_rate,
+                                               dtext->tc_opt_string, ctx);
+        if (ret < 0)
+            return ret;
+        if (!dtext->text)
+            dtext->text = av_strdup("");
+    }
+
     if (!dtext->text) {
         av_log(ctx, AV_LOG_ERROR,
-               "Either text or a valid file must be provided\n");
+               "Either text, a valid file or a timecode must be provided\n");
         return AVERROR(EINVAL);
     }
 
@@ -425,7 +469,7 @@ static av_cold void uninit(AVFilterContext *ctx)
 
 static inline int is_newline(uint32_t c)
 {
-    return (c == '\n' || c == '\r' || c == '\f' || c == '\v');
+    return c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -458,8 +502,8 @@ static int config_input(AVFilterLink *inlink)
         dtext->shadowcolor[3] = rgba[3];
     }
 
-    dtext->var_values[VAR_W]     = dtext->var_values[VAR_MAIN_W] = inlink->w;
-    dtext->var_values[VAR_H]     = dtext->var_values[VAR_MAIN_H] = inlink->h;
+    dtext->var_values[VAR_w]     = dtext->var_values[VAR_W]     = dtext->var_values[VAR_MAIN_W] = inlink->w;
+    dtext->var_values[VAR_h]     = dtext->var_values[VAR_H]     = dtext->var_values[VAR_MAIN_H] = inlink->h;
     dtext->var_values[VAR_SAR]   = inlink->sample_aspect_ratio.num ? av_q2d(inlink->sample_aspect_ratio) : 1;
     dtext->var_values[VAR_DAR]   = (double)inlink->w / inlink->h * dtext->var_values[VAR_SAR];
     dtext->var_values[VAR_HSUB]  = 1<<pix_desc->log2_chroma_w;
@@ -470,10 +514,15 @@ static int config_input(AVFilterLink *inlink)
         dtext->var_values[VAR_N] = 0;
     dtext->var_values[VAR_T]     = NAN;
 
+    av_lfg_init(&dtext->prng, av_get_random_seed());
+
     if ((ret = av_expr_parse(&dtext->x_pexpr, dtext->x_expr, var_names,
-                             NULL, NULL, NULL, NULL, 0, ctx)) < 0 ||
+                             NULL, NULL, fun2_names, fun2, 0, ctx)) < 0 ||
         (ret = av_expr_parse(&dtext->y_pexpr, dtext->y_expr, var_names,
-                             NULL, NULL, NULL, NULL, 0, ctx)) < 0)
+                             NULL, NULL, fun2_names, fun2, 0, ctx)) < 0 ||
+        (ret = av_expr_parse(&dtext->d_pexpr, dtext->d_expr, var_names,
+                             NULL, NULL, fun2_names, fun2, 0, ctx)) < 0)
+
         return AVERROR(EINVAL);
 
     return 0;
@@ -681,6 +730,12 @@ static int draw_text(AVFilterContext *ctx, AVFilterBufferRef *picref,
         buf_size *= 2;
     } while ((buf = av_realloc(buf, buf_size)));
 
+    if (dtext->tc_opt_string) {
+        char tcbuf[AV_TIMECODE_STR_SIZE];
+        av_timecode_make_string(&dtext->tc, tcbuf, dtext->frame_id++);
+        buf = av_asprintf("%s%s", dtext->text, tcbuf);
+    }
+
     if (!buf)
         return AVERROR(ENOMEM);
     text = dtext->expanded_text = buf;
@@ -702,8 +757,9 @@ static int draw_text(AVFilterContext *ctx, AVFilterBufferRef *picref,
         /* get glyph */
         dummy.code = code;
         glyph = av_tree_find(dtext->glyphs, &dummy, glyph_cmp, NULL);
-        if (!glyph)
+        if (!glyph) {
             load_glyph(ctx, &glyph, code);
+        }
 
         y_min = FFMIN(glyph->bbox.yMin, y_min);
         y_max = FFMAX(glyph->bbox.yMax, y_max);
@@ -761,9 +817,13 @@ static int draw_text(AVFilterContext *ctx, AVFilterBufferRef *picref,
 
     dtext->var_values[VAR_LINE_H] = dtext->var_values[VAR_LH] = dtext->max_glyph_h;
 
-    dtext->x = dtext->var_values[VAR_X] = av_expr_eval(dtext->x_pexpr, dtext->var_values, NULL);
-    dtext->y = dtext->var_values[VAR_Y] = av_expr_eval(dtext->y_pexpr, dtext->var_values, NULL);
-    dtext->x = dtext->var_values[VAR_X] = av_expr_eval(dtext->x_pexpr, dtext->var_values, NULL);
+    dtext->x = dtext->var_values[VAR_X] = av_expr_eval(dtext->x_pexpr, dtext->var_values, &dtext->prng);
+    dtext->y = dtext->var_values[VAR_Y] = av_expr_eval(dtext->y_pexpr, dtext->var_values, &dtext->prng);
+    dtext->x = dtext->var_values[VAR_X] = av_expr_eval(dtext->x_pexpr, dtext->var_values, &dtext->prng);
+    dtext->draw = av_expr_eval(dtext->d_pexpr, dtext->var_values, &dtext->prng);
+
+    if(!dtext->draw)
+        return 0;
 
     dtext->x &= ~((1 << dtext->hsub) - 1);
     dtext->y &= ~((1 << dtext->vsub) - 1);
@@ -774,7 +834,7 @@ static int draw_text(AVFilterContext *ctx, AVFilterBufferRef *picref,
     /* draw box */
     if (dtext->draw_box)
         drawbox(picref, dtext->x, dtext->y, box_w, box_h,
-                dtext->box_line, dtext->pixel_step, dtext->boxcolor_rgba,
+                dtext->box_line, dtext->pixel_step, dtext->is_packed_rgb ? dtext->boxcolor_rgba : dtext->boxcolor,
                 dtext->hsub, dtext->vsub, dtext->is_packed_rgb, dtext->rgba_map);
 
     if (dtext->shadowx || dtext->shadowy) {

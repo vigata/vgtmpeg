@@ -22,6 +22,7 @@
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
+#include "avio_internal.h"
 
 enum SIFFTags{
     TAG_SIFF = MKTAG('S', 'I', 'F', 'F'),
@@ -153,7 +154,7 @@ static int siff_parse_soun(AVFormatContext *s, SIFFContext *c, AVIOContext *pb)
     return create_audio_stream(s, c);
 }
 
-static int siff_read_header(AVFormatContext *s, AVFormatParameters *ap)
+static int siff_read_header(AVFormatContext *s)
 {
     AVIOContext *pb = s->pb;
     SIFFContext *c = s->priv_data;
@@ -201,13 +202,16 @@ static int siff_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
 
         if (!c->curstrm){
-            size = c->pktsize - c->sndsize;
-            if (av_new_packet(pkt, size) < 0)
+            size = c->pktsize - c->sndsize - c->gmcsize - 2;
+            size = ffio_limit(s->pb, size);
+            if(size < 0 || c->pktsize < c->sndsize)
+                return AVERROR_INVALIDDATA;
+            if (av_new_packet(pkt, size + c->gmcsize + 2) < 0)
                 return AVERROR(ENOMEM);
             AV_WL16(pkt->data, c->flags);
             if (c->gmcsize)
                 memcpy(pkt->data + 2, c->gmc, c->gmcsize);
-            avio_read(s->pb, pkt->data + 2 + c->gmcsize, size - c->gmcsize - 2);
+            avio_read(s->pb, pkt->data + 2 + c->gmcsize, size);
             pkt->stream_index = 0;
             c->curstrm = -1;
         }else{

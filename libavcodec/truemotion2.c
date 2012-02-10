@@ -44,6 +44,9 @@ typedef struct TM2Context{
     GetBitContext gb;
     DSPContext dsp;
 
+    uint8_t *buffer;
+    int buffer_size;
+
     /* TM2 streams */
     int *tokens[TM2_NUM_STREAMS];
     int tok_lens[TM2_NUM_STREAMS];
@@ -272,6 +275,8 @@ static int tm2_read_stream(TM2Context *ctx, const uint8_t *buf, int stream_id, i
             len = AV_RB32(buf); buf += 4; cur += 4;
         }
         if(len > 0) {
+            if (skip <= cur)
+                return -1;
             init_get_bits(&ctx->gb, buf, (skip - cur) * 8);
             if(tm2_read_deltas(ctx, stream_id) == -1)
                 return -1;
@@ -286,6 +291,8 @@ static int tm2_read_stream(TM2Context *ctx, const uint8_t *buf, int stream_id, i
     buf += 4; cur += 4;
     buf += 4; cur += 4; /* unused by decoder */
 
+    if (skip <= cur)
+        return -1;
     init_get_bits(&ctx->gb, buf, (skip - cur) * 8);
     if(tm2_build_huff_table(ctx, &codes) == -1)
         return -1;
@@ -303,6 +310,8 @@ static int tm2_read_stream(TM2Context *ctx, const uint8_t *buf, int stream_id, i
     ctx->tok_lens[stream_id] = toks;
     len = AV_RB32(buf); buf += 4; cur += 4;
     if(len > 0) {
+        if (skip <= cur)
+            return -1;
         init_get_bits(&ctx->gb, buf, (skip - cur) * 8);
         for(i = 0; i < toks; i++) {
             if (get_bits_left(&ctx->gb) <= 0) {
@@ -760,10 +769,9 @@ static int decode_frame(AVCodecContext *avctx,
     TM2Context * const l = avctx->priv_data;
     AVFrame * const p= (AVFrame*)&l->pic;
     int i, skip, t;
-    uint8_t *swbuf;
 
-    swbuf = av_malloc(buf_size + FF_INPUT_BUFFER_PADDING_SIZE);
-    if(!swbuf){
+    av_fast_padded_malloc(&l->buffer, &l->buffer_size, buf_size);
+    if(!l->buffer){
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate temporary buffer\n");
         return -1;
     }
@@ -771,22 +779,19 @@ static int decode_frame(AVCodecContext *avctx,
     p->buffer_hints = FF_BUFFER_HINTS_VALID | FF_BUFFER_HINTS_PRESERVE | FF_BUFFER_HINTS_REUSABLE;
     if(avctx->reget_buffer(avctx, p) < 0){
         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-        av_free(swbuf);
         return -1;
     }
 
-    l->dsp.bswap_buf((uint32_t*)swbuf, (const uint32_t*)buf, buf_size >> 2);
-    skip = tm2_read_header(l, swbuf);
+    l->dsp.bswap_buf((uint32_t*)l->buffer, (const uint32_t*)buf, buf_size >> 2);
+    skip = tm2_read_header(l, l->buffer);
 
     if(skip == -1){
-        av_free(swbuf);
         return -1;
     }
 
     for(i = 0; i < TM2_NUM_STREAMS; i++){
-        t = tm2_read_stream(l, swbuf + skip, tm2_stream_order[i], buf_size);
+        t = tm2_read_stream(l, l->buffer + skip, tm2_stream_order[i], buf_size);
         if(t == -1){
-            av_free(swbuf);
             return -1;
         }
         skip += t;
@@ -800,7 +805,6 @@ static int decode_frame(AVCodecContext *avctx,
     l->cur = !l->cur;
     *data_size = sizeof(AVFrame);
     *(AVFrame*)data = l->pic;
-    av_free(swbuf);
 
     return buf_size;
 }
@@ -857,6 +861,8 @@ static av_cold int decode_end(AVCodecContext *avctx){
         av_free(l->U2);
         av_free(l->V2);
     }
+    av_freep(&l->buffer);
+    l->buffer_size = 0;
 
     if (pic->data[0])
         avctx->release_buffer(avctx, pic);

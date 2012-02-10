@@ -398,13 +398,12 @@ static int ea_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
-static int ea_read_header(AVFormatContext *s,
-                          AVFormatParameters *ap)
+static int ea_read_header(AVFormatContext *s)
 {
     EaDemuxContext *ea = s->priv_data;
     AVStream *st;
 
-    if (!process_ea_header(s))
+    if (process_ea_header(s)<=0)
         return AVERROR(EIO);
 
     if (ea->video_codec) {
@@ -436,6 +435,11 @@ static int ea_read_header(AVFormatContext *s,
             ea->audio_codec = 0;
             return 1;
         }
+        if (ea->bytes <= 0) {
+            av_log(s, AV_LOG_ERROR, "Invalid number of bytes per sample: %d\n", ea->bytes);
+            ea->audio_codec = CODEC_ID_NONE;
+            return 1;
+        }
 
         /* initialize the audio decoder stream */
         st = avformat_new_stream(s, NULL);
@@ -465,11 +469,12 @@ static int ea_read_packet(AVFormatContext *s,
     AVIOContext *pb = s->pb;
     int ret = 0;
     int packet_read = 0;
+    int partial_packet = 0;
     unsigned int chunk_type, chunk_size;
     int key = 0;
     int av_uninit(num_samples);
 
-    while (!packet_read) {
+    while (!packet_read || partial_packet) {
         chunk_type = avio_rl32(pb);
         chunk_size = (ea->big_endian ? avio_rb32(pb) : avio_rl32(pb)) - 8;
 
@@ -491,6 +496,11 @@ static int ea_read_packet(AVFormatContext *s,
                 num_samples = avio_rl32(pb);
                 avio_skip(pb, 8);
                 chunk_size -= 12;
+            }
+            if (partial_packet) {
+                av_log_ask_for_sample(s, "video header followed by audio packet not supported.\n");
+                av_free_packet(pkt);
+                partial_packet = 0;
             }
             ret = av_get_packet(pb, pkt, chunk_size);
             if (ret < 0)
@@ -554,9 +564,15 @@ static int ea_read_packet(AVFormatContext *s,
             key = AV_PKT_FLAG_KEY;
         case MV0F_TAG:
 get_video_packet:
-            ret = av_get_packet(pb, pkt, chunk_size);
-            if (ret < 0)
-                return ret;
+            if (partial_packet) {
+                ret = av_append_packet(pb, pkt, chunk_size);
+            } else
+                ret = av_get_packet(pb, pkt, chunk_size);
+            if (ret < 0) {
+                packet_read = 1;
+                break;
+            }
+            partial_packet = chunk_type == MVIh_TAG;
             pkt->stream_index = ea->video_stream_index;
             pkt->flags |= key;
             packet_read = 1;
@@ -568,6 +584,8 @@ get_video_packet:
         }
     }
 
+    if (ret < 0 && partial_packet)
+        av_free_packet(pkt);
     return ret;
 }
 

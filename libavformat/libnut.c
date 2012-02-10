@@ -71,6 +71,8 @@ static int nut_write_header(AVFormatContext * avf) {
     int i;
 
     priv->s = s = av_mallocz((avf->nb_streams + 1) * sizeof*s);
+    if(!s)
+        return AVERROR(ENOMEM);
 
     for (i = 0; i < avf->nb_streams; i++) {
         AVCodecContext * codec = avf->streams[i]->codec;
@@ -186,7 +188,7 @@ static off_t av_seek(void * h, long long pos, int whence) {
     return avio_seek(bc, pos, whence);
 }
 
-static int nut_read_header(AVFormatContext * avf, AVFormatParameters * ap) {
+static int nut_read_header(AVFormatContext * avf) {
     NUTContext * priv = avf->priv_data;
     AVIOContext * bc = avf->pb;
     nut_demuxer_opts_tt dopts = {
@@ -205,9 +207,13 @@ static int nut_read_header(AVFormatContext * avf, AVFormatParameters * ap) {
     nut_stream_header_tt * s;
     int ret, i;
 
+    if(!nut)
+        return -1;
+
     if ((ret = nut_read_headers(nut, &s, NULL))) {
         av_log(avf, AV_LOG_ERROR, " NUT error: %s\n", nut_error(ret));
         nut_demuxer_uninit(nut);
+        priv->nut = NULL;
         return -1;
     }
 
@@ -224,6 +230,11 @@ static int nut_read_header(AVFormatContext * avf, AVFormatParameters * ap) {
         st->codec->extradata_size = s[i].codec_specific_len;
         if (st->codec->extradata_size) {
             st->codec->extradata = av_mallocz(st->codec->extradata_size);
+            if(!st->codec->extradata){
+                nut_demuxer_uninit(nut);
+                priv->nut = NULL;
+                return AVERROR(ENOMEM);
+            }
             memcpy(st->codec->extradata, s[i].codec_specific, st->codec->extradata_size);
         }
 

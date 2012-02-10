@@ -23,7 +23,7 @@
 #include "avcodec.h"
 #include "libavutil/intreadwrite.h"
 #include "bytestream.h"
-#define ALT_BITSTREAM_READER_LE
+#define BITSTREAM_READER_LE
 #include "get_bits.h"
 // for av_memcpy_backptr
 #include "libavutil/lzo.h"
@@ -432,4 +432,3 @@ AVCodec ff_xan_wc4_decoder = {
     .capabilities   = CODEC_CAP_DR1,
     .long_name = NULL_IF_CONFIG_SMALL("Wing Commander IV / Xxan"),
 };
-

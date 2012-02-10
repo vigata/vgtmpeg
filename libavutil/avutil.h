@@ -37,6 +37,7 @@
  * @li @ref libavc "libavcodec" encoding/decoding library
  * @li @subpage libavfilter graph based frame editing library
  * @li @ref libavf "libavformat" I/O and muxing/demuxing library
+ * @li @ref lavd "libavdevice" special devices muxing/demuxing library
  * @li @ref lavu "libavutil" common utility library
  * @li @subpage libpostproc post processing library
  * @li @subpage libswscale  color conversion and scaling library
@@ -153,8 +154,8 @@
  */
 
 #define LIBAVUTIL_VERSION_MAJOR 51
-#define LIBAVUTIL_VERSION_MINOR 30
-#define LIBAVUTIL_VERSION_MICRO  0
+#define LIBAVUTIL_VERSION_MINOR 39
+#define LIBAVUTIL_VERSION_MICRO 100
 
 #define LIBAVUTIL_VERSION_INT   AV_VERSION_INT(LIBAVUTIL_VERSION_MAJOR, \
                                                LIBAVUTIL_VERSION_MINOR, \

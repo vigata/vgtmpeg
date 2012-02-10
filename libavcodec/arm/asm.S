@@ -68,6 +68,7 @@ ELF     .size   \name, . - \name
         .purgem endfunc
     .endm
         .text
+        .align          2
     .if \export
         .global EXTERN_ASM\name
 EXTERN_ASM\name:
@@ -110,6 +111,12 @@ ELF     .size   \name, . - \name
 .macro  ldr_pre         rt,  rn,  rm:vararg
 A       ldr             \rt, [\rn, \rm]!
 T       add             \rn, \rn, \rm
+T       ldr             \rt, [\rn]
+.endm
+
+.macro  ldr_dpre        rt,  rn,  rm:vararg
+A       ldr             \rt, [\rn, -\rm]!
+T       sub             \rn, \rn, \rm
 T       ldr             \rt, [\rn]
 .endm
 

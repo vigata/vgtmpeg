@@ -576,7 +576,7 @@ static int asf_read_marker(AVFormatContext *s, int64_t size)
     return 0;
 }
 
-static int asf_read_header(AVFormatContext *s, AVFormatParameters *ap)
+static int asf_read_header(AVFormatContext *s)
 {
     ASFContext *asf = s->priv_data;
     ff_asf_guid g;
@@ -765,7 +765,7 @@ static int ff_asf_get_packet(AVFormatContext *s, AVIOContext *pb)
         c= avio_r8(pb);
         d= avio_r8(pb);
         rsize+=3;
-    }else{
+    }else if(!url_feof(pb)){
         avio_seek(pb, -1, SEEK_CUR); //FIXME
     }
 
@@ -987,7 +987,7 @@ static int ff_asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pk
             asf_st->packet_pos= asf->packet_pos;
             if (asf_st->pkt.data && asf_st->palette_changed) {
                 uint8_t *pal;
-                pal = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE,
+                pal = av_packet_new_side_data(&asf_st->pkt, AV_PKT_DATA_PALETTE,
                                               AVPALETTE_SIZE);
                 if (!pal) {
                     av_log(s, AV_LOG_ERROR, "Cannot append palette to packet\n");
@@ -1212,7 +1212,6 @@ static void asf_build_simple_index(AVFormatContext *s, int stream_index)
     ff_asf_guid g;
     ASFContext *asf = s->priv_data;
     int64_t current_pos= avio_tell(s->pb);
-    int i;
 
     if(avio_seek(s->pb, asf->data_object_offset + asf->data_object_size, SEEK_SET) < 0) {
         asf->index_read= -1;
@@ -1237,6 +1236,7 @@ static void asf_build_simple_index(AVFormatContext *s, int stream_index)
     {
         int64_t itime, last_pos=-1;
         int pct, ict;
+        int i;
         int64_t av_unused gsize= avio_rl64(s->pb);
         ff_get_guid(s->pb, &g);
         itime=avio_rl64(s->pb);
@@ -1265,8 +1265,6 @@ static int asf_read_seek(AVFormatContext *s, int stream_index, int64_t pts, int 
 {
     ASFContext *asf = s->priv_data;
     AVStream *st = s->streams[stream_index];
-    int64_t pos;
-    int index;
 
     if (s->packet_size <= 0)
         return -1;
@@ -1284,10 +1282,10 @@ static int asf_read_seek(AVFormatContext *s, int stream_index, int64_t pts, int 
         asf_build_simple_index(s, stream_index);
 
     if((asf->index_read > 0 && st->index_entries)){
-        index= av_index_search_timestamp(st, pts, flags);
+        int index= av_index_search_timestamp(st, pts, flags);
         if(index >= 0) {
             /* find the position */
-            pos = st->index_entries[index].pos;
+            uint64_t pos = st->index_entries[index].pos;
 
             /* do the seek */
             av_log(s, AV_LOG_DEBUG, "SEEKTO: %"PRId64"\n", pos);

@@ -65,7 +65,7 @@ static int iss_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
-static av_cold int iss_read_header(AVFormatContext *s, AVFormatParameters *ap)
+static av_cold int iss_read_header(AVFormatContext *s)
 {
     IssDemuxContext *iss = s->priv_data;
     AVIOContext *pb = s->pb;
@@ -86,6 +86,11 @@ static av_cold int iss_read_header(AVFormatContext *s, AVFormatParameters *ap)
     get_token(pb, token, sizeof(token)); //Unknown2
     get_token(pb, token, sizeof(token)); //Version ID
     get_token(pb, token, sizeof(token)); //Size
+
+    if (iss->packet_size <= 0) {
+        av_log(s, AV_LOG_ERROR, "packet_size %d is invalid\n", iss->packet_size);
+        return AVERROR_INVALIDDATA;
+    }
 
     iss->sample_start_pos = avio_tell(pb);
 
@@ -130,4 +135,3 @@ AVInputFormat ff_iss_demuxer = {
     .read_header    = iss_read_header,
     .read_packet    = iss_read_packet,
 };
-

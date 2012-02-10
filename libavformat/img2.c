@@ -54,9 +54,11 @@ typedef struct {
 static const IdStrMap img_tags[] = {
     { CODEC_ID_MJPEG     , "jpeg"},
     { CODEC_ID_MJPEG     , "jpg"},
+    { CODEC_ID_MJPEG     , "jps"},
     { CODEC_ID_LJPEG     , "ljpg"},
     { CODEC_ID_JPEGLS    , "jls"},
     { CODEC_ID_PNG       , "png"},
+    { CODEC_ID_PNG       , "pns"},
     { CODEC_ID_PNG       , "mng"},
     { CODEC_ID_PPM       , "ppm"},
     { CODEC_ID_PPM       , "pnm"},
@@ -85,11 +87,13 @@ static const IdStrMap img_tags[] = {
     { CODEC_ID_SUNRAST   , "im8"},
     { CODEC_ID_SUNRAST   , "im24"},
     { CODEC_ID_SUNRAST   , "sunras"},
+    { CODEC_ID_JPEG2000  , "j2c"},
     { CODEC_ID_JPEG2000  , "j2k"},
     { CODEC_ID_JPEG2000  , "jp2"},
     { CODEC_ID_JPEG2000  , "jpc"},
     { CODEC_ID_DPX       , "dpx"},
     { CODEC_ID_PICTOR    , "pic"},
+    { CODEC_ID_XWD       , "xwd"},
     { CODEC_ID_NONE      , NULL}
 };
 
@@ -203,13 +207,7 @@ enum CodecID ff_guess_image2_codec(const char *filename)
     return av_str2id(img_tags, filename);
 }
 
-#if FF_API_GUESS_IMG2_CODEC
-enum CodecID av_guess_image2_codec(const char *filename){
-    return av_str2id(img_tags, filename);
-}
-#endif
-
-static int read_header(AVFormatContext *s1, AVFormatParameters *ap)
+static int read_header(AVFormatContext *s1)
 {
     VideoData *s = s1->priv_data;
     int first_index, last_index, ret = 0;
@@ -237,11 +235,6 @@ static int read_header(AVFormatContext *s1, AVFormatParameters *ap)
         av_log(s, AV_LOG_ERROR, "Could not parse framerate: %s.\n", s->framerate);
         return ret;
     }
-
-#if FF_API_LOOP_INPUT
-    if (s1->loop_input)
-        s->loop = s1->loop_input;
-#endif
 
     av_strlcpy(s->path, s1->filename, sizeof(s->path));
     s->img_number = 0;
@@ -284,6 +277,8 @@ static int read_header(AVFormatContext *s1, AVFormatParameters *ap)
         s->split_planes = str && !av_strcasecmp(str + 1, "y");
         st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
         st->codec->codec_id = av_str2id(img_tags, s->path);
+        if (st->codec->codec_id == CODEC_ID_LJPEG)
+            st->codec->codec_id = CODEC_ID_MJPEG;
     }
     if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO && pix_fmt != PIX_FMT_NONE)
         st->codec->pix_fmt = pix_fmt;
@@ -444,7 +439,7 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
                      (!st->codec->extradata_size &&
                       AV_RL32(pkt->data+4) != MKTAG('j','P',' ',' '))){ // signature
             error:
-                av_log(s, AV_LOG_ERROR, "malformated jpeg2000 codestream %X\n", AV_RB32(pkt->data));
+                av_log(s, AV_LOG_ERROR, "malformed JPEG 2000 codestream %X\n", AV_RB32(pkt->data));
                 return -1;
             }
         }
@@ -525,7 +520,7 @@ AVOutputFormat ff_image2_muxer = {
     .name           = "image2",
     .long_name      = NULL_IF_CONFIG_SMALL("image2 sequence"),
     .extensions     = "bmp,dpx,jls,jpeg,jpg,ljpg,pam,pbm,pcx,pgm,pgmyuv,png,"
-                      "ppm,sgi,tga,tif,tiff,jp2",
+                      "ppm,sgi,tga,tif,tiff,jp2,j2c,xwd",
     .priv_data_size = sizeof(VideoData),
     .video_codec    = CODEC_ID_MJPEG,
     .write_header   = write_header,

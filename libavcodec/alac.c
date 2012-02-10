@@ -25,27 +25,23 @@
  * @author 2005 David Hammerton
  * @see http://crazney.net/programs/itunes/alac.html
  *
- * Note: This decoder expects a 36- (0x24-)byte QuickTime atom to be
+ * Note: This decoder expects a 36-byte QuickTime atom to be
  * passed through the extradata[_size] fields. This atom is tacked onto
  * the end of an 'alac' stsd atom and has the following format:
- *  bytes 0-3   atom size (0x24), big-endian
- *  bytes 4-7   atom type ('alac', not the 'alac' tag from start of stsd)
- *  bytes 8-35  data bytes needed by decoder
  *
- * Extradata:
- * 32bit  size
- * 32bit  tag (=alac)
- * 32bit  zero?
- * 32bit  max sample per frame
- *  8bit  ?? (zero?)
+ * 32bit  atom size
+ * 32bit  tag                  ("alac")
+ * 32bit  tag version          (0)
+ * 32bit  samples per frame    (used when not set explicitly in the frames)
+ *  8bit  compatible version   (0)
  *  8bit  sample size
- *  8bit  history mult
- *  8bit  initial history
- *  8bit  kmodifier
- *  8bit  channels?
- * 16bit  ??
- * 32bit  max coded frame size
- * 32bit  bitrate?
+ *  8bit  history mult         (40)
+ *  8bit  initial history      (14)
+ *  8bit  kmodifier            (10)
+ *  8bit  channels
+ * 16bit  maxRun               (255)
+ * 32bit  max coded frame size (0 means unknown)
+ * 32bit  average bitrate      (0 means unknown)
  * 32bit  samplerate
  */
 
@@ -112,7 +108,7 @@ static inline int decode_scalar(GetBitContext *gb, int k, int limit, int readsam
     return x;
 }
 
-static void bastardized_rice_decompress(ALACContext *alac,
+static int bastardized_rice_decompress(ALACContext *alac,
                                  int32_t *output_buffer,
                                  int output_size,
                                  int readsamplesize, /* arg_10 */
@@ -133,6 +129,9 @@ static void bastardized_rice_decompress(ALACContext *alac,
 
         /* standard rice encoding */
         int k; /* size of extra bits */
+
+        if(get_bits_left(&alac->gb) <= 0)
+            return -1;
 
         /* read k, that is bits as is */
         k = av_log2((history >> 9) + 3);
@@ -179,6 +178,7 @@ static void bastardized_rice_decompress(ALACContext *alac,
             history = 0;
         }
     }
+    return 0;
 }
 
 static inline int sign_only(int v)
@@ -351,6 +351,17 @@ static void interleave_stereo_24(int32_t *buffer[MAX_CHANNELS],
     }
 }
 
+static void interleave_stereo_32(int32_t *buffer[MAX_CHANNELS],
+                                 int32_t *buffer_out, int numsamples)
+{
+    int i;
+
+    for (i = 0; i < numsamples; i++) {
+        *buffer_out++ = buffer[0][i];
+        *buffer_out++ = buffer[1][i];
+    }
+}
+
 static int alac_decode_frame(AVCodecContext *avctx, void *data,
                              int *got_frame_ptr, AVPacket *avpkt)
 {
@@ -442,12 +453,14 @@ static int alac_decode_frame(AVCodecContext *avctx, void *data,
 
         if (alac->extra_bits) {
             for (i = 0; i < outputsamples; i++) {
+                if(get_bits_left(&alac->gb) <= 0)
+                    return -1;
                 for (ch = 0; ch < channels; ch++)
                     alac->extra_bits_buffer[ch][i] = get_bits(&alac->gb, alac->extra_bits);
             }
         }
         for (ch = 0; ch < channels; ch++) {
-            bastardized_rice_decompress(alac,
+            int ret = bastardized_rice_decompress(alac,
                                         alac->predicterror_buffer[ch],
                                         outputsamples,
                                         readsamplesize,
@@ -455,29 +468,38 @@ static int alac_decode_frame(AVCodecContext *avctx, void *data,
                                         alac->setinfo_rice_kmodifier,
                                         ricemodifier[ch] * alac->setinfo_rice_historymult / 4,
                                         (1 << alac->setinfo_rice_kmodifier) - 1);
+            if(ret<0)
+                return ret;
 
-            if (prediction_type[ch] == 0) {
-                /* adaptive fir */
-                predictor_decompress_fir_adapt(alac->predicterror_buffer[ch],
-                                               alac->outputsamples_buffer[ch],
-                                               outputsamples,
-                                               readsamplesize,
-                                               predictor_coef_table[ch],
-                                               predictor_coef_num[ch],
-                                               prediction_quantitization[ch]);
-            } else {
-                av_log(avctx, AV_LOG_ERROR, "FIXME: unhandled prediction type: %i\n", prediction_type[ch]);
-                /* I think the only other prediction type (or perhaps this is
-                 * just a boolean?) runs adaptive fir twice.. like:
-                 * predictor_decompress_fir_adapt(predictor_error, tempout, ...)
-                 * predictor_decompress_fir_adapt(predictor_error, outputsamples ...)
-                 * little strange..
+            /* adaptive FIR filter */
+            if (prediction_type[ch] == 15) {
+                /* Prediction type 15 runs the adaptive FIR twice.
+                 * The first pass uses the special-case coef_num = 31, while
+                 * the second pass uses the coefs from the bitstream.
+                 *
+                 * However, this prediction type is not currently used by the
+                 * reference encoder.
                  */
+                predictor_decompress_fir_adapt(alac->predicterror_buffer[ch],
+                                               alac->predicterror_buffer[ch],
+                                               outputsamples, readsamplesize,
+                                               NULL, 31, 0);
+            } else if (prediction_type[ch] > 0) {
+                av_log(avctx, AV_LOG_WARNING, "unknown prediction type: %i\n",
+                       prediction_type[ch]);
             }
+            predictor_decompress_fir_adapt(alac->predicterror_buffer[ch],
+                                           alac->outputsamples_buffer[ch],
+                                           outputsamples, readsamplesize,
+                                           predictor_coef_table[ch],
+                                           predictor_coef_num[ch],
+                                           prediction_quantitization[ch]);
         }
     } else {
         /* not compressed, easy case */
         for (i = 0; i < outputsamples; i++) {
+            if(get_bits_left(&alac->gb) <= 0)
+                return -1;
             for (ch = 0; ch < channels; ch++) {
                 alac->outputsamples_buffer[ch][i] = get_sbits_long(&alac->gb,
                                                                    alac->setinfo_sample_size);
@@ -520,6 +542,16 @@ static int alac_decode_frame(AVCodecContext *avctx, void *data,
             int32_t *outbuffer = (int32_t *)alac->frame.data[0];
             for (i = 0; i < outputsamples; i++)
                 outbuffer[i] = alac->outputsamples_buffer[0][i] << 8;
+        }
+        break;
+    case 32:
+        if (channels == 2) {
+            interleave_stereo_32(alac->outputsamples_buffer,
+                                 (int32_t *)alac->frame.data[0], outputsamples);
+        } else {
+            int32_t *outbuffer = (int32_t *)alac->frame.data[0];
+            for (i = 0; i < outputsamples; i++)
+                outbuffer[i] = alac->outputsamples_buffer[0][i];
         }
         break;
     }
@@ -574,7 +606,7 @@ static int alac_set_info(ALACContext *alac)
 
     ptr += 4; /* size */
     ptr += 4; /* alac */
-    ptr += 4; /* 0 ? */
+    ptr += 4; /* version */
 
     if(AV_RB32(ptr) >= UINT_MAX/4){
         av_log(alac->avctx, AV_LOG_ERROR, "setinfo_max_samples_per_frame too large\n");
@@ -583,15 +615,15 @@ static int alac_set_info(ALACContext *alac)
 
     /* buffer size / 2 ? */
     alac->setinfo_max_samples_per_frame = bytestream_get_be32(&ptr);
-    ptr++;                          /* ??? */
+    ptr++;                          /* compatible version */
     alac->setinfo_sample_size           = *ptr++;
     alac->setinfo_rice_historymult      = *ptr++;
     alac->setinfo_rice_initialhistory   = *ptr++;
     alac->setinfo_rice_kmodifier        = *ptr++;
     alac->numchannels                   = *ptr++;
-    bytestream_get_be16(&ptr);      /* ??? */
+    bytestream_get_be16(&ptr);      /* maxRun */
     bytestream_get_be32(&ptr);      /* max coded frame size */
-    bytestream_get_be32(&ptr);      /* bitrate ? */
+    bytestream_get_be32(&ptr);      /* average bitrate */
     bytestream_get_be32(&ptr);      /* samplerate */
 
     return 0;
@@ -617,6 +649,7 @@ static av_cold int alac_decode_init(AVCodecContext * avctx)
     switch (alac->setinfo_sample_size) {
     case 16: avctx->sample_fmt    = AV_SAMPLE_FMT_S16;
              break;
+    case 32:
     case 24: avctx->sample_fmt    = AV_SAMPLE_FMT_S32;
              break;
     default: av_log_ask_for_sample(avctx, "Sample depth %d is not supported.\n",

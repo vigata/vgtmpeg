@@ -79,13 +79,13 @@ static const uint64_t thd_layout[13] = {
     AV_CH_LOW_FREQUENCY,                                    // LFE
     AV_CH_SIDE_LEFT|AV_CH_SIDE_RIGHT,                       // LRs
     AV_CH_TOP_FRONT_LEFT|AV_CH_TOP_FRONT_RIGHT,             // LRvh
-    AV_CH_SIDE_LEFT|AV_CH_SIDE_RIGHT,                       // LRc
+    AV_CH_FRONT_LEFT_OF_CENTER|AV_CH_FRONT_RIGHT_OF_CENTER, // LRc
     AV_CH_BACK_LEFT|AV_CH_BACK_RIGHT,                       // LRrs
     AV_CH_BACK_CENTER,                                      // Cs
-    AV_CH_TOP_BACK_CENTER,                                  // Ts
-    AV_CH_SIDE_LEFT|AV_CH_SIDE_RIGHT,                       // LRsd
-    AV_CH_FRONT_LEFT_OF_CENTER|AV_CH_FRONT_RIGHT_OF_CENTER, // LRw
-    AV_CH_TOP_BACK_CENTER,                                  // Cvh
+    AV_CH_TOP_CENTER,                                       // Ts
+    AV_CH_SIDE_LEFT|AV_CH_SIDE_RIGHT,                       // LRsd - TODO: Surround Direct
+    AV_CH_FRONT_LEFT_OF_CENTER|AV_CH_FRONT_RIGHT_OF_CENTER, // LRw  - TODO: Wide
+    AV_CH_TOP_FRONT_CENTER,                                 // Cvh
     AV_CH_LOW_FREQUENCY                                     // LFE2
 };
 
@@ -263,6 +263,9 @@ static int mlp_parse(AVCodecParserContext *s,
         mp->bytes_left = ((mp->pc.index > 0 ? mp->pc.buffer[0] : buf[0]) << 8)
                        |  (mp->pc.index > 1 ? mp->pc.buffer[1] : buf[1-mp->pc.index]);
         mp->bytes_left = (mp->bytes_left & 0xfff) * 2;
+        if (mp->bytes_left <= 0) { // prevent infinite loop
+            goto lost_sync;
+        }
         mp->bytes_left -= mp->pc.index;
     }
 

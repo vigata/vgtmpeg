@@ -27,13 +27,17 @@
 
 // The idiosyncrasies of GSM-in-WAV are explained at http://kbs.cs.tu-berlin.de/~jutta/toast.html
 
-#include "avcodec.h"
 #include <gsm/gsm.h>
 
-// gsm.h misses some essential constants
-#define GSM_BLOCK_SIZE 33
-#define GSM_MS_BLOCK_SIZE 65
-#define GSM_FRAME_SIZE 160
+#include "avcodec.h"
+#include "gsm.h"
+
+static av_cold int libgsm_encode_close(AVCodecContext *avctx) {
+    av_freep(&avctx->coded_frame);
+    gsm_destroy(avctx->priv_data);
+    avctx->priv_data = NULL;
+    return 0;
+}
 
 static av_cold int libgsm_encode_init(AVCodecContext *avctx) {
     if (avctx->channels > 1) {
@@ -58,6 +62,8 @@ static av_cold int libgsm_encode_init(AVCodecContext *avctx) {
     }
 
     avctx->priv_data = gsm_create();
+    if (!avctx->priv_data)
+        goto error;
 
     switch(avctx->codec_id) {
     case CODEC_ID_GSM:
@@ -73,16 +79,13 @@ static av_cold int libgsm_encode_init(AVCodecContext *avctx) {
     }
 
     avctx->coded_frame= avcodec_alloc_frame();
-    avctx->coded_frame->key_frame= 1;
+    if (!avctx->coded_frame)
+        goto error;
 
     return 0;
-}
-
-static av_cold int libgsm_encode_close(AVCodecContext *avctx) {
-    av_freep(&avctx->coded_frame);
-    gsm_destroy(avctx->priv_data);
-    avctx->priv_data = NULL;
-    return 0;
+error:
+    libgsm_encode_close(avctx);
+    return -1;
 }
 
 static int libgsm_encode_frame(AVCodecContext *avctx,
@@ -155,7 +158,7 @@ static av_cold int libgsm_decode_init(AVCodecContext *avctx) {
         break;
     case CODEC_ID_GSM_MS: {
         int one = 1;
-        gsm_option(avctx->priv_data, GSM_OPT_WAV49, &one);
+        gsm_option(s->state, GSM_OPT_WAV49, &one);
         avctx->frame_size  = 2 * GSM_FRAME_SIZE;
         avctx->block_align = GSM_MS_BLOCK_SIZE;
         }
@@ -212,9 +215,12 @@ static int libgsm_decode_frame(AVCodecContext *avctx, void *data,
 
 static void libgsm_flush(AVCodecContext *avctx) {
     LibGSMDecodeContext *s = avctx->priv_data;
+    int one = 1;
 
     gsm_destroy(s->state);
     s->state = gsm_create();
+    if (avctx->codec_id == CODEC_ID_GSM_MS)
+        gsm_option(s->state, GSM_OPT_WAV49, &one);
 }
 
 AVCodec ff_libgsm_decoder = {

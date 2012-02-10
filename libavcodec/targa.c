@@ -55,7 +55,7 @@ static int targa_decode_rle(AVCodecContext *avctx, TargaContext *s, const uint8_
         type = *src++;
         count = (type & 0x7F) + 1;
         type &= 0x80;
-        if((x + count > w) && (x + count + 1 > (h - y) * w)){
+        if(x + count > (h - y) * w){
             av_log(avctx, AV_LOG_ERROR, "Packet went out of bounds: position (%i,%i) size %i\n", x, y, count);
             return -1;
         }
@@ -70,7 +70,7 @@ static int targa_decode_rle(AVCodecContext *avctx, TargaContext *s, const uint8_
                 *dst = *src;
                 break;
             case 2:
-                *((uint16_t*)dst) = AV_RL16(src);
+                AV_WN16A(dst, AV_RN16A(src));
                 break;
             case 3:
                 dst[0] = src[0];
@@ -78,7 +78,7 @@ static int targa_decode_rle(AVCodecContext *avctx, TargaContext *s, const uint8_
                 dst[2] = src[2];
                 break;
             case 4:
-                *((uint32_t*)dst) = AV_RL32(src);
+                AV_WN32A(dst, AV_RN32A(src));
                 break;
             }
             dst += depth;
@@ -142,16 +142,14 @@ static int decode_frame(AVCodecContext *avctx,
         avctx->pix_fmt = ((compr & (~TGA_RLE)) == TGA_BW) ? PIX_FMT_GRAY8 : PIX_FMT_PAL8;
         break;
     case 15:
-        avctx->pix_fmt = PIX_FMT_RGB555;
-        break;
     case 16:
-        avctx->pix_fmt = PIX_FMT_RGB555;
+        avctx->pix_fmt = PIX_FMT_RGB555LE;
         break;
     case 24:
         avctx->pix_fmt = PIX_FMT_BGR24;
         break;
     case 32:
-        avctx->pix_fmt = PIX_FMT_RGB32;
+        avctx->pix_fmt = PIX_FMT_BGRA;
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Bit depth %i is not supported\n", s->bpp);
@@ -178,24 +176,45 @@ static int decode_frame(AVCodecContext *avctx,
     }
 
     if(colors){
-        size_t pal_size;
+        int pal_size, pal_sample_size;
         if((colors + first_clr) > 256){
             av_log(avctx, AV_LOG_ERROR, "Incorrect palette: %i colors with offset %i\n", colors, first_clr);
             return -1;
         }
-        if(csize != 24){
+        switch (csize) {
+        case 24: pal_sample_size = 3; break;
+        case 16:
+        case 15: pal_sample_size = 2; break;
+        default:
             av_log(avctx, AV_LOG_ERROR, "Palette entry size %i bits is not supported\n", csize);
             return -1;
         }
-        pal_size = colors * ((csize + 1) >> 3);
+        pal_size = colors * pal_sample_size;
         CHECK_BUFFER_SIZE(buf, buf_end, pal_size, "color table");
         if(avctx->pix_fmt != PIX_FMT_PAL8)//should not occur but skip palette anyway
             buf += pal_size;
         else{
             int t;
-            int32_t *pal = ((int32_t*)p->data[1]) + first_clr;
-            for(t = 0; t < colors; t++){
-                *pal++ = (0xff<<24) | bytestream_get_le24(&buf);
+            uint32_t *pal = ((uint32_t *)p->data[1]) + first_clr;
+
+            switch (pal_sample_size) {
+            case 3:
+                /* RGB24 */
+                for (t = 0; t < colors; t++)
+                    *pal++ = (0xffU<<24) | bytestream_get_le24(&buf);
+                break;
+            case 2:
+                /* RGB555 */
+                for (t = 0; t < colors; t++) {
+                    uint32_t v = bytestream_get_le16(&buf);
+                    v = ((v & 0x7C00) <<  9) |
+                        ((v & 0x03E0) <<  6) |
+                        ((v & 0x001F) <<  3);
+                    /* left bit replication */
+                    v |= (v & 0xE0E0E0U) >> 5;
+                    *pal++ = (0xffU<<24) | v;
+                }
+                break;
             }
             p->palette_has_changed = 1;
         }
@@ -212,18 +231,6 @@ static int decode_frame(AVCodecContext *avctx,
             size_t img_size = s->width * ((s->bpp + 1) >> 3);
             CHECK_BUFFER_SIZE(buf, buf_end, img_size, "image data");
             for(y = 0; y < s->height; y++){
-#if HAVE_BIGENDIAN
-                int x;
-                if((s->bpp + 1) >> 3 == 2){
-                    uint16_t *dst16 = (uint16_t*)dst;
-                    for(x = 0; x < s->width; x++)
-                        dst16[x] = AV_RL16(buf + x * 2);
-                }else if((s->bpp + 1) >> 3 == 4){
-                    uint32_t *dst32 = (uint32_t*)dst;
-                    for(x = 0; x < s->width; x++)
-                        dst32[x] = AV_RL32(buf + x * 4);
-                }else
-#endif
                     memcpy(dst, buf, img_size);
 
                 dst += stride;
@@ -238,18 +245,18 @@ static int decode_frame(AVCodecContext *avctx,
             for(x = 0; x < s->width >> 1; x++){
                 switch(s->bpp){
                 case 32:
-                    FFSWAP(uint32_t, ((uint32_t *)line)[x], ((uint32_t *)line)[s->width - x]);
+                    FFSWAP(uint32_t, ((uint32_t *)line)[x], ((uint32_t *)line)[s->width - x - 1]);
                     break;
                 case 24:
-                    FFSWAP(uint8_t, ((uint8_t *)line)[3 * x    ], ((uint8_t *)line)[3 * s->width - 3 * x    ]);
-                    FFSWAP(uint8_t, ((uint8_t *)line)[3 * x + 1], ((uint8_t *)line)[3 * s->width - 3 * x + 1]);
-                    FFSWAP(uint8_t, ((uint8_t *)line)[3 * x + 2], ((uint8_t *)line)[3 * s->width - 3 * x + 2]);
+                    FFSWAP(uint8_t, ((uint8_t *)line)[3 * x    ], ((uint8_t *)line)[3 * s->width - 3 * x - 3]);
+                    FFSWAP(uint8_t, ((uint8_t *)line)[3 * x + 1], ((uint8_t *)line)[3 * s->width - 3 * x - 2]);
+                    FFSWAP(uint8_t, ((uint8_t *)line)[3 * x + 2], ((uint8_t *)line)[3 * s->width - 3 * x - 1]);
                     break;
                 case 16:
-                    FFSWAP(uint16_t, ((uint16_t *)line)[x], ((uint16_t *)line)[s->width - x]);
+                    FFSWAP(uint16_t, ((uint16_t *)line)[x], ((uint16_t *)line)[s->width - x - 1]);
                     break;
                 case 8:
-                    FFSWAP(uint8_t, ((uint8_t *)line)[x], ((uint8_t *)line)[s->width - x]);
+                    FFSWAP(uint8_t, ((uint8_t *)line)[x], ((uint8_t *)line)[s->width - x - 1]);
                 }
             }
         }

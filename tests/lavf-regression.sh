@@ -11,11 +11,23 @@ set -e
 
 eval do_$test=y
 
+ENC_OPTS="$ENC_OPTS -metadata title=lavftest"
+
 do_lavf()
 {
     file=${outfile}lavf.$1
     do_avconv $file $DEC_OPTS -f image2 -vcodec pgmyuv -i $raw_src $DEC_OPTS -ar 44100 -f s16le -i $pcm_src $ENC_OPTS -b:a 64k -t 1 -qscale:v 10 $2
     do_avconv_crc $file $DEC_OPTS -i $target_path/$file $3
+}
+
+do_lavf_timecode_nodrop() { do_lavf $1 "$2 -timecode 02:56:14:13"; }
+do_lavf_timecode_drop()   { do_lavf $1 "$2 -timecode 02:56:14.13 -r 30000/1001"; }
+
+do_lavf_timecode()
+{
+    do_lavf_timecode_nodrop "$@"
+    do_lavf_timecode_drop "$@"
+    do_lavf "$@"
 }
 
 do_streamed_images()
@@ -59,15 +71,15 @@ do_avconv $file $DEC_OPTS -f image2 -vcodec pgmyuv -i $raw_src $DEC_OPTS -ar 441
 fi
 
 if [ -n "$do_mpg" ] ; then
-do_lavf mpg "-ab 64k"
+do_lavf_timecode mpg "-ab 64k"
 fi
 
 if [ -n "$do_mxf" ] ; then
-do_lavf mxf "-ar 48000 -bf 2 -timecode 02:56:14:13"
+do_lavf_timecode mxf "-ar 48000 -bf 2"
 fi
 
 if [ -n "$do_mxf_d10" ]; then
-do_lavf mxf_d10 "-ar 48000 -ac 2 -r 25 -s 720x576 -vf pad=720:608:0:32 -vcodec mpeg2video -g 0 -flags +ildct+low_delay -dc 10 -flags2 +ivlc+non_linear_q -qscale 1 -ps 1 -qmin 1 -rc_max_vbv_use 1 -rc_min_vbv_use 1 -pix_fmt yuv422p -minrate 30000k -maxrate 30000k -b 30000k -bufsize 1200000 -top 1 -rc_init_occupancy 1200000 -qmax 12 -f mxf_d10"
+do_lavf mxf_d10 "-ar 48000 -ac 2 -r 25 -s 720x576 -vf pad=720:608:0:32 -vcodec mpeg2video -g 0 -flags +ildct+low_delay -dc 10 -non_linear_quant 1 -intra_vlc 1 -qscale 1 -ps 1 -qmin 1 -rc_max_vbv_use 1 -rc_min_vbv_use 1 -pix_fmt yuv422p -minrate 30000k -maxrate 30000k -b 30000k -bufsize 1200000 -top 1 -rc_init_occupancy 1200000 -qmax 12 -f mxf_d10"
 fi
 
 if [ -n "$do_ts" ] ; then
@@ -87,14 +99,18 @@ do_lavf flv -an
 fi
 
 if [ -n "$do_mov" ] ; then
-do_lavf mov "-acodec pcm_alaw -vcodec mpeg4"
+do_lavf_timecode mov "-acodec pcm_alaw -vcodec mpeg4"
 fi
 
 if [ -n "$do_dv_fmt" ] ; then
+do_lavf_timecode_nodrop dv "-ar 48000 -r 25 -s pal -ac 2"
+do_lavf_timecode_drop   dv "-ar 48000 -pix_fmt yuv411p -s ntsc -ac 2"
 do_lavf dv "-ar 48000 -r 25 -s pal -ac 2"
 fi
 
 if [ -n "$do_gxf" ] ; then
+do_lavf_timecode_nodrop gxf "-ar 48000 -r 25 -s pal -ac 1"
+do_lavf_timecode_drop   gxf "-ar 48000 -s ntsc -ac 1"
 do_lavf gxf "-ar 48000 -r 25 -s pal -ac 1"
 fi
 
@@ -104,6 +120,10 @@ fi
 
 if [ -n "$do_mkv" ] ; then
 do_lavf mkv "-acodec mp2 -ab 64k -vcodec mpeg4"
+fi
+
+if [ -n "$do_wtv" ] ; then
+do_lavf wtv "-acodec mp2"
 fi
 
 
@@ -149,6 +169,8 @@ fi
 
 if [ -n "$do_png" ] ; then
 do_image_formats png
+do_image_formats png "-pix_fmt gray16be"
+do_image_formats png "-pix_fmt rgb48be"
 fi
 
 if [ -n "$do_bmp" ] ; then
@@ -173,6 +195,14 @@ fi
 
 if [ -n "$do_pcx" ] ; then
 do_image_formats pcx
+fi
+
+if [ -n "$do_dpx" ] ; then
+do_image_formats dpx
+fi
+
+if [ -n "$do_xwd" ] ; then
+do_image_formats xwd
 fi
 
 # audio only
@@ -215,6 +245,14 @@ fi
 
 if [ -n "$do_rso" ] ; then
 do_audio_only rso
+fi
+
+if [ -n "$do_sox" ] ; then
+do_audio_only sox
+fi
+
+if [ -n "$do_caf" ] ; then
+do_audio_only caf
 fi
 
 # pix_fmt conversions

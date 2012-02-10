@@ -37,7 +37,7 @@ static int txd_probe(AVProbeData * pd) {
     return 0;
 }
 
-static int txd_read_header(AVFormatContext *s, AVFormatParameters *ap) {
+static int txd_read_header(AVFormatContext *s) {
     AVStream *st;
 
     st = avformat_new_stream(s, NULL);
@@ -48,6 +48,7 @@ static int txd_read_header(AVFormatContext *s, AVFormatParameters *ap) {
     st->codec->time_base.den = 5;
     st->codec->time_base.num = 1;
     /* the parameters will be extracted from the compressed bitstream */
+
     return 0;
 }
 

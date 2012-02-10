@@ -51,8 +51,7 @@ typedef struct Context {
 
 static int cache_open(URLContext *h, const char *arg, int flags)
 {
-    int access;
-    const char *buffername;
+    char *buffername;
     Context *c= h->priv_data;
 
     av_strstart(arg, "cache:", &arg);
@@ -64,7 +63,7 @@ static int cache_open(URLContext *h, const char *arg, int flags)
     }
 
     unlink(buffername);
-    av_free(buffername);
+    av_freep(&buffername);
 
     return ffurl_open(&c->inner, arg, flags, &h->interrupt_callback, NULL);
 }

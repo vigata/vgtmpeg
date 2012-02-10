@@ -24,7 +24,7 @@
  * VBLE Decoder
  */
 
-#define ALT_BITSTREAM_READER_LE
+#define BITSTREAM_READER_LE
 
 #include "avcodec.h"
 #include "dsputil.h"
@@ -134,7 +134,7 @@ static int vble_decode_frame(AVCodecContext *avctx, void *data, int *data_size,
 
     /* Set flags */
     pic->key_frame = 1;
-    pic->pict_type = FF_I_TYPE;
+    pic->pict_type = AV_PICTURE_TYPE_I;
 
     /* Version should always be 1 */
     version = AV_RL32(src);

@@ -291,8 +291,8 @@ static void dvd_create_streams(AVFormatContext *s) {
 
 
 
-static int mpegps_read_header(AVFormatContext *s,
-                              AVFormatParameters *ap)
+
+static int mpegps_read_header(AVFormatContext *s)
 {
     MpegDemuxContext *m = s->priv_data;
     const char *sofdec = "Sofdec";
