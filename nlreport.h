@@ -284,8 +284,8 @@ static void show_codecs_json(void)
                             decode= encode= cap=0;
                         }
                         if(p2 && strcmp(p->name, p2->name)==0){
-                            if(p->decode) decode=1;
-                            if(p->encode) encode=1;
+                            if(p->decode ) decode=1;
+                            if(p->encode || p->encode2) encode=1;
                             cap |= p->capabilities;
                             }
                         }
