@@ -46,6 +46,7 @@ typedef struct {
     char *format_name;
     char *file_name;
     int stream_index;
+    int loop_count;
 
     AVFormatContext *format_ctx;
     AVCodecContext *codec_ctx;
@@ -71,6 +72,7 @@ static const AVOption movie_options[]= {
 {"si",           "set stream index",        OFFSET(stream_index), AV_OPT_TYPE_INT,    {.dbl = -1},  -1,       INT_MAX  },
 {"seek_point",   "set seekpoint (seconds)", OFFSET(seek_point_d), AV_OPT_TYPE_DOUBLE, {.dbl =  0},  0,        (INT64_MAX-1) / 1000000 },
 {"sp",           "set seekpoint (seconds)", OFFSET(seek_point_d), AV_OPT_TYPE_DOUBLE, {.dbl =  0},  0,        (INT64_MAX-1) / 1000000 },
+{"loop",         "set loop count",          OFFSET(loop_count),   AV_OPT_TYPE_INT,    {.dbl =  1},  0,        INT_MAX  },
 {NULL},
 };
 
@@ -245,7 +247,27 @@ static int movie_get_frame(AVFilterLink *outlink)
     if (movie->is_done == 1)
         return 0;
 
-    while ((ret = av_read_frame(movie->format_ctx, &pkt)) >= 0) {
+    while (1) {
+        ret = av_read_frame(movie->format_ctx, &pkt);
+        if (ret == AVERROR_EOF) {
+            int64_t timestamp;
+            if (movie->loop_count != 1) {
+                timestamp = movie->seek_point;
+                if (movie->format_ctx->start_time != AV_NOPTS_VALUE)
+                    timestamp += movie->format_ctx->start_time;
+                if (av_seek_frame(movie->format_ctx, -1, timestamp, AVSEEK_FLAG_BACKWARD) < 0) {
+                    movie->is_done = 1;
+                    break;
+                } else if (movie->loop_count>1)
+                    movie->loop_count--;
+                continue;
+            } else {
+                movie->is_done = 1;
+                break;
+            }
+        } else if (ret < 0)
+            break;
+
         // Is this a packet from the video stream?
         if (pkt.stream_index == movie->stream_index) {
             avcodec_decode_video2(movie->codec_ctx, movie->frame, &frame_decoded, &pkt);
@@ -284,10 +306,6 @@ static int movie_get_frame(AVFilterLink *outlink)
         av_free_packet(&pkt);
     }
 
-    // On multi-frame source we should stop the mixing process when
-    // the movie source does not have more frames
-    if (ret == AVERROR_EOF)
-        movie->is_done = 1;
     return ret;
 }
 
@@ -419,7 +437,7 @@ static int amovie_get_samples(AVFilterLink *outlink)
         if (data_size < 0)
             return data_size;
         movie->samplesref =
-            avfilter_get_audio_buffer(outlink, AV_PERM_WRITE, nb_samples);
+            ff_get_audio_buffer(outlink, AV_PERM_WRITE, nb_samples);
         memcpy(movie->samplesref->data[0], movie->frame->data[0], data_size);
         movie->samplesref->pts = movie->pkt.pts;
         movie->samplesref->pos = movie->pkt.pos;
@@ -445,7 +463,7 @@ static int amovie_request_frame(AVFilterLink *outlink)
             return ret;
     } while (!movie->samplesref);
 
-    avfilter_filter_samples(outlink, avfilter_ref_buffer(movie->samplesref, ~0));
+    ff_filter_samples(outlink, avfilter_ref_buffer(movie->samplesref, ~0));
     avfilter_unref_buffer(movie->samplesref);
     movie->samplesref = NULL;
 

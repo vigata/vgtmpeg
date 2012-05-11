@@ -118,7 +118,7 @@ static av_cold int mpc8_decode_init(AVCodecContext * avctx)
     }
     memset(c->oldDSCF, 0, sizeof(c->oldDSCF));
     av_lfg_init(&c->rnd, 0xDEADBEEF);
-    dsputil_init(&c->dsp, avctx);
+    ff_dsputil_init(&c->dsp, avctx);
     ff_mpadsp_init(&c->mpadsp);
 
     ff_mpc_init();
@@ -127,8 +127,10 @@ static av_cold int mpc8_decode_init(AVCodecContext * avctx)
 
     skip_bits(&gb, 3);//sample rate
     c->maxbands = get_bits(&gb, 5) + 1;
-    if (c->maxbands >= BANDS)
+    if (c->maxbands >= BANDS) {
+        av_log(avctx,AV_LOG_ERROR, "maxbands %d too high\n", c->maxbands);
         return AVERROR_INVALIDDATA;
+    }
     channels = get_bits(&gb, 4) + 1;
     if (channels > 2) {
         av_log_missing_feature(avctx, "Multichannel MPC SV8", 1);
@@ -184,13 +186,13 @@ static av_cold int mpc8_decode_init(AVCodecContext * avctx)
 
     q3_vlc[0].table = q3_0_table;
     q3_vlc[0].table_allocated = 512;
-    init_vlc_sparse(&q3_vlc[0], MPC8_Q3_BITS, MPC8_Q3_SIZE,
+    ff_init_vlc_sparse(&q3_vlc[0], MPC8_Q3_BITS, MPC8_Q3_SIZE,
              mpc8_q3_bits,  1, 1,
              mpc8_q3_codes, 1, 1,
              mpc8_q3_syms,  1, 1, INIT_VLC_USE_NEW_STATIC);
     q3_vlc[1].table = q3_1_table;
     q3_vlc[1].table_allocated = 516;
-    init_vlc_sparse(&q3_vlc[1], MPC8_Q4_BITS, MPC8_Q4_SIZE,
+    ff_init_vlc_sparse(&q3_vlc[1], MPC8_Q4_BITS, MPC8_Q4_SIZE,
              mpc8_q4_bits,  1, 1,
              mpc8_q4_codes, 1, 1,
              mpc8_q4_syms,  1, 1, INIT_VLC_USE_NEW_STATIC);
@@ -272,8 +274,10 @@ static int mpc8_decode_frame(AVCodecContext * avctx, void *data,
         maxband = c->last_max_band + get_vlc2(gb, band_vlc.table, MPC8_BANDS_BITS, 2);
         if(maxband > 32) maxband -= 33;
     }
-    if(maxband > c->maxbands)
+    if(maxband >= BANDS) {
+        av_log(avctx, AV_LOG_ERROR, "maxband %d too large\n",maxband);
         return AVERROR_INVALIDDATA;
+    }
     c->last_max_band = maxband;
 
     /* read subband indexes */
@@ -429,5 +433,5 @@ AVCodec ff_mpc8_decoder = {
     .init           = mpc8_decode_init,
     .decode         = mpc8_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name = NULL_IF_CONFIG_SMALL("Musepack SV8"),
+    .long_name      = NULL_IF_CONFIG_SMALL("Musepack SV8"),
 };

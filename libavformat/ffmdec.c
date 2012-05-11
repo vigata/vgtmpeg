@@ -285,7 +285,7 @@ static int ffm_read_header(AVFormatContext *s)
     /* get also filesize */
     if (pb->seekable) {
         ffm->file_size = avio_size(pb);
-        if (ffm->write_index)
+        if (ffm->write_index && 0)
             adjust_write_index(s);
     } else {
         ffm->file_size = (UINT64_C(1) << 63) - 1;
@@ -338,8 +338,6 @@ static int ffm_read_header(AVFormatContext *s)
             codec->dct_algo = avio_rb32(pb);
             codec->strict_std_compliance = avio_rb32(pb);
             codec->max_b_frames = avio_rb32(pb);
-            codec->luma_elim_threshold = avio_rb32(pb);
-            codec->chroma_elim_threshold = avio_rb32(pb);
             codec->mpeg_quant = avio_rb32(pb);
             codec->intra_dc_precision = avio_rb32(pb);
             codec->me_method = avio_rb32(pb);

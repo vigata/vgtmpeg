@@ -24,6 +24,7 @@
  */
 
 #include "libavutil/opt.h"
+#include "libavutil/timestamp.h"
 #include "avfilter.h"
 
 typedef struct {
@@ -32,7 +33,7 @@ typedef struct {
     double noise;               ///< noise amplitude ratio
     int duration;               ///< minimum duration of silence until notification
     int64_t nb_null_samples;    ///< current number of continuous zero samples
-    double start;               ///< if silence is detected, this value contains the time of the first zero sample
+    int64_t start;              ///< if silence is detected, this value contains the time of the first zero sample
     int last_sample_rate;       ///< last sample rate to check for sample rate changes
 } SilenceDetectContext;
 
@@ -106,24 +107,23 @@ static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
                 if (!silence->start) {
                     silence->nb_null_samples++;
                     if (silence->nb_null_samples >= nb_samples_notify) {
-                        silence->start = insamples->pts * av_q2d(inlink->time_base) - silence->duration;
+                        silence->start = insamples->pts - silence->duration / av_q2d(inlink->time_base);
                         av_log(silence, AV_LOG_INFO,
-                               "silence_start: %f\n", silence->start);
+                               "silence_start: %s\n", av_ts2timestr(silence->start, &inlink->time_base));
                     }
                 }
             } else {
-                if (silence->start) {
-                    double end = insamples->pts * av_q2d(inlink->time_base);
+                if (silence->start)
                     av_log(silence, AV_LOG_INFO,
-                           "silence_end: %f | silence_duration: %f\n",
-                           end, end - silence->start);
-                }
+                           "silence_end: %s | silence_duration: %s\n",
+                           av_ts2timestr(insamples->pts,                  &inlink->time_base),
+                           av_ts2timestr(insamples->pts - silence->start, &inlink->time_base));
                 silence->nb_null_samples = silence->start = 0;
             }
         }
     }
 
-    avfilter_filter_samples(inlink->dst->outputs[0], insamples);
+    ff_filter_samples(inlink->dst->outputs[0], insamples);
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -163,7 +163,7 @@ AVFilter avfilter_af_silencedetect = {
     .inputs = (const AVFilterPad[]) {
         { .name             = "default",
           .type             = AVMEDIA_TYPE_AUDIO,
-          .get_audio_buffer = avfilter_null_get_audio_buffer,
+          .get_audio_buffer = ff_null_get_audio_buffer,
           .filter_samples   = filter_samples, },
         { .name = NULL }
     },

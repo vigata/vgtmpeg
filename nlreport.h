@@ -27,8 +27,8 @@
 //#define _XOPEN_SOURCE 600
 //#define STATS_DELAY 100000
 #define STATS_DELAY 200000  /* delay between progress info messages */
-static void print_nlreport( OutputFile *output_files,
-                         OutputStream *ost_table, int nb_ostreams,
+static void print_nlreport( OutputFile **output_files,
+                         OutputStream **ost_table, int nb_ostreams,
                          int is_last_report, int64_t timer_start )
 {
     //char buf[1024];
@@ -62,7 +62,7 @@ static void print_nlreport( OutputFile *output_files,
 
     FFMSG_LOG( FFMSG_NODE_START(progress) );
 
-    oc = output_files[0].ctx;
+    oc = output_files[0]->ctx;
 
     total_size = avio_size(oc->pb);
     if (total_size < 0) { // FIXME improve avio_size() so it works with non seekable output too
@@ -75,7 +75,7 @@ static void print_nlreport( OutputFile *output_files,
     ti1 = 1e10;
     vid = 0;
     for(i=0;i<nb_ostreams;i++) {
-        ost = &ost_table[i];
+        ost = ost_table[i];
         enc = ost->st->codec;
 //        if (vid && enc->codec_type == AVMEDIA_TYPE_VIDEO) {
 //            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "q=%2.1f ",

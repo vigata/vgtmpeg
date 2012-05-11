@@ -27,12 +27,39 @@
 
 #include "avfilter.h"
 
+enum {
+
+    /**
+     * Do not check for format changes.
+     */
+    AV_BUFFERSRC_FLAG_NO_CHECK_FORMAT = 1,
+
+    /**
+     * Do not copy buffer data.
+     */
+    AV_BUFFERSRC_FLAG_NO_COPY = 2,
+
+};
+
 /**
- * Add a buffer to the filtergraph s.
+ * Add buffer data in picref to buffer_src.
  *
- * @param buf buffer containing frame data to be passed down the filtergraph.
- * This function will take ownership of buf, the user must not free it.
+ * @param buffer_src  pointer to a buffer source context
+ * @param picref      a buffer reference, or NULL to mark EOF
+ * @param flags       a combination of AV_BUFFERSRC_FLAG_*
+ * @return            >= 0 in case of success, a negative AVERROR code
+ *                    in case of failure
  */
-int av_buffersrc_buffer(AVFilterContext *s, AVFilterBufferRef *buf);
+int av_buffersrc_add_ref(AVFilterContext *buffer_src,
+                         AVFilterBufferRef *picref, int flags);
+
+/**
+ * Get the number of failed requests.
+ *
+ * A failed request is when the request_frame method is called while no
+ * frame is present in the buffer.
+ * The number is reset when a frame is added.
+ */
+unsigned av_buffersrc_get_nb_failed_requests(AVFilterContext *buffer_src);
 
 #endif /* AVFILTER_BUFFERSRC_H */

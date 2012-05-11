@@ -106,6 +106,11 @@ stream.
 All the container format information is printed within a section with
 name "FORMAT".
 
+@item -show_format_entry @var{name}
+Like @option{-show_format}, but only prints the specified entry of the
+container format information, rather than all. This option may be given more
+than once, then all specified entries will be shown.
+
 @item -show_packets
 Show information about each packet contained in the input multimedia
 stream.
@@ -126,6 +131,14 @@ multimedia stream.
 
 Each media stream information is printed within a dedicated section
 with name "STREAM".
+
+@item -count_frames
+Count the number of frames per stream and report it in the
+corresponding stream section.
+
+@item -count_packets
+Count the number of packets per stream and report it in the
+corresponding stream section.
 
 @item -show_private_data, -private
 Show private data, that is data depending on the format of the

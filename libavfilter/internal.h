@@ -65,6 +65,11 @@ int ff_avfilter_graph_config_links(AVFilterGraph *graphctx, AVClass *log_ctx);
  */
 int ff_avfilter_graph_config_formats(AVFilterGraph *graphctx, AVClass *log_ctx);
 
+/**
+ * Update the position of a link in the age heap.
+ */
+void ff_avfilter_graph_update_heap(AVFilterGraph *graph, AVFilterLink *link);
+
 /** default handler for freeing audio/video buffer when there are no references left */
 void ff_avfilter_default_free_buffer(AVFilterBuffer *buf);
 
@@ -134,5 +139,20 @@ int ff_parse_channel_layout(int64_t *ret, const char *arg, void *log_ctx);
  * @return 0 in case of success, a negative AVERROR code on error
  */
 int ff_parse_packing_format(int *ret, const char *arg, void *log_ctx);
+
+/**
+ * Pass video frame along and keep an internal reference for later use.
+ */
+static inline void ff_null_start_frame_keep_ref(AVFilterLink *inlink,
+                                                AVFilterBufferRef *picref)
+{
+    avfilter_start_frame(inlink->dst->outputs[0], avfilter_ref_buffer(picref, ~0));
+}
+
+void ff_update_link_current_pts(AVFilterLink *link, int64_t pts);
+
+#define FF_DPRINTF_START(ctx, func) av_dlog(NULL, "%-16s: ", #func)
+
+void ff_dlog_link(void *ctx, AVFilterLink *link, int end);
 
 #endif /* AVFILTER_INTERNAL_H */
