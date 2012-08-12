@@ -128,6 +128,18 @@ typedef struct {
       * call the underlying seek function directly.
       */
      int direct;
+
+    /**
+     * Bytes read statistic
+     * This field is internal to libavformat and access from outside is not allowed.
+     */
+     int64_t bytes_read;
+
+    /**
+     * seek statistic
+     * This field is internal to libavformat and access from outside is not allowed.
+     */
+     int seek_count;
 } AVIOContext;
 
 /* unbuffered I/O */
@@ -159,6 +171,7 @@ int avio_check(const char *url, int flags);
  * @param opaque An opaque pointer to user-specific data.
  * @param read_packet  A function for refilling the buffer, may be NULL.
  * @param write_packet A function for writing the buffer contents, may be NULL.
+ *        The function may not change the input buffers content.
  * @param seek A function for seeking to specified byte position, may be NULL.
  *
  * @return Allocated AVIOContext or NULL on failure.
@@ -398,7 +411,6 @@ int avio_close_dyn_buf(AVIOContext *s, uint8_t **pbuffer);
 
 /**
  * Iterate through names of available protocols.
- * @note it is recommended to use av_protocol_next() instead of this
  *
  * @param opaque A private pointer representing current protocol.
  *        It must be a pointer to NULL on first iteration and will

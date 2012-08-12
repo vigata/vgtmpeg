@@ -27,6 +27,7 @@
 #include "libavutil/log.h"
 #include "libavutil/fifo.h"
 #include "libavutil/opt.h"
+#include "libavutil/time.h"
 #include "libavcodec/avcodec.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
@@ -92,7 +93,13 @@ static int process_callback(jack_nframes_t nframes, void *arg)
 
     /* Copy and interleave audio data from the JACK buffer into the packet */
     for (i = 0; i < self->nports; i++) {
+    #if HAVE_JACK_PORT_GET_LATENCY_RANGE
+        jack_latency_range_t range;
+        jack_port_get_latency_range(self->ports[i], JackCaptureLatency, &range);
+        latency += range.max;
+    #else
         latency += jack_port_get_total_latency(self->client, self->ports[i]);
+    #endif
         buffer = jack_port_get_buffer(self->ports[i], self->buffer_size);
         for (j = 0; j < self->buffer_size; j++)
             pkt_data[j * self->nports + i] = buffer[j];
@@ -236,9 +243,9 @@ static int audio_read_header(AVFormatContext *context)
 
     stream->codec->codec_type   = AVMEDIA_TYPE_AUDIO;
 #if HAVE_BIGENDIAN
-    stream->codec->codec_id     = CODEC_ID_PCM_F32BE;
+    stream->codec->codec_id     = AV_CODEC_ID_PCM_F32BE;
 #else
-    stream->codec->codec_id     = CODEC_ID_PCM_F32LE;
+    stream->codec->codec_id     = AV_CODEC_ID_PCM_F32LE;
 #endif
     stream->codec->sample_rate  = self->sample_rate;
     stream->codec->channels     = self->nports;

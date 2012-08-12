@@ -175,10 +175,10 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
             x4->params.b_tff = frame->top_field_first;
             x264_encoder_reconfig(x4->enc, &x4->params);
         }
-        if (x4->params.vui.i_sar_height != ctx->sample_aspect_ratio.den
-         || x4->params.vui.i_sar_width != ctx->sample_aspect_ratio.num) {
+        if (x4->params.vui.i_sar_height != ctx->sample_aspect_ratio.den ||
+            x4->params.vui.i_sar_width  != ctx->sample_aspect_ratio.num) {
             x4->params.vui.i_sar_height = ctx->sample_aspect_ratio.den;
-            x4->params.vui.i_sar_width = ctx->sample_aspect_ratio.num;
+            x4->params.vui.i_sar_width  = ctx->sample_aspect_ratio.num;
             x264_encoder_reconfig(x4->enc, &x4->params);
         }
     }
@@ -287,7 +287,16 @@ static av_cold int X264_init(AVCodecContext *avctx)
     x4->params.analyse.i_chroma_qp_offset = avctx->chromaoffset;
     if (x4->preset || x4->tune)
         if (x264_param_default_preset(&x4->params, x4->preset, x4->tune) < 0) {
+            int i;
             av_log(avctx, AV_LOG_ERROR, "Error setting preset/tune %s/%s.\n", x4->preset, x4->tune);
+            av_log(avctx, AV_LOG_INFO, "Possible presets:");
+            for (i = 0; x264_preset_names[i]; i++)
+                av_log(avctx, AV_LOG_INFO, " %s", x264_preset_names[i]);
+            av_log(avctx, AV_LOG_INFO, "\n");
+            av_log(avctx, AV_LOG_INFO, "Possible tunes:");
+            for (i = 0; x264_tune_names[i]; i++)
+                av_log(avctx, AV_LOG_INFO, " %s", x264_tune_names[i]);
+            av_log(avctx, AV_LOG_INFO, "\n");
             return AVERROR(EINVAL);
         }
 
@@ -438,7 +447,12 @@ static av_cold int X264_init(AVCodecContext *avctx)
 
     if (x4->profile)
         if (x264_param_apply_profile(&x4->params, x4->profile) < 0) {
+            int i;
             av_log(avctx, AV_LOG_ERROR, "Error setting profile %s.\n", x4->profile);
+            av_log(avctx, AV_LOG_INFO, "Possible profiles:");
+            for (i = 0; x264_profile_names[i]; i++)
+                av_log(avctx, AV_LOG_INFO, " %s", x264_preset_names[i]);
+            av_log(avctx, AV_LOG_INFO, "\n");
             return AVERROR(EINVAL);
         }
 
@@ -640,7 +654,7 @@ static const AVCodecDefault x264_defaults[] = {
 AVCodec ff_libx264_encoder = {
     .name             = "libx264",
     .type             = AVMEDIA_TYPE_VIDEO,
-    .id               = CODEC_ID_H264,
+    .id               = AV_CODEC_ID_H264,
     .priv_data_size   = sizeof(X264Context),
     .init             = X264_init,
     .encode2          = X264_frame,
@@ -655,7 +669,7 @@ AVCodec ff_libx264_encoder = {
 AVCodec ff_libx264rgb_encoder = {
     .name           = "libx264rgb",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_H264,
+    .id             = AV_CODEC_ID_H264,
     .priv_data_size = sizeof(X264Context),
     .init           = X264_init,
     .encode2        = X264_frame,

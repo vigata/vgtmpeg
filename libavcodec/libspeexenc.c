@@ -67,6 +67,8 @@
 #include <speex/speex.h>
 #include <speex/speex_header.h>
 #include <speex/speex_stereo.h>
+
+#include "libavutil/audioconvert.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
 #include "internal.h"
@@ -324,7 +326,7 @@ static const AVCodecDefault defaults[] = {
 AVCodec ff_libspeex_encoder = {
     .name           = "libspeex",
     .type           = AVMEDIA_TYPE_AUDIO,
-    .id             = CODEC_ID_SPEEX,
+    .id             = AV_CODEC_ID_SPEEX,
     .priv_data_size = sizeof(LibSpeexEncContext),
     .init           = encode_init,
     .encode2        = encode_frame,
@@ -332,6 +334,10 @@ AVCodec ff_libspeex_encoder = {
     .capabilities   = CODEC_CAP_DELAY,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
+    .channel_layouts = (const uint64_t[]){ AV_CH_LAYOUT_MONO,
+                                           AV_CH_LAYOUT_STEREO,
+                                           0 },
+    .supported_samplerates = (const int[]){ 8000, 16000, 32000, 0 },
     .long_name      = NULL_IF_CONFIG_SMALL("libspeex Speex"),
     .priv_class     = &class,
     .defaults       = defaults,

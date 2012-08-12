@@ -23,7 +23,7 @@
 #include "libavutil/opt.h"
 #include "libavformat/internal.h"
 #include "avdevice.h"
-#include "dshow.h"
+#include "dshow_capture.h"
 
 struct dshow_ctx {
     const AVClass *class;
@@ -92,16 +92,16 @@ static enum PixelFormat dshow_pixfmt(DWORD biCompression, WORD biBitCount)
     return PIX_FMT_NONE;
 }
 
-static enum CodecID dshow_codecid(DWORD biCompression)
+static enum AVCodecID dshow_codecid(DWORD biCompression)
 {
     switch(biCompression) {
     case MKTAG('d', 'v', 's', 'd'):
-        return CODEC_ID_DVVIDEO;
+        return AV_CODEC_ID_DVVIDEO;
     case MKTAG('M', 'J', 'P', 'G'):
     case MKTAG('m', 'j', 'p', 'g'):
-        return CODEC_ID_MJPEG;
+        return AV_CODEC_ID_MJPEG;
     }
-    return CODEC_ID_NONE;
+    return AV_CODEC_ID_NONE;
 }
 
 static int
@@ -639,13 +639,13 @@ error:
     return ret;
 }
 
-static enum CodecID waveform_codec_id(enum AVSampleFormat sample_fmt)
+static enum AVCodecID waveform_codec_id(enum AVSampleFormat sample_fmt)
 {
     switch (sample_fmt) {
-    case AV_SAMPLE_FMT_U8:  return CODEC_ID_PCM_U8;
-    case AV_SAMPLE_FMT_S16: return CODEC_ID_PCM_S16LE;
-    case AV_SAMPLE_FMT_S32: return CODEC_ID_PCM_S32LE;
-    default:                return CODEC_ID_NONE; /* Should never happen. */
+    case AV_SAMPLE_FMT_U8:  return AV_CODEC_ID_PCM_U8;
+    case AV_SAMPLE_FMT_S16: return AV_CODEC_ID_PCM_S16LE;
+    case AV_SAMPLE_FMT_S32: return AV_CODEC_ID_PCM_S32LE;
+    default:                return AV_CODEC_ID_NONE; /* Should never happen. */
     }
 }
 
@@ -706,7 +706,7 @@ dshow_add_device(AVFormatContext *avctx,
         codec->pix_fmt    = dshow_pixfmt(bih->biCompression, bih->biBitCount);
         if (codec->pix_fmt == PIX_FMT_NONE) {
             codec->codec_id = dshow_codecid(bih->biCompression);
-            if (codec->codec_id == CODEC_ID_NONE) {
+            if (codec->codec_id == AV_CODEC_ID_NONE) {
                 av_log(avctx, AV_LOG_ERROR, "Unknown compression type. "
                                  "Please report verbose (-v 9) debug information.\n");
                 dshow_read_close(avctx);
@@ -714,7 +714,7 @@ dshow_add_device(AVFormatContext *avctx,
             }
             codec->bits_per_coded_sample = bih->biBitCount;
         } else {
-            codec->codec_id = CODEC_ID_RAWVIDEO;
+            codec->codec_id = AV_CODEC_ID_RAWVIDEO;
             if (bih->biCompression == BI_RGB || bih->biCompression == BI_BITFIELDS) {
                 codec->bits_per_coded_sample = bih->biBitCount;
                 codec->extradata = av_malloc(9 + FF_INPUT_BUFFER_PADDING_SIZE);

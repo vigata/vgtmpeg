@@ -23,8 +23,9 @@
  */
 
 #include "libavutil/cpu.h"
-#include "libavutil/x86_cpu.h"
+#include "libavutil/x86/asm.h"
 #include "libavcodec/fmtconvert.h"
+#include "libavcodec/dsputil.h"
 
 #if HAVE_YASM
 
@@ -35,25 +36,26 @@ void ff_float_to_int16_3dnow(int16_t *dst, const float *src, long len);
 void ff_float_to_int16_sse  (int16_t *dst, const float *src, long len);
 void ff_float_to_int16_sse2 (int16_t *dst, const float *src, long len);
 
+void ff_float_to_int16_step_3dnow(int16_t *dst, const float *src, long len, long step);
+void ff_float_to_int16_step_sse  (int16_t *dst, const float *src, long len, long step);
+void ff_float_to_int16_step_sse2 (int16_t *dst, const float *src, long len, long step);
+
 void ff_float_to_int16_interleave2_3dnow(int16_t *dst, const float **src, long len);
 void ff_float_to_int16_interleave2_sse  (int16_t *dst, const float **src, long len);
 void ff_float_to_int16_interleave2_sse2 (int16_t *dst, const float **src, long len);
 
 void ff_float_to_int16_interleave6_sse(int16_t *dst, const float **src, int len);
 void ff_float_to_int16_interleave6_3dnow(int16_t *dst, const float **src, int len);
-void ff_float_to_int16_interleave6_3dn2(int16_t *dst, const float **src, int len);
+void ff_float_to_int16_interleave6_3dnowext(int16_t *dst, const float **src, int len);
 
 #define ff_float_to_int16_interleave6_sse2 ff_float_to_int16_interleave6_sse
 
 #define FLOAT_TO_INT16_INTERLEAVE(cpu) \
 /* gcc pessimizes register allocation if this is in the same function as float_to_int16_interleave_sse2*/\
 static av_noinline void float_to_int16_interleave_misc_##cpu(int16_t *dst, const float **src, long len, int channels){\
-    DECLARE_ALIGNED(16, int16_t, tmp)[len];\
-    int i,j,c;\
+    int c;\
     for(c=0; c<channels; c++){\
-        ff_float_to_int16_##cpu(tmp, src[c], len);\
-        for(i=0, j=c; i<len; i++, j+=channels)\
-            dst[j] = tmp[i];\
+        ff_float_to_int16_step_##cpu(dst+c, src[c], len, channels);\
     }\
 }\
 \
@@ -72,9 +74,11 @@ FLOAT_TO_INT16_INTERLEAVE(3dnow)
 FLOAT_TO_INT16_INTERLEAVE(sse)
 FLOAT_TO_INT16_INTERLEAVE(sse2)
 
-static void float_to_int16_interleave_3dn2(int16_t *dst, const float **src, long len, int channels){
+static void float_to_int16_interleave_3dnowext(int16_t *dst, const float **src,
+                                               long len, int channels)
+{
     if(channels==6)
-        ff_float_to_int16_interleave6_3dn2(dst, src, len);
+        ff_float_to_int16_interleave6_3dnowext(dst, src, len);
     else
         float_to_int16_interleave_3dnow(dst, src, len, channels);
 }
@@ -124,7 +128,7 @@ void ff_fmt_convert_init_x86(FmtConvertContext *c, AVCodecContext *avctx)
         }
         if (HAVE_AMD3DNOWEXT && mm_flags & AV_CPU_FLAG_3DNOWEXT) {
             if(!(avctx->flags & CODEC_FLAG_BITEXACT)){
-                c->float_to_int16_interleave = float_to_int16_interleave_3dn2;
+                c->float_to_int16_interleave = float_to_int16_interleave_3dnowext;
             }
         }
         if (HAVE_SSE && mm_flags & AV_CPU_FLAG_SSE) {

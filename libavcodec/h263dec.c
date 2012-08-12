@@ -65,43 +65,44 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
 
     /* select sub codec */
     switch(avctx->codec->id) {
-    case CODEC_ID_H263:
+    case AV_CODEC_ID_H263:
+    case AV_CODEC_ID_H263P:
         s->unrestricted_mv= 0;
         avctx->chroma_sample_location = AVCHROMA_LOC_CENTER;
         break;
-    case CODEC_ID_MPEG4:
+    case AV_CODEC_ID_MPEG4:
         break;
-    case CODEC_ID_MSMPEG4V1:
+    case AV_CODEC_ID_MSMPEG4V1:
         s->h263_pred = 1;
         s->msmpeg4_version=1;
         break;
-    case CODEC_ID_MSMPEG4V2:
+    case AV_CODEC_ID_MSMPEG4V2:
         s->h263_pred = 1;
         s->msmpeg4_version=2;
         break;
-    case CODEC_ID_MSMPEG4V3:
+    case AV_CODEC_ID_MSMPEG4V3:
         s->h263_pred = 1;
         s->msmpeg4_version=3;
         break;
-    case CODEC_ID_WMV1:
+    case AV_CODEC_ID_WMV1:
         s->h263_pred = 1;
         s->msmpeg4_version=4;
         break;
-    case CODEC_ID_WMV2:
+    case AV_CODEC_ID_WMV2:
         s->h263_pred = 1;
         s->msmpeg4_version=5;
         break;
-    case CODEC_ID_VC1:
-    case CODEC_ID_WMV3:
-    case CODEC_ID_VC1IMAGE:
-    case CODEC_ID_WMV3IMAGE:
+    case AV_CODEC_ID_VC1:
+    case AV_CODEC_ID_WMV3:
+    case AV_CODEC_ID_VC1IMAGE:
+    case AV_CODEC_ID_WMV3IMAGE:
         s->h263_pred = 1;
         s->msmpeg4_version=6;
         avctx->chroma_sample_location = AVCHROMA_LOC_LEFT;
         break;
-    case CODEC_ID_H263I:
+    case AV_CODEC_ID_H263I:
         break;
-    case CODEC_ID_FLV1:
+    case AV_CODEC_ID_FLV1:
         s->h263_flv = 1;
         break;
     default:
@@ -111,7 +112,7 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
     avctx->hwaccel= ff_find_hwaccel(avctx->codec->id, avctx->pix_fmt);
 
     /* for h263, we allocate the images after having read the header */
-    if (avctx->codec->id != CODEC_ID_H263 && avctx->codec->id != CODEC_ID_MPEG4)
+    if (avctx->codec->id != AV_CODEC_ID_H263 && avctx->codec->id != AV_CODEC_ID_H263P && avctx->codec->id != AV_CODEC_ID_MPEG4)
         if (ff_MPV_common_init(s) < 0)
             return -1;
 
@@ -151,7 +152,7 @@ static int get_consumed_bytes(MpegEncContext *s, int buf_size){
 
 static int decode_slice(MpegEncContext *s){
     const int part_mask= s->partitioned_frame ? (ER_AC_END|ER_AC_ERROR) : 0x7F;
-    const int mb_size = 16;
+    const int mb_size= 16>>s->avctx->lowres;
     s->last_resync_gb= s->gb;
     s->first_slice_line= 1;
 
@@ -170,7 +171,7 @@ static int decode_slice(MpegEncContext *s){
     if(s->partitioned_frame){
         const int qscale= s->qscale;
 
-        if(CONFIG_MPEG4_DECODER && s->codec_id==CODEC_ID_MPEG4){
+        if(CONFIG_MPEG4_DECODER && s->codec_id==AV_CODEC_ID_MPEG4){
             if(ff_mpeg4_decode_partitions(s) < 0)
                 return -1;
         }
@@ -262,7 +263,7 @@ static int decode_slice(MpegEncContext *s){
 
     assert(s->mb_x==0 && s->mb_y==s->mb_height);
 
-    if(s->codec_id==CODEC_ID_MPEG4
+    if(s->codec_id==AV_CODEC_ID_MPEG4
        && (s->workaround_bugs&FF_BUG_AUTODETECT)
        && get_bits_left(&s->gb) >= 48
        && show_bits(&s->gb, 24)==0x4010
@@ -270,7 +271,7 @@ static int decode_slice(MpegEncContext *s){
         s->padding_bug_score+=32;
 
     /* try to detect the padding bug */
-    if(      s->codec_id==CODEC_ID_MPEG4
+    if(      s->codec_id==AV_CODEC_ID_MPEG4
        &&   (s->workaround_bugs&FF_BUG_AUTODETECT)
        &&    get_bits_left(&s->gb) >=0
        &&    get_bits_left(&s->gb) < 137
@@ -369,9 +370,11 @@ uint64_t time= rdtsc();
     if(s->flags&CODEC_FLAG_TRUNCATED){
         int next;
 
-        if(CONFIG_MPEG4_DECODER && s->codec_id==CODEC_ID_MPEG4){
+        if(CONFIG_MPEG4_DECODER && s->codec_id==AV_CODEC_ID_MPEG4){
             next= ff_mpeg4_find_frame_end(&s->parse_context, buf, buf_size);
-        }else if(CONFIG_H263_DECODER && s->codec_id==CODEC_ID_H263){
+        }else if(CONFIG_H263_DECODER && s->codec_id==AV_CODEC_ID_H263){
+            next= ff_h263_find_frame_end(&s->parse_context, buf, buf_size);
+        }else if(CONFIG_H263P_DECODER && s->codec_id==AV_CODEC_ID_H263P){
             next= ff_h263_find_frame_end(&s->parse_context, buf, buf_size);
         }else{
             av_log(s->avctx, AV_LOG_ERROR, "this codec does not support truncated bitstreams\n");
@@ -430,7 +433,7 @@ retry:
             ret = ff_mpeg4_decode_picture_header(s, &gb);
         }
         ret = ff_mpeg4_decode_picture_header(s, &s->gb);
-    } else if (CONFIG_H263I_DECODER && s->codec_id == CODEC_ID_H263I) {
+    } else if (CONFIG_H263I_DECODER && s->codec_id == AV_CODEC_ID_H263I) {
         ret = ff_intel_h263_decode_picture_header(s);
     } else if (CONFIG_FLV_DECODER && s->h263_flv) {
         ret = ff_flv_decode_picture_header(s);
@@ -555,7 +558,7 @@ retry:
          * Let us hope this at least works.
          */
         if(   s->resync_marker==0 && s->data_partitioning==0 && s->divx_version==-1
-           && s->codec_id==CODEC_ID_MPEG4 && s->vo_type==0)
+           && s->codec_id==AV_CODEC_ID_MPEG4 && s->vo_type==0)
             s->workaround_bugs|= FF_BUG_NO_PADDING;
 
         if(s->lavc_build<4609U) //FIXME not sure about the version num but a 4609 file seems ok
@@ -585,7 +588,7 @@ retry:
                s->divx_packed ? "p" : "");
 
 #if HAVE_MMX
-    if (s->codec_id == CODEC_ID_MPEG4 && s->xvid_build>=0 && avctx->idct_algo == FF_IDCT_AUTO && (av_get_cpu_flags() & AV_CPU_FLAG_MMX)) {
+    if (s->codec_id == AV_CODEC_ID_MPEG4 && s->xvid_build>=0 && avctx->idct_algo == FF_IDCT_AUTO && (av_get_cpu_flags() & AV_CPU_FLAG_MMX)) {
         avctx->idct_algo= FF_IDCT_XVIDMMX;
         ff_dct_common_init(s);
     }
@@ -611,7 +614,7 @@ retry:
         goto retry;
     }
 
-    if((s->codec_id==CODEC_ID_H263 || s->codec_id==CODEC_ID_H263P || s->codec_id == CODEC_ID_H263I))
+    if((s->codec_id==AV_CODEC_ID_H263 || s->codec_id==AV_CODEC_ID_H263P || s->codec_id == AV_CODEC_ID_H263I))
         s->gob_index = ff_h263_get_gob_height(s);
 
     // for skipping the frame
@@ -699,7 +702,7 @@ retry:
     assert(s->bitstream_buffer_size==0);
 frame_end:
     /* divx 5.01+ bistream reorder stuff */
-    if(s->codec_id==CODEC_ID_MPEG4 && s->divx_packed){
+    if(s->codec_id==AV_CODEC_ID_MPEG4 && s->divx_packed){
         int current_pos= s->gb.buffer == s->bitstream_buffer ? 0 : (get_bits_count(&s->gb)>>3);
         int startcode_found=0;
 
@@ -758,7 +761,7 @@ av_log(avctx, AV_LOG_DEBUG, "%"PRId64"\n", rdtsc()-time);
 AVCodec ff_h263_decoder = {
     .name           = "h263",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_H263,
+    .id             = AV_CODEC_ID_H263,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = ff_h263_decode_init,
     .close          = ff_h263_decode_end,
@@ -766,6 +769,23 @@ AVCodec ff_h263_decoder = {
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1 |
                       CODEC_CAP_TRUNCATED | CODEC_CAP_DELAY,
     .flush          = ff_mpeg_flush,
+    .max_lowres     = 3,
+    .long_name      = NULL_IF_CONFIG_SMALL("H.263 / H.263-1996, H.263+ / H.263-1998 / H.263 version 2"),
+    .pix_fmts       = ff_hwaccel_pixfmt_list_420,
+};
+
+AVCodec ff_h263p_decoder = {
+    .name           = "h263p",
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_H263P,
+    .priv_data_size = sizeof(MpegEncContext),
+    .init           = ff_h263_decode_init,
+    .close          = ff_h263_decode_end,
+    .decode         = ff_h263_decode_frame,
+    .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1 |
+                      CODEC_CAP_TRUNCATED | CODEC_CAP_DELAY,
+    .flush          = ff_mpeg_flush,
+    .max_lowres     = 3,
     .long_name      = NULL_IF_CONFIG_SMALL("H.263 / H.263-1996, H.263+ / H.263-1998 / H.263 version 2"),
     .pix_fmts       = ff_hwaccel_pixfmt_list_420,
 };

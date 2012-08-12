@@ -254,24 +254,24 @@ static void get_slice_data(ProresContext *ctx, const uint16_t *src,
             ctx->dsp.fdct(esrc, elinesize, blocks);
             blocks += 64;
             if (blocks_per_mb > 2) {
-                ctx->dsp.fdct(src + 8, linesize, blocks);
+                ctx->dsp.fdct(esrc + 8, elinesize, blocks);
                 blocks += 64;
             }
-            ctx->dsp.fdct(src + linesize * 4, linesize, blocks);
+            ctx->dsp.fdct(esrc + elinesize * 4, elinesize, blocks);
             blocks += 64;
             if (blocks_per_mb > 2) {
-                ctx->dsp.fdct(src + linesize * 4 + 8, linesize, blocks);
+                ctx->dsp.fdct(esrc + elinesize * 4 + 8, elinesize, blocks);
                 blocks += 64;
             }
         } else {
             ctx->dsp.fdct(esrc, elinesize, blocks);
             blocks += 64;
-            ctx->dsp.fdct(src + linesize * 4, linesize, blocks);
+            ctx->dsp.fdct(esrc + elinesize * 4, elinesize, blocks);
             blocks += 64;
             if (blocks_per_mb > 2) {
-                ctx->dsp.fdct(src + 8, linesize, blocks);
+                ctx->dsp.fdct(esrc + 8, elinesize, blocks);
                 blocks += 64;
-                ctx->dsp.fdct(src + linesize * 4 + 8, linesize, blocks);
+                ctx->dsp.fdct(esrc + elinesize * 4 + 8, elinesize, blocks);
                 blocks += 64;
             }
         }
@@ -726,7 +726,6 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int sizes[4] = { 0 };
     int slice_hdr_size = 2 + 2 * (ctx->num_planes - 1);
     int frame_size, picture_size, slice_size;
-    int mbs_per_slice = ctx->mbs_per_slice;
     int pkt_size, ret;
 
     *avctx->coded_frame           = *pic;
@@ -792,7 +791,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     for (y = 0; y < ctx->mb_height; y++) {
-        mbs_per_slice = ctx->mbs_per_slice;
+        int mbs_per_slice = ctx->mbs_per_slice;
         for (x = mb = 0; x < ctx->mb_width; x += mbs_per_slice, mb++) {
             q = ctx->force_quant ? ctx->force_quant
                                  : ctx->slice_q[mb + y * ctx->slices_width];
@@ -834,9 +833,6 @@ static av_cold int encode_close(AVCodecContext *avctx)
 {
     ProresContext *ctx = avctx->priv_data;
     int i;
-
-    if (avctx->coded_frame->data[0])
-        avctx->release_buffer(avctx, avctx->coded_frame);
 
     av_freep(&avctx->coded_frame);
 
@@ -1022,7 +1018,7 @@ static const AVClass proresenc_class = {
 AVCodec ff_prores_kostya_encoder = {
     .name           = "prores_kostya",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_PRORES,
+    .id             = AV_CODEC_ID_PRORES,
     .priv_data_size = sizeof(ProresContext),
     .init           = encode_init,
     .close          = encode_close,

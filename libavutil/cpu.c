@@ -49,10 +49,10 @@ void av_set_cpu_flags_mask(int mask)
 
 int av_parse_cpu_flags(const char *s)
 {
-#define CPUFLAG_MMX2     (AV_CPU_FLAG_MMX      | AV_CPU_FLAG_MMX2)
+#define CPUFLAG_MMXEXT   (AV_CPU_FLAG_MMX      | AV_CPU_FLAG_MMXEXT | AV_CPU_FLAG_CMOV)
 #define CPUFLAG_3DNOW    (AV_CPU_FLAG_3DNOW    | AV_CPU_FLAG_MMX)
 #define CPUFLAG_3DNOWEXT (AV_CPU_FLAG_3DNOWEXT | CPUFLAG_3DNOW)
-#define CPUFLAG_SSE      (AV_CPU_FLAG_SSE      | CPUFLAG_MMX2)
+#define CPUFLAG_SSE      (AV_CPU_FLAG_SSE      | CPUFLAG_MMXEXT)
 #define CPUFLAG_SSE2     (AV_CPU_FLAG_SSE2     | CPUFLAG_SSE)
 #define CPUFLAG_SSE2SLOW (AV_CPU_FLAG_SSE2SLOW | CPUFLAG_SSE2)
 #define CPUFLAG_SSE3     (AV_CPU_FLAG_SSE3     | CPUFLAG_SSE2)
@@ -69,7 +69,7 @@ int av_parse_cpu_flags(const char *s)
         { "altivec" , NULL, 0, AV_OPT_TYPE_CONST, { AV_CPU_FLAG_ALTIVEC  },    .unit = "flags" },
 #elif ARCH_X86
         { "mmx"     , NULL, 0, AV_OPT_TYPE_CONST, { AV_CPU_FLAG_MMX      },    .unit = "flags" },
-        { "mmx2"    , NULL, 0, AV_OPT_TYPE_CONST, { CPUFLAG_MMX2         },    .unit = "flags" },
+        { "mmxext"  , NULL, 0, AV_OPT_TYPE_CONST, { CPUFLAG_MMXEXT       },    .unit = "flags" },
         { "sse"     , NULL, 0, AV_OPT_TYPE_CONST, { CPUFLAG_SSE          },    .unit = "flags" },
         { "sse2"    , NULL, 0, AV_OPT_TYPE_CONST, { CPUFLAG_SSE2         },    .unit = "flags" },
         { "sse2slow", NULL, 0, AV_OPT_TYPE_CONST, { CPUFLAG_SSE2SLOW     },    .unit = "flags" },
@@ -84,6 +84,7 @@ int av_parse_cpu_flags(const char *s)
         { "fma4"    , NULL, 0, AV_OPT_TYPE_CONST, { CPUFLAG_FMA4         },    .unit = "flags" },
         { "3dnow"   , NULL, 0, AV_OPT_TYPE_CONST, { CPUFLAG_3DNOW        },    .unit = "flags" },
         { "3dnowext", NULL, 0, AV_OPT_TYPE_CONST, { CPUFLAG_3DNOWEXT     },    .unit = "flags" },
+        { "cmov",     NULL, 0, AV_OPT_TYPE_CONST, { AV_CPU_FLAG_CMOV     },    .unit = "flags" },
 #elif ARCH_ARM
         { "armv5te",  NULL, 0, AV_OPT_TYPE_CONST, { AV_CPU_FLAG_ARMV5TE  },    .unit = "flags" },
         { "armv6",    NULL, 0, AV_OPT_TYPE_CONST, { AV_CPU_FLAG_ARMV6    },    .unit = "flags" },
@@ -173,7 +174,7 @@ static const struct {
     { AV_CPU_FLAG_ALTIVEC,   "altivec"    },
 #elif ARCH_X86
     { AV_CPU_FLAG_MMX,       "mmx"        },
-    { AV_CPU_FLAG_MMX2,      "mmx2"       },
+    { AV_CPU_FLAG_MMXEXT,    "mmxext"     },
     { AV_CPU_FLAG_SSE,       "sse"        },
     { AV_CPU_FLAG_SSE2,      "sse2"       },
     { AV_CPU_FLAG_SSE2SLOW,  "sse2(slow)" },
@@ -188,6 +189,7 @@ static const struct {
     { AV_CPU_FLAG_FMA4,      "fma4"       },
     { AV_CPU_FLAG_3DNOW,     "3dnow"      },
     { AV_CPU_FLAG_3DNOWEXT,  "3dnowext"   },
+    { AV_CPU_FLAG_CMOV,      "cmov"       },
 #endif
     { 0 }
 };

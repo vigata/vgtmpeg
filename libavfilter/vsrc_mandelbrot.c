@@ -27,6 +27,9 @@
  */
 
 #include "avfilter.h"
+#include "formats.h"
+#include "video.h"
+#include "internal.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
@@ -57,7 +60,7 @@ typedef struct {
     int w, h;
     AVRational time_base;
     uint64_t pts;
-    char *size, *rate;
+    char *rate;
     int maxiter;
     double start_x;
     double start_y;
@@ -78,8 +81,8 @@ typedef struct {
 #define OFFSET(x) offsetof(MBContext, x)
 
 static const AVOption mandelbrot_options[] = {
-    {"size",        "set frame size",                OFFSET(size),    AV_OPT_TYPE_STRING,     {.str="640x480"},  CHAR_MIN, CHAR_MAX },
-    {"s",           "set frame size",                OFFSET(size),    AV_OPT_TYPE_STRING,     {.str="640x480"},  CHAR_MIN, CHAR_MAX },
+    {"size",        "set frame size",                OFFSET(w),       AV_OPT_TYPE_IMAGE_SIZE, {.str="640x480"},  CHAR_MIN, CHAR_MAX },
+    {"s",           "set frame size",                OFFSET(w),       AV_OPT_TYPE_IMAGE_SIZE, {.str="640x480"},  CHAR_MIN, CHAR_MAX },
     {"rate",        "set frame rate",                OFFSET(rate),    AV_OPT_TYPE_STRING,     {.str="25"},  CHAR_MIN, CHAR_MAX },
     {"r",           "set frame rate",                OFFSET(rate),    AV_OPT_TYPE_STRING,     {.str="25"},  CHAR_MIN, CHAR_MAX },
     {"maxiter",     "set max iterations number",     OFFSET(maxiter), AV_OPT_TYPE_INT,        {.dbl=7189},  1,        INT_MAX  },
@@ -103,18 +106,9 @@ static const AVOption mandelbrot_options[] = {
     {NULL},
 };
 
-static const char *mandelbrot_get_name(void *ctx)
-{
-    return "mandelbrot";
-}
+AVFILTER_DEFINE_CLASS(mandelbrot);
 
-static const AVClass mandelbrot_class = {
-    "MBContext",
-    mandelbrot_get_name,
-    mandelbrot_options
-};
-
-static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
+static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     MBContext *mb = ctx->priv;
     AVRational rate_q;
@@ -123,21 +117,14 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     mb->class = &mandelbrot_class;
     av_opt_set_defaults(mb);
 
-    if ((err = (av_set_options_string(mb, args, "=", ":"))) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string: '%s'\n", args);
+    if ((err = (av_set_options_string(mb, args, "=", ":"))) < 0)
         return err;
-    }
     mb->bailout *= mb->bailout;
 
-    if (av_parse_video_size(&mb->w, &mb->h, mb->size) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Invalid frame size: %s\n", mb->size);
-        return AVERROR(EINVAL);
-    }
     mb->start_scale /=mb->h;
     mb->end_scale /=mb->h;
 
-    if (av_parse_video_rate(&rate_q, mb->rate) < 0 ||
-        rate_q.den <= 0 || rate_q.num <= 0) {
+    if (av_parse_video_rate(&rate_q, mb->rate) < 0) {
         av_log(ctx, AV_LOG_ERROR, "Invalid frame rate: %s\n", mb->rate);
         return AVERROR(EINVAL);
     }
@@ -157,7 +144,6 @@ static av_cold void uninit(AVFilterContext *ctx)
 {
     MBContext *mb = ctx->priv;
 
-    av_freep(&mb->size);
     av_freep(&mb->rate);
     av_freep(&mb->point_cache);
     av_freep(&mb-> next_cache);
@@ -171,7 +157,7 @@ static int query_formats(AVFilterContext *ctx)
         PIX_FMT_NONE
     };
 
-    avfilter_set_common_pixel_formats(ctx, avfilter_make_format_list(pix_fmts));
+    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
     return 0;
 }
 
@@ -395,15 +381,15 @@ static void draw_mandelbrot(AVFilterContext *ctx, uint32_t *color, int linesize,
 static int request_frame(AVFilterLink *link)
 {
     MBContext *mb = link->src->priv;
-    AVFilterBufferRef *picref = avfilter_get_video_buffer(link, AV_PERM_WRITE, mb->w, mb->h);
+    AVFilterBufferRef *picref = ff_get_video_buffer(link, AV_PERM_WRITE, mb->w, mb->h);
     picref->video->sample_aspect_ratio = (AVRational) {1, 1};
     picref->pts = mb->pts++;
     picref->pos = -1;
 
-    avfilter_start_frame(link, avfilter_ref_buffer(picref, ~0));
+    ff_start_frame(link, avfilter_ref_buffer(picref, ~0));
     draw_mandelbrot(link->src, (uint32_t*)picref->data[0], picref->linesize[0]/4, picref->pts);
-    avfilter_draw_slice(link, 0, mb->h, 1);
-    avfilter_end_frame(link);
+    ff_draw_slice(link, 0, mb->h, 1);
+    ff_end_frame(link);
     avfilter_unref_buffer(picref);
 
     return 0;

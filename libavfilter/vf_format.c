@@ -26,6 +26,9 @@
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
 #include "internal.h"
+#include "formats.h"
+#include "internal.h"
+#include "video.h"
 
 typedef struct {
     /**
@@ -37,7 +40,7 @@ typedef struct {
 
 #define PIX_FMT_NAME_MAXSIZE 32
 
-static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
+static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     FormatContext *format = ctx->priv;
     const char *cur, *sep;
@@ -86,7 +89,7 @@ static AVFilterFormats *make_format_list(FormatContext *format, int flag)
 #if CONFIG_FORMAT_FILTER
 static int query_formats_format(AVFilterContext *ctx)
 {
-    avfilter_set_common_pixel_formats(ctx, make_format_list(ctx->priv, 1));
+    ff_set_common_formats(ctx, make_format_list(ctx->priv, 1));
     return 0;
 }
 
@@ -100,23 +103,23 @@ AVFilter avfilter_vf_format = {
 
     .priv_size = sizeof(FormatContext),
 
-    .inputs    = (const AVFilterPad[]) {{ .name      = "default",
-                                    .type            = AVMEDIA_TYPE_VIDEO,
-                                    .get_video_buffer= avfilter_null_get_video_buffer,
-                                    .start_frame     = avfilter_null_start_frame,
-                                    .draw_slice      = avfilter_null_draw_slice,
-                                    .end_frame       = avfilter_null_end_frame, },
-                                  { .name = NULL}},
-    .outputs   = (const AVFilterPad[]) {{ .name      = "default",
-                                    .type            = AVMEDIA_TYPE_VIDEO },
-                                  { .name = NULL}},
+    .inputs    = (const AVFilterPad[]) {{ .name            = "default",
+                                          .type            = AVMEDIA_TYPE_VIDEO,
+                                          .get_video_buffer= ff_null_get_video_buffer,
+                                          .start_frame     = ff_null_start_frame,
+                                          .draw_slice      = ff_null_draw_slice,
+                                          .end_frame       = ff_null_end_frame, },
+                                        { .name = NULL}},
+    .outputs   = (const AVFilterPad[]) {{ .name            = "default",
+                                          .type            = AVMEDIA_TYPE_VIDEO },
+                                        { .name = NULL}},
 };
 #endif /* CONFIG_FORMAT_FILTER */
 
 #if CONFIG_NOFORMAT_FILTER
 static int query_formats_noformat(AVFilterContext *ctx)
 {
-    avfilter_set_common_pixel_formats(ctx, make_format_list(ctx->priv, 0));
+    ff_set_common_formats(ctx, make_format_list(ctx->priv, 0));
     return 0;
 }
 
@@ -130,15 +133,15 @@ AVFilter avfilter_vf_noformat = {
 
     .priv_size = sizeof(FormatContext),
 
-    .inputs    = (const AVFilterPad[]) {{ .name      = "default",
-                                    .type            = AVMEDIA_TYPE_VIDEO,
-                                    .get_video_buffer= avfilter_null_get_video_buffer,
-                                    .start_frame     = avfilter_null_start_frame,
-                                    .draw_slice      = avfilter_null_draw_slice,
-                                    .end_frame       = avfilter_null_end_frame, },
-                                  { .name = NULL}},
-    .outputs   = (const AVFilterPad[]) {{ .name      = "default",
-                                    .type            = AVMEDIA_TYPE_VIDEO },
-                                  { .name = NULL}},
+    .inputs    = (const AVFilterPad[]) {{ .name            = "default",
+                                          .type            = AVMEDIA_TYPE_VIDEO,
+                                          .get_video_buffer= ff_null_get_video_buffer,
+                                          .start_frame     = ff_null_start_frame,
+                                          .draw_slice      = ff_null_draw_slice,
+                                          .end_frame       = ff_null_end_frame, },
+                                        { .name = NULL}},
+    .outputs   = (const AVFilterPad[]) {{ .name            = "default",
+                                          .type            = AVMEDIA_TYPE_VIDEO },
+                                        { .name = NULL}},
 };
 #endif /* CONFIG_NOFORMAT_FILTER */

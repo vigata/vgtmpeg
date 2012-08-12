@@ -31,6 +31,8 @@
 
 #include "libavutil/audioconvert.h"
 #include "avfilter.h"
+#include "audio.h"
+#include "formats.h"
 
 #define NUMTAPS 64
 
@@ -75,15 +77,16 @@ typedef struct {
 
 static int query_formats(AVFilterContext *ctx)
 {
+    int sample_rates[] = { 44100, -1 };
+
     AVFilterFormats *formats = NULL;
-    avfilter_add_format(&formats, AV_SAMPLE_FMT_S16);
-    avfilter_set_common_sample_formats(ctx, formats);
-    formats = NULL;
-    avfilter_add_format(&formats, AV_CH_LAYOUT_STEREO);
-    avfilter_set_common_channel_layouts(ctx, formats);
-    formats = NULL;
-    avfilter_add_format(&formats, AVFILTER_PACKED);
-    avfilter_set_common_packing_formats(ctx, formats);
+    AVFilterChannelLayouts *layout = NULL;
+
+    ff_add_format(&formats, AV_SAMPLE_FMT_S16);
+    ff_set_common_formats(ctx, formats);
+    ff_add_channel_layout(&layout, AV_CH_LAYOUT_STEREO);
+    ff_set_common_channel_layouts(ctx, layout);
+    ff_set_common_samplerates(ctx, ff_make_format_list(sample_rates));
 
     return 0;
 }
@@ -117,13 +120,15 @@ static inline int16_t *scalarproduct(const int16_t *in, const int16_t *endin, in
     return out;
 }
 
-static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
+static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
 {
     AVFilterLink *outlink = inlink->dst->outputs[0];
     int16_t *taps, *endin, *in, *out;
     AVFilterBufferRef *outsamples =
         ff_get_audio_buffer(inlink, AV_PERM_WRITE,
                                   insamples->audio->nb_samples);
+    int ret;
+
     avfilter_copy_buffer_ref_props(outsamples, insamples);
 
     taps  = ((EarwaxContext *)inlink->dst->priv)->taps;
@@ -141,8 +146,9 @@ static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
     // save part of input for next round
     memcpy(taps, endin, NUMTAPS * sizeof(*taps));
 
-    ff_filter_samples(outlink, outsamples);
+    ret = ff_filter_samples(outlink, outsamples);
     avfilter_unref_buffer(insamples);
+    return ret;
 }
 
 AVFilter avfilter_af_earwax = {

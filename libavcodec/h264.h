@@ -104,7 +104,7 @@
  */
 #define DELAYED_PIC_REF 4
 
-#define QP_MAX_NUM (51 + 4*6)           // The maximum supported qp
+#define QP_MAX_NUM (51 + 6*6)           // The maximum supported qp
 
 /* NAL unit types */
 enum {
@@ -421,12 +421,12 @@ typedef struct H264Context {
     uint8_t field_scan[16];
     uint8_t field_scan8x8[64];
     uint8_t field_scan8x8_cavlc[64];
-    const uint8_t *zigzag_scan_q0;
-    const uint8_t *zigzag_scan8x8_q0;
-    const uint8_t *zigzag_scan8x8_cavlc_q0;
-    const uint8_t *field_scan_q0;
-    const uint8_t *field_scan8x8_q0;
-    const uint8_t *field_scan8x8_cavlc_q0;
+    uint8_t zigzag_scan_q0[16];
+    uint8_t zigzag_scan8x8_q0[64];
+    uint8_t zigzag_scan8x8_cavlc_q0[64];
+    uint8_t field_scan_q0[16];
+    uint8_t field_scan8x8_q0[64];
+    uint8_t field_scan8x8_cavlc_q0[64];
 
     int x264_build;
 
@@ -513,7 +513,7 @@ typedef struct H264Context {
     struct H264Context *thread_context[MAX_THREADS];
 
     /**
-     * current slice number, used to initalize slice_num of each thread/context
+     * current slice number, used to initialize slice_num of each thread/context
      */
     int current_slice;
 
@@ -598,7 +598,7 @@ typedef struct H264Context {
     int parse_last_mb;
 } H264Context;
 
-extern const uint8_t ff_h264_chroma_qp[5][QP_MAX_NUM + 1]; ///< One chroma qp table for each possible bit depth (8-12).
+extern const uint8_t ff_h264_chroma_qp[7][QP_MAX_NUM + 1]; ///< One chroma qp table for each possible bit depth (8-14).
 extern const uint16_t ff_h264_mb_sizes[4];
 
 /**

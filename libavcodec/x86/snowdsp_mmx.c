@@ -20,15 +20,16 @@
  */
 
 #include "libavutil/cpu.h"
-#include "libavutil/x86_cpu.h"
+#include "libavutil/x86/asm.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/snow.h"
 #include "libavcodec/dwt.h"
 #include "dsputil_mmx.h"
 
-static void ff_snow_horizontal_compose97i_sse2(IDWTELEM *b, int width){
+#if HAVE_INLINE_ASM
+
+static void ff_snow_horizontal_compose97i_sse2(IDWTELEM *b, IDWTELEM *temp, int width){
     const int w2= (width+1)>>1;
-    DECLARE_ALIGNED(16, IDWTELEM, temp)[width>>1];
     const int w_l= (width>>1);
     const int w_r= w2 - 1;
     int i;
@@ -215,9 +216,8 @@ static void ff_snow_horizontal_compose97i_sse2(IDWTELEM *b, int width){
     }
 }
 
-static void ff_snow_horizontal_compose97i_mmx(IDWTELEM *b, int width){
+static void ff_snow_horizontal_compose97i_mmx(IDWTELEM *b, IDWTELEM *temp, int width){
     const int w2= (width+1)>>1;
-    IDWTELEM temp[width >> 1];
     const int w_l= (width>>1);
     const int w_r= w2 - 1;
     int i;
@@ -873,8 +873,11 @@ static void ff_snow_inner_add_yblock_mmx(const uint8_t *obmc, const int obmc_str
         ff_snow_inner_add_yblock(obmc, obmc_stride, block, b_w, b_h, src_x,src_y, src_stride, sb, add, dst8);
 }
 
+#endif /* HAVE_INLINE_ASM */
+
 void ff_dwt_init_x86(DWTContext *c)
 {
+#if HAVE_INLINE_ASM
     int mm_flags = av_get_cpu_flags();
 
     if (mm_flags & AV_CPU_FLAG_MMX) {
@@ -886,7 +889,7 @@ void ff_dwt_init_x86(DWTContext *c)
             c->inner_add_yblock = ff_snow_inner_add_yblock_sse2;
         }
         else{
-            if(mm_flags & AV_CPU_FLAG_MMX2){
+            if (mm_flags & AV_CPU_FLAG_MMXEXT) {
             c->horizontal_compose97i = ff_snow_horizontal_compose97i_mmx;
 #if HAVE_7REGS
             c->vertical_compose97i = ff_snow_vertical_compose97i_mmx;
@@ -895,4 +898,5 @@ void ff_dwt_init_x86(DWTContext *c)
             c->inner_add_yblock = ff_snow_inner_add_yblock_mmx;
         }
     }
+#endif /* HAVE_INLINE_ASM */
 }

@@ -145,6 +145,11 @@ static av_cold int gif_encode_init(AVCodecContext *avctx)
 {
     GIFContext *s = avctx->priv_data;
 
+    if (avctx->width > 65535 || avctx->height > 65535) {
+        av_log(avctx, AV_LOG_ERROR, "GIF does not support resolutions above 65535x65535\n");
+        return -1;
+    }
+
     avctx->coded_frame = &s->picture;
     s->lzw = av_mallocz(ff_lzw_encode_state_size);
     if (!s->lzw)
@@ -194,7 +199,7 @@ static int gif_encode_close(AVCodecContext *avctx)
 AVCodec ff_gif_encoder = {
     .name           = "gif",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_GIF,
+    .id             = AV_CODEC_ID_GIF,
     .priv_data_size = sizeof(GIFContext),
     .init           = gif_encode_init,
     .encode2        = gif_encode_frame,

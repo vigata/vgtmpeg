@@ -25,9 +25,11 @@
  * sample format and channel layout conversion audio filter
  */
 
+#include "libavutil/audioconvert.h"
 #include "libavutil/avstring.h"
 #include "libswresample/swresample.h"
 #include "avfilter.h"
+#include "audio.h"
 #include "internal.h"
 
 typedef struct {
@@ -36,7 +38,7 @@ typedef struct {
     struct SwrContext *swr;
 } AConvertContext;
 
-static av_cold int init(AVFilterContext *ctx, const char *args0, void *opaque)
+static av_cold int init(AVFilterContext *ctx, const char *args0)
 {
     AConvertContext *aconvert = ctx->priv;
     char *arg, *ptr = NULL;
@@ -72,33 +74,27 @@ static int query_formats(AVFilterContext *ctx)
     AConvertContext *aconvert = ctx->priv;
     AVFilterLink *inlink  = ctx->inputs[0];
     AVFilterLink *outlink = ctx->outputs[0];
-    int out_packing = av_sample_fmt_is_planar(aconvert->out_sample_fmt);
+    AVFilterChannelLayouts *layouts;
 
-    avfilter_formats_ref(avfilter_make_all_formats(AVMEDIA_TYPE_AUDIO),
+    ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_AUDIO),
                          &inlink->out_formats);
     if (aconvert->out_sample_fmt != AV_SAMPLE_FMT_NONE) {
         formats = NULL;
-        avfilter_add_format(&formats, aconvert->out_sample_fmt);
-        avfilter_formats_ref(formats, &outlink->in_formats);
+        ff_add_format(&formats, aconvert->out_sample_fmt);
+        ff_formats_ref(formats, &outlink->in_formats);
     } else
-        avfilter_formats_ref(avfilter_make_all_formats(AVMEDIA_TYPE_AUDIO),
+        ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_AUDIO),
                              &outlink->in_formats);
 
-    avfilter_formats_ref(avfilter_make_all_channel_layouts(),
-                         &inlink->out_chlayouts);
+    ff_channel_layouts_ref(ff_all_channel_layouts(),
+                         &inlink->out_channel_layouts);
     if (aconvert->out_chlayout != 0) {
-        formats = NULL;
-        avfilter_add_format(&formats, aconvert->out_chlayout);
-        avfilter_formats_ref(formats, &outlink->in_chlayouts);
+        layouts = NULL;
+        ff_add_channel_layout(&layouts, aconvert->out_chlayout);
+        ff_channel_layouts_ref(layouts, &outlink->in_channel_layouts);
     } else
-        avfilter_formats_ref(avfilter_make_all_channel_layouts(),
-                             &outlink->in_chlayouts);
-
-    avfilter_formats_ref(avfilter_make_all_packing_formats(),
-                         &inlink->out_packing);
-    formats = NULL;
-    avfilter_add_format(&formats, out_packing);
-    avfilter_formats_ref(formats, &outlink->in_packing);
+        ff_channel_layouts_ref(ff_all_channel_layouts(),
+                             &outlink->in_channel_layouts);
 
     return 0;
 }
@@ -131,35 +127,36 @@ static int config_output(AVFilterLink *outlink)
                                  -1, inlink ->channel_layout);
     av_get_channel_layout_string(buf2, sizeof(buf2),
                                  -1, outlink->channel_layout);
-    av_log(ctx, AV_LOG_INFO,
-           "fmt:%s cl:%s planar:%i -> fmt:%s cl:%s planar:%i\n",
-           av_get_sample_fmt_name(inlink ->format), buf1, inlink ->planar,
-           av_get_sample_fmt_name(outlink->format), buf2, outlink->planar);
+    av_log(ctx, AV_LOG_VERBOSE,
+           "fmt:%s cl:%s -> fmt:%s cl:%s\n",
+           av_get_sample_fmt_name(inlink ->format), buf1,
+           av_get_sample_fmt_name(outlink->format), buf2);
 
     return 0;
 }
 
-static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamplesref)
+static int  filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamplesref)
 {
     AConvertContext *aconvert = inlink->dst->priv;
     const int n = insamplesref->audio->nb_samples;
     AVFilterLink *const outlink = inlink->dst->outputs[0];
     AVFilterBufferRef *outsamplesref = ff_get_audio_buffer(outlink, AV_PERM_WRITE, n);
+    int ret;
 
     swr_convert(aconvert->swr, outsamplesref->data, n,
                         (void *)insamplesref->data, n);
 
     avfilter_copy_buffer_ref_props(outsamplesref, insamplesref);
     outsamplesref->audio->channel_layout = outlink->channel_layout;
-    outsamplesref->audio->planar         = outlink->planar;
 
-    ff_filter_samples(outlink, outsamplesref);
+    ret = ff_filter_samples(outlink, outsamplesref);
     avfilter_unref_buffer(insamplesref);
+    return ret;
 }
 
 AVFilter avfilter_af_aconvert = {
     .name          = "aconvert",
-    .description   = NULL_IF_CONFIG_SMALL("Convert the input audio to sample_fmt:channel_layout:packed_fmt."),
+    .description   = NULL_IF_CONFIG_SMALL("Convert the input audio to sample_fmt:channel_layout."),
     .priv_size     = sizeof(AConvertContext),
     .init          = init,
     .uninit        = uninit,

@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2010 S.N. Hemanth Meenakshisundaram <smeenaks@ucsd.edu>
+ *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -17,8 +19,12 @@
  */
 
 #include "avfilter.h"
+#include "internal.h"
 
-static void null_filter_samples(AVFilterLink *link, AVFilterBufferRef *samplesref) { }
+static int null_filter_samples(AVFilterLink *link, AVFilterBufferRef *samplesref)
+{
+    return 0;
+}
 
 AVFilter avfilter_asink_anullsink = {
     .name        = "anullsink",

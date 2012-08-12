@@ -26,6 +26,7 @@
 #include "pcm.h"
 #include "aiff.h"
 #include "isom.h"
+#include "id3v2.h"
 
 #define AIFF                    0
 #define AIFF_C_VERSION1         0xA2805140
@@ -35,19 +36,19 @@ typedef struct {
     int block_duration;
 } AIFFInputContext;
 
-static enum CodecID aiff_codec_get_id(int bps)
+static enum AVCodecID aiff_codec_get_id(int bps)
 {
     if (bps <= 8)
-        return CODEC_ID_PCM_S8;
+        return AV_CODEC_ID_PCM_S8;
     if (bps <= 16)
-        return CODEC_ID_PCM_S16BE;
+        return AV_CODEC_ID_PCM_S16BE;
     if (bps <= 24)
-        return CODEC_ID_PCM_S24BE;
+        return AV_CODEC_ID_PCM_S24BE;
     if (bps <= 32)
-        return CODEC_ID_PCM_S32BE;
+        return AV_CODEC_ID_PCM_S32BE;
 
     /* bigger than 32 isn't allowed  */
-    return CODEC_ID_NONE;
+    return AV_CODEC_ID_NONE;
 }
 
 /* returns the size of the found tag */
@@ -119,32 +120,32 @@ static unsigned int get_aiff_header(AVFormatContext *s, int size,
         size -= 4;
     }
 
-    if (version != AIFF_C_VERSION1 || codec->codec_id == CODEC_ID_PCM_S16BE) {
+    if (version != AIFF_C_VERSION1 || codec->codec_id == AV_CODEC_ID_PCM_S16BE) {
         codec->codec_id = aiff_codec_get_id(codec->bits_per_coded_sample);
         codec->bits_per_coded_sample = av_get_bits_per_sample(codec->codec_id);
         aiff->block_duration = 1;
     } else {
         switch (codec->codec_id) {
-        case CODEC_ID_PCM_F32BE:
-        case CODEC_ID_PCM_F64BE:
-        case CODEC_ID_PCM_S16LE:
-        case CODEC_ID_PCM_ALAW:
-        case CODEC_ID_PCM_MULAW:
+        case AV_CODEC_ID_PCM_F32BE:
+        case AV_CODEC_ID_PCM_F64BE:
+        case AV_CODEC_ID_PCM_S16LE:
+        case AV_CODEC_ID_PCM_ALAW:
+        case AV_CODEC_ID_PCM_MULAW:
             aiff->block_duration = 1;
             break;
-        case CODEC_ID_ADPCM_IMA_QT:
+        case AV_CODEC_ID_ADPCM_IMA_QT:
             codec->block_align = 34*codec->channels;
             break;
-        case CODEC_ID_MACE3:
+        case AV_CODEC_ID_MACE3:
             codec->block_align = 2*codec->channels;
             break;
-        case CODEC_ID_MACE6:
+        case AV_CODEC_ID_MACE6:
             codec->block_align = 1*codec->channels;
             break;
-        case CODEC_ID_GSM:
+        case AV_CODEC_ID_GSM:
             codec->block_align = 33;
             break;
-        case CODEC_ID_QCELP:
+        case AV_CODEC_ID_QCELP:
             codec->block_align = 35;
             break;
         default:
@@ -195,6 +196,7 @@ static int aiff_read_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     AVStream * st;
     AIFFInputContext *aiff = s->priv_data;
+    ID3v2ExtraMeta *id3v2_extra_meta = NULL;
 
     /* check FORM header */
     filesize = get_tag(pb, &tag);
@@ -230,6 +232,10 @@ static int aiff_read_header(AVFormatContext *s)
                 return st->nb_frames;
             if (offset > 0) // COMM is after SSND
                 goto got_sound;
+            break;
+        case MKTAG('I', 'D', '3', ' '):
+            ff_id3v2_read(s, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
+            ff_id3v2_free_extra_meta(&id3v2_extra_meta);
             break;
         case MKTAG('F', 'V', 'E', 'R'):     /* Version chunk */
             version = avio_rb32(pb);
@@ -269,9 +275,8 @@ static int aiff_read_header(AVFormatContext *s)
             avio_read(pb, st->codec->extradata, size);
             break;
         case MKTAG('C','H','A','N'):
-            if (size < 12)
+            if(ff_mov_read_chan(s, st, size) < 0)
                 return AVERROR_INVALIDDATA;
-            ff_mov_read_chan(s, size, st->codec);
             break;
         default: /* Jump */
             if (size & 1)   /* Always even aligned */

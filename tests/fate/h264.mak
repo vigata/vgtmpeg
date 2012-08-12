@@ -188,7 +188,7 @@ FATE_H264  := $(FATE_H264:%=fate-h264-conformance-%)                    \
               fate-h264-extreme-plane-pred                              \
               fate-h264-bsf-mp4toannexb                                 \
 
-FATE_AVCONV += $(FATE_H264)
+FATE_SAMPLES_AVCONV += $(FATE_H264)
 fate-h264: $(FATE_H264)
 
 fate-h264-conformance-aud_mw_e: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/AUD_MW_E.264
@@ -348,8 +348,8 @@ fate-h264-conformance-mr1_mw_a: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-co
 fate-h264-conformance-mr2_mw_a: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/MR2_MW_A.264
 fate-h264-conformance-mr2_tandberg_e: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/MR2_TANDBERG_E.264
 fate-h264-conformance-mr3_tandberg_b: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/MR3_TANDBERG_B.264
-fate-h264-conformance-mr4_tandberg_c: CMD = framecrc -vsync drop -strict 1 -i $(SAMPLES)/h264-conformance/MR4_TANDBERG_C.264
-fate-h264-conformance-mr5_tandberg_c: CMD = framecrc -vsync drop -strict 1 -i $(SAMPLES)/h264-conformance/MR5_TANDBERG_C.264
+fate-h264-conformance-mr4_tandberg_c: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/MR4_TANDBERG_C.264
+fate-h264-conformance-mr5_tandberg_c: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/MR5_TANDBERG_C.264
 fate-h264-conformance-mr6_bt_b: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/MR6_BT_B.h264
 fate-h264-conformance-mr7_bt_b: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/MR7_BT_B.h264
 fate-h264-conformance-mr8_bt_b: CMD = framecrc -vsync drop -i $(SAMPLES)/h264-conformance/MR8_BT_B.h264

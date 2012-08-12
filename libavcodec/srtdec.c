@@ -222,7 +222,7 @@ static int srt_decode_frame(AVCodecContext *avctx,
             break;
         ptr = srt_to_ass(avctx, buffer, buffer+sizeof(buffer), ptr,
                          x1, y1, x2, y2);
-        ff_ass_add_rect(sub, buffer, ts_start, ts_end, 0);
+        ff_ass_add_rect(sub, buffer, ts_start, ts_end-ts_start, 0);
     }
 
     *got_sub_ptr = sub->num_rects > 0;
@@ -233,7 +233,7 @@ AVCodec ff_srt_decoder = {
     .name         = "srt",
     .long_name    = NULL_IF_CONFIG_SMALL("SubRip subtitle"),
     .type         = AVMEDIA_TYPE_SUBTITLE,
-    .id           = CODEC_ID_SRT,
+    .id           = AV_CODEC_ID_SRT,
     .init         = ff_ass_subtitle_header_default,
     .decode       = srt_decode_frame,
 };

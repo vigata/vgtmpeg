@@ -30,9 +30,6 @@
  * MJPEG decoder.
  */
 
-// #define DEBUG
-#include <assert.h>
-
 #include "libavutil/imgutils.h"
 #include "libavutil/avassert.h"
 #include "libavutil/opt.h"
@@ -52,7 +49,7 @@ static int build_vlc(VLC *vlc, const uint8_t *bits_table,
     uint16_t huff_sym[256];
     int i;
 
-    assert(nb_codes <= 256);
+    av_assert0(nb_codes <= 256);
 
     ff_mjpeg_build_huffman_codes(huff_size, huff_code, bits_table, val_table);
 
@@ -103,19 +100,19 @@ av_cold int ff_mjpeg_decode_init(AVCodecContext *avctx)
     build_basic_mjpeg_vlc(s);
 
     if (s->extern_huff) {
-        av_log(avctx, AV_LOG_INFO, "mjpeg: using external huffman table\n");
+        av_log(avctx, AV_LOG_INFO, "using external huffman table\n");
         init_get_bits(&s->gb, avctx->extradata, avctx->extradata_size * 8);
         if (ff_mjpeg_decode_dht(s)) {
             av_log(avctx, AV_LOG_ERROR,
-                   "mjpeg: error using external huffman table, switching back to internal\n");
+                   "error using external huffman table, switching back to internal\n");
             build_basic_mjpeg_vlc(s);
         }
     }
     if (avctx->field_order == AV_FIELD_BB) { /* quicktime icefloe 019 */
         s->interlace_polarity = 1;           /* bottom field first */
-        av_log(avctx, AV_LOG_DEBUG, "mjpeg bottom field first\n");
+        av_log(avctx, AV_LOG_DEBUG, "bottom field first\n");
     }
-    if (avctx->codec->id == CODEC_ID_AMV)
+    if (avctx->codec->id == AV_CODEC_ID_AMV)
         s->flipped = 1;
 
     return 0;
@@ -352,7 +349,7 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
             s->avctx->color_range = s->cs_itu601 ? AVCOL_RANGE_MPEG : AVCOL_RANGE_JPEG;
             }
         }
-        assert(s->nb_components == 3);
+        av_assert0(s->nb_components == 3);
         break;
     case 0x12121100:
     case 0x22122100:
@@ -940,6 +937,21 @@ static int ljpeg_decode_yuv_scan(MJpegDecodeContext *s, int predictor,
     return 0;
 }
 
+static av_always_inline void mjpeg_copy_block(uint8_t *dst, const uint8_t *src,
+                                              int linesize, int lowres)
+{
+    switch (lowres) {
+    case 0: copy_block8(dst, src, linesize, linesize, 8);
+        break;
+    case 1: copy_block4(dst, src, linesize, linesize, 4);
+        break;
+    case 2: copy_block2(dst, src, linesize, linesize, 2);
+        break;
+    case 3: *dst = *src;
+        break;
+    }
+}
+
 static int mjpeg_decode_scan(MJpegDecodeContext *s, int nb_components, int Ah,
                              int Al, const uint8_t *mb_bitmask,
                              const AVFrame *reference)
@@ -1010,8 +1022,8 @@ static int mjpeg_decode_scan(MJpegDecodeContext *s, int nb_components, int Ah,
                     ptr = data[c] + block_offset;
                     if (!s->progressive) {
                         if (copy_mb)
-                            copy_block8(ptr, reference_data[c] + block_offset,
-                                        linesize[c], linesize[c], 8);
+                            mjpeg_copy_block(ptr, reference_data[c] + block_offset,
+                                             linesize[c], s->avctx->lowres);
                         else {
                             s->dsp.clear_block(s->block);
                             if (decode_block(s, s->block, i,
@@ -1052,7 +1064,7 @@ static int mjpeg_decode_scan(MJpegDecodeContext *s, int nb_components, int Ah,
 
             if (s->restart_interval) {
                 s->restart_count--;
-                if(s->restart_count == 0 && s->avctx->codec_id == CODEC_ID_THP){
+                if(s->restart_count == 0 && s->avctx->codec_id == AV_CODEC_ID_THP){
                     align_get_bits(&s->gb);
                     for (i = 0; i < nb_components; i++) /* reset dc */
                         s->last_dc[i] = 1024;
@@ -1197,9 +1209,6 @@ int ff_mjpeg_decode_sos(MJpegDecodeContext *s, const uint8_t *mb_bitmask,
     }else
         prev_shift = point_transform = 0;
 
-    for (i = 0; i < nb_components; i++)
-        s->last_dc[i] = 1024;
-
     if (nb_components > 1) {
         /* interleaved stream */
         s->mb_width  = (s->width  + s->h_max * block_size - 1) / (s->h_max * block_size);
@@ -1224,6 +1233,9 @@ int ff_mjpeg_decode_sos(MJpegDecodeContext *s, const uint8_t *mb_bitmask,
     /* mjpeg-b can have padding bytes between sos and image data, skip them */
     for (i = s->mjpb_skiptosod; i > 0; i--)
         skip_bits(&s->gb, 8);
+next_field:
+    for (i = 0; i < nb_components; i++)
+        s->last_dc[i] = 1024;
 
     if (s->lossless) {
         av_assert0(s->picture_ptr == &s->picture);
@@ -1254,6 +1266,19 @@ int ff_mjpeg_decode_sos(MJpegDecodeContext *s, const uint8_t *mb_bitmask,
                 return -1;
         }
     }
+    if(s->interlaced && get_bits_left(&s->gb) > 32 && show_bits(&s->gb, 8) == 0xFF) {
+        GetBitContext bak= s->gb;
+        align_get_bits(&bak);
+        if(show_bits(&bak, 16) == 0xFFD1) {
+            av_log(s->avctx, AV_LOG_DEBUG, "AVRn ingterlaced picture\n");
+            s->gb = bak;
+            skip_bits(&s->gb, 16);
+            s->bottom_field ^= 1;
+
+            goto next_field;
+        }
+    }
+
     emms_c();
     return 0;
  out_of_range:
@@ -1430,7 +1455,7 @@ static int mjpeg_decode_com(MJpegDecodeContext *s)
                 cbuf[i] = 0;
 
             if (s->avctx->debug & FF_DEBUG_PICT_INFO)
-                av_log(s->avctx, AV_LOG_INFO, "mjpeg comment: '%s'\n", cbuf);
+                av_log(s->avctx, AV_LOG_INFO, "comment: '%s'\n", cbuf);
 
             /* buggy avid, it puts EOI only at every 10th frame */
             if (!strcmp(cbuf, "AVID")) {
@@ -1497,7 +1522,7 @@ int ff_mjpeg_find_marker(MJpegDecodeContext *s,
             uint8_t x = *(src++);
 
             *(dst++) = x;
-            if (s->avctx->codec_id != CODEC_ID_THP) {
+            if (s->avctx->codec_id != AV_CODEC_ID_THP) {
                 if (x == 0xff) {
                     while (src < buf_end && x == 0xff)
                         x = *(src++);
@@ -1759,7 +1784,7 @@ the_end:
             dst -= s->linesize[s->upscale_v];
         }
     }
-    av_log(avctx, AV_LOG_DEBUG, "mjpeg decode frame unused %td bytes\n",
+    av_log(avctx, AV_LOG_DEBUG, "decode frame unused %td bytes\n",
            buf_end - buf_ptr);
 //  return buf_end - buf_ptr;
     return buf_ptr - buf;
@@ -1789,6 +1814,7 @@ av_cold int ff_mjpeg_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
+#if CONFIG_MJPEG_DECODER
 #define OFFSET(x) offsetof(MJpegDecodeContext, x)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
@@ -1807,7 +1833,7 @@ static const AVClass mjpegdec_class = {
 AVCodec ff_mjpeg_decoder = {
     .name           = "mjpeg",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_MJPEG,
+    .id             = AV_CODEC_ID_MJPEG,
     .priv_data_size = sizeof(MJpegDecodeContext),
     .init           = ff_mjpeg_decode_init,
     .close          = ff_mjpeg_decode_end,
@@ -1817,11 +1843,12 @@ AVCodec ff_mjpeg_decoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("MJPEG (Motion JPEG)"),
     .priv_class     = &mjpegdec_class,
 };
-
+#endif
+#if CONFIG_THP_DECODER
 AVCodec ff_thp_decoder = {
     .name           = "thp",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_THP,
+    .id             = AV_CODEC_ID_THP,
     .priv_data_size = sizeof(MJpegDecodeContext),
     .init           = ff_mjpeg_decode_init,
     .close          = ff_mjpeg_decode_end,
@@ -1830,3 +1857,4 @@ AVCodec ff_thp_decoder = {
     .max_lowres     = 3,
     .long_name      = NULL_IF_CONFIG_SMALL("Nintendo Gamecube THP video"),
 };
+#endif

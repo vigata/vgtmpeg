@@ -35,7 +35,7 @@
 #if COMPILE_TEMPLATE_AMD3DNOW
 #define PREFETCH  "prefetch"
 #define PAVGB     "pavgusb"
-#elif COMPILE_TEMPLATE_MMX2
+#elif COMPILE_TEMPLATE_MMXEXT
 #define PREFETCH "prefetchnta"
 #define PAVGB     "pavgb"
 #else
@@ -49,7 +49,7 @@
 #define EMMS     "emms"
 #endif
 
-#if COMPILE_TEMPLATE_MMX2
+#if COMPILE_TEMPLATE_MMXEXT
 #define MOVNTQ "movntq"
 #define SFENCE "sfence"
 #else
@@ -820,9 +820,9 @@ static inline void RENAME(rgb15tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             "pand          %3, %%mm1    \n\t"
             "pand          %4, %%mm2    \n\t"
             "psllq         $5, %%mm0    \n\t"
-            "pmulhw        %6, %%mm0    \n\t"
-            "pmulhw        %6, %%mm1    \n\t"
-            "pmulhw        %7, %%mm2    \n\t"
+            "pmulhw        "MANGLE(mul15_mid)", %%mm0    \n\t"
+            "pmulhw        "MANGLE(mul15_mid)", %%mm1    \n\t"
+            "pmulhw        "MANGLE(mul15_hi)", %%mm2    \n\t"
             "movq       %%mm0, %%mm3    \n\t"
             "movq       %%mm1, %%mm4    \n\t"
             "movq       %%mm2, %%mm5    \n\t"
@@ -851,9 +851,9 @@ static inline void RENAME(rgb15tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             "pand          %3, %%mm1    \n\t"
             "pand          %4, %%mm2    \n\t"
             "psllq         $5, %%mm0    \n\t"
-            "pmulhw        %6, %%mm0    \n\t"
-            "pmulhw        %6, %%mm1    \n\t"
-            "pmulhw        %7, %%mm2    \n\t"
+            "pmulhw        "MANGLE(mul15_mid)", %%mm0    \n\t"
+            "pmulhw        "MANGLE(mul15_mid)", %%mm1    \n\t"
+            "pmulhw        "MANGLE(mul15_hi)", %%mm2    \n\t"
             "movq       %%mm0, %%mm3    \n\t"
             "movq       %%mm1, %%mm4    \n\t"
             "movq       %%mm2, %%mm5    \n\t"
@@ -873,7 +873,7 @@ static inline void RENAME(rgb15tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             "por        %%mm5, %%mm3    \n\t"
 
             :"=m"(*d)
-            :"m"(*s),"m"(mask15b),"m"(mask15g),"m"(mask15r),"m"(mmx_null),"m"(mul15_mid),"m"(mul15_hi)
+            :"m"(*s),"m"(mask15b),"m"(mask15g),"m"(mask15r),"m"(mmx_null)
             :"memory");
         /* borrowed 32 to 24 */
         __asm__ volatile(
@@ -926,9 +926,9 @@ static inline void RENAME(rgb16tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             "pand          %4, %%mm2    \n\t"
             "psllq         $5, %%mm0    \n\t"
             "psrlq         $1, %%mm2    \n\t"
-            "pmulhw        %6, %%mm0    \n\t"
-            "pmulhw        %8, %%mm1    \n\t"
-            "pmulhw        %7, %%mm2    \n\t"
+            "pmulhw        "MANGLE(mul15_mid)", %%mm0    \n\t"
+            "pmulhw        "MANGLE(mul16_mid)", %%mm1    \n\t"
+            "pmulhw        "MANGLE(mul15_hi)", %%mm2    \n\t"
             "movq       %%mm0, %%mm3    \n\t"
             "movq       %%mm1, %%mm4    \n\t"
             "movq       %%mm2, %%mm5    \n\t"
@@ -958,9 +958,9 @@ static inline void RENAME(rgb16tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             "pand          %4, %%mm2    \n\t"
             "psllq         $5, %%mm0    \n\t"
             "psrlq         $1, %%mm2    \n\t"
-            "pmulhw        %6, %%mm0    \n\t"
-            "pmulhw        %8, %%mm1    \n\t"
-            "pmulhw        %7, %%mm2    \n\t"
+            "pmulhw        "MANGLE(mul15_mid)", %%mm0    \n\t"
+            "pmulhw        "MANGLE(mul16_mid)", %%mm1    \n\t"
+            "pmulhw        "MANGLE(mul15_hi)", %%mm2    \n\t"
             "movq       %%mm0, %%mm3    \n\t"
             "movq       %%mm1, %%mm4    \n\t"
             "movq       %%mm2, %%mm5    \n\t"
@@ -979,7 +979,7 @@ static inline void RENAME(rgb16tobgr24)(const uint8_t *src, uint8_t *dst, int sr
             "por        %%mm4, %%mm3    \n\t"
             "por        %%mm5, %%mm3    \n\t"
             :"=m"(*d)
-            :"m"(*s),"m"(mask16b),"m"(mask16g),"m"(mask16r),"m"(mmx_null),"m"(mul15_mid),"m"(mul15_hi),"m"(mul16_mid)
+            :"m"(*s),"m"(mask16b),"m"(mask16g),"m"(mask16r),"m"(mmx_null)
             :"memory");
         /* borrowed 32 to 24 */
         __asm__ volatile(
@@ -1054,10 +1054,10 @@ static inline void RENAME(rgb15to32)(const uint8_t *src, uint8_t *dst, int src_s
             "psllq         $5, %%mm0    \n\t"
             "pmulhw        %5, %%mm0    \n\t"
             "pmulhw        %5, %%mm1    \n\t"
-            "pmulhw        %6, %%mm2    \n\t"
+            "pmulhw        "MANGLE(mul15_hi)", %%mm2    \n\t"
             PACK_RGB32
             :"=m"(*d)
-            :"m"(*s),"m"(mask15b),"m"(mask15g),"m"(mask15r),"m"(mul15_mid),"m"(mul15_hi)
+            :"m"(*s),"m"(mask15b),"m"(mask15g),"m"(mask15r),"m"(mul15_mid)
             :"memory");
         d += 16;
         s += 4;
@@ -1097,11 +1097,11 @@ static inline void RENAME(rgb16to32)(const uint8_t *src, uint8_t *dst, int src_s
             "psllq         $5, %%mm0    \n\t"
             "psrlq         $1, %%mm2    \n\t"
             "pmulhw        %5, %%mm0    \n\t"
-            "pmulhw        %7, %%mm1    \n\t"
-            "pmulhw        %6, %%mm2    \n\t"
+            "pmulhw        "MANGLE(mul16_mid)", %%mm1    \n\t"
+            "pmulhw        "MANGLE(mul15_hi)", %%mm2    \n\t"
             PACK_RGB32
             :"=m"(*d)
-            :"m"(*s),"m"(mask16b),"m"(mask16g),"m"(mask16r),"m"(mul15_mid),"m"(mul15_hi),"m"(mul16_mid)
+            :"m"(*s),"m"(mask16b),"m"(mask16g),"m"(mask16r),"m"(mul15_mid)
             :"memory");
         d += 16;
         s += 4;
@@ -1136,7 +1136,7 @@ static inline void RENAME(shuffle_bytes_2103)(const uint8_t *src, uint8_t *dst, 
         PREFETCH"     32(%1, %0)        \n\t"
         "movq           (%1, %0), %%mm0 \n\t"
         "movq          8(%1, %0), %%mm1 \n\t"
-# if COMPILE_TEMPLATE_MMX2
+# if COMPILE_TEMPLATE_MMXEXT
         "pshufw      $177, %%mm0, %%mm3 \n\t"
         "pshufw      $177, %%mm1, %%mm5 \n\t"
         "pand       %%mm7, %%mm0        \n\t"
@@ -1500,7 +1500,7 @@ static inline void RENAME(yuy2toyv12)(const uint8_t *src, uint8_t *ydst, uint8_t
 }
 #endif /* !COMPILE_TEMPLATE_AMD3DNOW */
 
-#if COMPILE_TEMPLATE_MMX2 || COMPILE_TEMPLATE_AMD3DNOW
+#if COMPILE_TEMPLATE_MMXEXT || COMPILE_TEMPLATE_AMD3DNOW
 static inline void RENAME(planar2x)(const uint8_t *src, uint8_t *dst, int srcWidth, int srcHeight, int srcStride, int dstStride)
 {
     int x,y;
@@ -1590,7 +1590,7 @@ static inline void RENAME(planar2x)(const uint8_t *src, uint8_t *dst, int srcWid
                      SFENCE"     \n\t"
                      :::"memory");
 }
-#endif /* COMPILE_TEMPLATE_MMX2 || COMPILE_TEMPLATE_AMD3DNOW */
+#endif /* COMPILE_TEMPLATE_MMXEXT || COMPILE_TEMPLATE_AMD3DNOW */
 
 #if !COMPILE_TEMPLATE_AMD3DNOW
 /**
@@ -1798,7 +1798,7 @@ static inline void RENAME(rgb24toyv12)(const uint8_t *src, uint8_t *ydst, uint8_
             "1:                                         \n\t"
             PREFETCH"    64(%0, %%"REG_d")              \n\t"
             PREFETCH"    64(%1, %%"REG_d")              \n\t"
-#if COMPILE_TEMPLATE_MMX2 || COMPILE_TEMPLATE_AMD3DNOW
+#if COMPILE_TEMPLATE_MMXEXT || COMPILE_TEMPLATE_AMD3DNOW
             "movq          (%0, %%"REG_d"), %%mm0       \n\t"
             "movq          (%1, %%"REG_d"), %%mm1       \n\t"
             "movq         6(%0, %%"REG_d"), %%mm2       \n\t"
@@ -1859,7 +1859,7 @@ static inline void RENAME(rgb24toyv12)(const uint8_t *src, uint8_t *ydst, uint8_
             "packssdw                %%mm1, %%mm0       \n\t" // V1 V0 U1 U0
             "psraw                      $7, %%mm0       \n\t"
 
-#if COMPILE_TEMPLATE_MMX2 || COMPILE_TEMPLATE_AMD3DNOW
+#if COMPILE_TEMPLATE_MMXEXT || COMPILE_TEMPLATE_AMD3DNOW
             "movq        12(%0, %%"REG_d"), %%mm4       \n\t"
             "movq        12(%1, %%"REG_d"), %%mm1       \n\t"
             "movq        18(%0, %%"REG_d"), %%mm2       \n\t"
@@ -2580,9 +2580,9 @@ static inline void RENAME(rgb2rgb_init)(void)
     yuyvtoyuv422       = RENAME(yuyvtoyuv422);
 #endif /* !COMPILE_TEMPLATE_SSE2 */
 
-#if COMPILE_TEMPLATE_MMX2 || COMPILE_TEMPLATE_AMD3DNOW
+#if COMPILE_TEMPLATE_MMXEXT || COMPILE_TEMPLATE_AMD3DNOW
     planar2x           = RENAME(planar2x);
-#endif /* COMPILE_TEMPLATE_MMX2 || COMPILE_TEMPLATE_AMD3DNOW */
+#endif /* COMPILE_TEMPLATE_MMXEXT || COMPILE_TEMPLATE_AMD3DNOW */
     rgb24toyv12        = RENAME(rgb24toyv12);
 
     yuyvtoyuv420       = RENAME(yuyvtoyuv420);

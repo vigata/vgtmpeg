@@ -121,17 +121,22 @@ static int mp3_write_xing(AVFormatContext *s)
     int64_t          xing_offset;
     int32_t          header, mask;
     MPADecodeHeader  c;
-    int              srate_idx, i, channels;
+    int              srate_idx, ver = 0, i, channels;
     int              needed;
+    const char      *vendor = (codec->flags & CODEC_FLAG_BITEXACT) ? "Lavf" : LIBAVFORMAT_IDENT;
 
     if (!s->pb->seekable)
         return 0;
 
-    for (i = 0; i < FF_ARRAY_ELEMS(avpriv_mpa_freq_tab); i++)
-        if (avpriv_mpa_freq_tab[i] == codec->sample_rate) {
-            srate_idx = i;
-            break;
-        }
+    for (i = 0; i < FF_ARRAY_ELEMS(avpriv_mpa_freq_tab); i++) {
+        const uint16_t base_freq = avpriv_mpa_freq_tab[i];
+        if      (codec->sample_rate == base_freq)     ver = 0x3; // MPEG 1
+        else if (codec->sample_rate == base_freq / 2) ver = 0x2; // MPEG 2
+        else if (codec->sample_rate == base_freq / 4) ver = 0x0; // MPEG 2.5
+        else continue;
+        srate_idx = i;
+        break;
+    }
     if (i == FF_ARRAY_ELEMS(avpriv_mpa_freq_tab)) {
         av_log(s, AV_LOG_WARNING, "Unsupported sample rate, not writing Xing header.\n");
         return -1;
@@ -145,7 +150,7 @@ static int mp3_write_xing(AVFormatContext *s)
 
     /* dummy MPEG audio header */
     header  =  0xff                                  << 24; // sync
-    header |= (0x7 << 5 | 0x3 << 3 | 0x1 << 1 | 0x1) << 16; // sync/mpeg-1/layer 3/no crc*/
+    header |= (0x7 << 5 | ver << 3 | 0x1 << 1 | 0x1) << 16; // sync/audio-version/layer 3/no crc*/
     header |= (srate_idx << 2) <<  8;
     header |= channels << 6;
 
@@ -173,7 +178,9 @@ static int mp3_write_xing(AVFormatContext *s)
                + 4              // frames/size/toc flags
                + 4              // frames
                + 4              // size
-               + VBR_TOC_SIZE;  // toc
+               + VBR_TOC_SIZE   // toc
+               + 24
+               ;
 
         if (needed <= c.frame_size)
             break;
@@ -197,6 +204,12 @@ static int mp3_write_xing(AVFormatContext *s)
     // toc
     for (i = 0; i < VBR_TOC_SIZE; ++i)
         avio_w8(s->pb, (uint8_t)(255 * i / VBR_TOC_SIZE));
+
+    for (i = 0; i < strlen(vendor); ++i)
+        avio_w8(s->pb, vendor[i]);
+    for (; i < 21; ++i)
+        avio_w8(s->pb, 0);
+    avio_wb24(s->pb, FFMAX(codec->delay - 528 - 1, 0)<<12);
 
     ffio_fill(s->pb, 0, c.frame_size - needed);
     avio_flush(s->pb);
@@ -357,14 +370,25 @@ static int mp2_write_trailer(struct AVFormatContext *s)
     return 0;
 }
 
+static int query_codec(enum AVCodecID id, int std_compliance)
+{
+    CodecMime *cm= ff_id3v2_mime_tags;
+    while(cm->id != AV_CODEC_ID_NONE) {
+        if(id == cm->id)
+            return MKTAG('A', 'P', 'I', 'C');
+        cm++;
+    }
+    return -1;
+}
+
 #if CONFIG_MP2_MUXER
 AVOutputFormat ff_mp2_muxer = {
     .name              = "mp2",
-    .long_name         = NULL_IF_CONFIG_SMALL("MPEG audio layer 2"),
+    .long_name         = NULL_IF_CONFIG_SMALL("MP2 (MPEG audio layer 2)"),
     .mime_type         = "audio/x-mpeg",
     .extensions        = "mp2,m2a",
-    .audio_codec       = CODEC_ID_MP2,
-    .video_codec       = CODEC_ID_NONE,
+    .audio_codec       = AV_CODEC_ID_MP2,
+    .video_codec       = AV_CODEC_ID_NONE,
     .write_packet      = ff_raw_write_packet,
     .write_trailer     = mp2_write_trailer,
     .flags             = AVFMT_NOTIMESTAMPS,
@@ -448,7 +472,7 @@ static int mp3_write_header(struct AVFormatContext *s)
     for (i = 0; i < s->nb_streams; i++) {
         AVStream *st = s->streams[i];
         if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
-            if (mp3->audio_stream_idx >= 0 || st->codec->codec_id != CODEC_ID_MP3) {
+            if (mp3->audio_stream_idx >= 0 || st->codec->codec_id != AV_CODEC_ID_MP3) {
                 av_log(s, AV_LOG_ERROR, "Invalid audio stream. Exactly one MP3 "
                        "audio stream is required.\n");
                 return AVERROR(EINVAL);
@@ -494,15 +518,16 @@ static int mp3_write_trailer(AVFormatContext *s)
 
 AVOutputFormat ff_mp3_muxer = {
     .name              = "mp3",
-    .long_name         = NULL_IF_CONFIG_SMALL("MPEG audio layer 3"),
+    .long_name         = NULL_IF_CONFIG_SMALL("MP3 (MPEG audio layer 3)"),
     .mime_type         = "audio/x-mpeg",
     .extensions        = "mp3",
     .priv_data_size    = sizeof(MP3Context),
-    .audio_codec       = CODEC_ID_MP3,
-    .video_codec       = CODEC_ID_PNG,
+    .audio_codec       = AV_CODEC_ID_MP3,
+    .video_codec       = AV_CODEC_ID_PNG,
     .write_header      = mp3_write_header,
     .write_packet      = mp3_write_packet,
     .write_trailer     = mp3_write_trailer,
+    .query_codec       = query_codec,
     .flags             = AVFMT_NOTIMESTAMPS,
     .priv_class        = &mp3_muxer_class,
 };

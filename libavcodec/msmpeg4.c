@@ -31,7 +31,7 @@
 #include "dsputil.h"
 #include "mpegvideo.h"
 #include "msmpeg4.h"
-#include "libavutil/x86_cpu.h"
+#include "libavutil/x86/asm.h"
 #include "h263.h"
 #include "mpeg4video.h"
 #include "msmpeg4data.h"
@@ -1210,12 +1210,13 @@ int ff_msmpeg4_decode_motion(MpegEncContext * s,
 AVCodec ff_msmpeg4v1_decoder = {
     .name           = "msmpeg4v1",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_MSMPEG4V1,
+    .id             = AV_CODEC_ID_MSMPEG4V1,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = ff_msmpeg4_decode_init,
     .close          = ff_h263_decode_end,
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
+    .max_lowres     = 3,
     .long_name      = NULL_IF_CONFIG_SMALL("MPEG-4 part 2 Microsoft variant version 1"),
     .pix_fmts       = ff_pixfmt_list_420,
 };
@@ -1223,12 +1224,13 @@ AVCodec ff_msmpeg4v1_decoder = {
 AVCodec ff_msmpeg4v2_decoder = {
     .name           = "msmpeg4v2",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_MSMPEG4V2,
+    .id             = AV_CODEC_ID_MSMPEG4V2,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = ff_msmpeg4_decode_init,
     .close          = ff_h263_decode_end,
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
+    .max_lowres     = 3,
     .long_name      = NULL_IF_CONFIG_SMALL("MPEG-4 part 2 Microsoft variant version 2"),
     .pix_fmts       = ff_pixfmt_list_420,
 };
@@ -1236,12 +1238,13 @@ AVCodec ff_msmpeg4v2_decoder = {
 AVCodec ff_msmpeg4v3_decoder = {
     .name           = "msmpeg4",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_MSMPEG4V3,
+    .id             = AV_CODEC_ID_MSMPEG4V3,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = ff_msmpeg4_decode_init,
     .close          = ff_h263_decode_end,
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
+    .max_lowres     = 3,
     .long_name      = NULL_IF_CONFIG_SMALL("MPEG-4 part 2 Microsoft variant version 3"),
     .pix_fmts       = ff_pixfmt_list_420,
 };
@@ -1249,12 +1252,13 @@ AVCodec ff_msmpeg4v3_decoder = {
 AVCodec ff_wmv1_decoder = {
     .name           = "wmv1",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_WMV1,
+    .id             = AV_CODEC_ID_WMV1,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = ff_msmpeg4_decode_init,
     .close          = ff_h263_decode_end,
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
+    .max_lowres     = 3,
     .long_name      = NULL_IF_CONFIG_SMALL("Windows Media Video 7"),
     .pix_fmts       = ff_pixfmt_list_420,
 };

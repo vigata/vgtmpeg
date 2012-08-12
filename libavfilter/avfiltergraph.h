@@ -26,9 +26,7 @@
 #include "libavutil/log.h"
 
 typedef struct AVFilterGraph {
-#if FF_API_GRAPH_AVCLASS
     const AVClass *av_class;
-#endif
     unsigned filter_count;
     AVFilterContext **filters;
 
@@ -43,6 +41,8 @@ typedef struct AVFilterGraph {
 
     AVFilterLink **sink_links;
     int sink_links_count;
+
+    unsigned disable_auto_convert;
 } AVFilterGraph;
 
 /**
@@ -82,6 +82,21 @@ int avfilter_graph_add_filter(AVFilterGraph *graphctx, AVFilterContext *filter);
 int avfilter_graph_create_filter(AVFilterContext **filt_ctx, AVFilter *filt,
                                  const char *name, const char *args, void *opaque,
                                  AVFilterGraph *graph_ctx);
+
+/**
+ * Enable or disable automatic format conversion inside the graph.
+ *
+ * Note that format conversion can still happen inside explicitly inserted
+ * scale and aconvert filters.
+ *
+ * @param flags  any of the AVFILTER_AUTO_CONVERT_* constants
+ */
+void avfilter_graph_set_auto_convert(AVFilterGraph *graph, unsigned flags);
+
+enum {
+    AVFILTER_AUTO_CONVERT_ALL  =  0, /**< all automatic conversions enabled */
+    AVFILTER_AUTO_CONVERT_NONE = -1, /**< all automatic conversions disabled */
+};
 
 /**
  * Check validity and configure all the links and formats in the graph.
@@ -240,8 +255,14 @@ char *avfilter_graph_dump(AVFilterGraph *graph, const char *options);
  * of a filtergraph, only a convenience function to help drain a filtergraph
  * in a balanced way under normal circumstances.
  *
- * @return  the return value of avfilter_request_frame,
- *          or AVERROR_EOF of all links returned AVERROR_EOF.
+ * Also note that AVERROR_EOF does not mean that frames did not arrive on
+ * some of the sinks during the process.
+ * When there are multiple sink links, in case the requested link
+ * returns an EOF, this may cause a filter to flush pending frames
+ * which are sent to another sink link, although unrequested.
+ *
+ * @return  the return value of ff_request_frame(),
+ *          or AVERROR_EOF if all links returned AVERROR_EOF
  */
 int avfilter_graph_request_oldest(AVFilterGraph *graph);
 

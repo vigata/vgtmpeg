@@ -52,7 +52,6 @@ struct DVMuxContext {
     int               has_audio;     /* frame under contruction has audio */
     int               has_video;     /* frame under contruction has video */
     uint8_t           frame_buf[DV_MAX_FRAME_SIZE]; /* frame under contruction */
-    char             *tc_opt_str;    /* timecode option string */
     AVTimecode        tc;            /* timecode context */
 };
 
@@ -305,10 +304,10 @@ static DVMuxContext* dv_init_mux(AVFormatContext* s)
     }
 
     /* Some checks -- DV format is very picky about its incoming streams */
-    if (!vst || vst->codec->codec_id != CODEC_ID_DVVIDEO)
+    if (!vst || vst->codec->codec_id != AV_CODEC_ID_DVVIDEO)
         goto bail_out;
     for (i=0; i<c->n_ast; i++) {
-        if (c->ast[i] && (c->ast[i]->codec->codec_id    != CODEC_ID_PCM_S16LE ||
+        if (c->ast[i] && (c->ast[i]->codec->codec_id    != AV_CODEC_ID_PCM_S16LE ||
                           c->ast[i]->codec->sample_rate != 48000 ||
                           c->ast[i]->codec->channels    != 2))
             goto bail_out;
@@ -356,6 +355,7 @@ static int dv_write_header(AVFormatContext *s)
 {
     AVRational rate;
     DVMuxContext *dvc = s->priv_data;
+    AVDictionaryEntry *tcr = av_dict_get(s->metadata, "timecode", NULL, 0);
 
     if (!dv_init_mux(s)) {
         av_log(s, AV_LOG_ERROR, "Can't initialize DV format!\n"
@@ -366,9 +366,16 @@ static int dv_write_header(AVFormatContext *s)
     }
     rate.num = dvc->sys->ltc_divisor;
     rate.den = 1;
-    if (dvc->tc_opt_str)
-        return av_timecode_init_from_string(&dvc->tc, rate,
-                                            dvc->tc_opt_str, s);
+    if (!tcr) { // no global timecode, look into the streams
+        int i;
+        for (i = 0; i < s->nb_streams; i++) {
+            tcr = av_dict_get(s->streams[i]->metadata, "timecode", NULL, 0);
+            if (tcr)
+                break;
+        }
+    }
+    if (tcr)
+        return av_timecode_init_from_string(&dvc->tc, rate, tcr->value, s);
     return av_timecode_init(&dvc->tc, rate, 0, 0, s);
 }
 
@@ -398,25 +405,14 @@ static int dv_write_trailer(struct AVFormatContext *s)
     return 0;
 }
 
-static const AVClass class = {
-    .class_name = "dv",
-    .item_name  = av_default_item_name,
-    .version    = LIBAVUTIL_VERSION_INT,
-    .option     = (const AVOption[]){
-        {AV_TIMECODE_OPTION(DVMuxContext, tc_opt_str, AV_OPT_FLAG_ENCODING_PARAM)},
-        {NULL},
-    },
-};
-
 AVOutputFormat ff_dv_muxer = {
     .name              = "dv",
-    .long_name         = NULL_IF_CONFIG_SMALL("DV video format"),
+    .long_name         = NULL_IF_CONFIG_SMALL("DV (Digital Video)"),
     .extensions        = "dv",
     .priv_data_size    = sizeof(DVMuxContext),
-    .audio_codec       = CODEC_ID_PCM_S16LE,
-    .video_codec       = CODEC_ID_DVVIDEO,
+    .audio_codec       = AV_CODEC_ID_PCM_S16LE,
+    .video_codec       = AV_CODEC_ID_DVVIDEO,
     .write_header      = dv_write_header,
     .write_packet      = dv_write_packet,
     .write_trailer     = dv_write_trailer,
-    .priv_class        = &class,
 };

@@ -340,7 +340,8 @@ static int create_vorbis_context(vorbis_enc_context *venc,
         };
         fc->list[i].x = a[i - 2];
     }
-    ff_vorbis_ready_floor1_list(fc->list, fc->values);
+    if (ff_vorbis_ready_floor1_list(avccontext, fc->list, fc->values))
+        return AVERROR_BUG;
 
     venc->nresidues = 1;
     venc->residues  = av_malloc(sizeof(vorbis_enc_residue) * venc->nresidues);
@@ -1205,7 +1206,7 @@ error:
 AVCodec ff_vorbis_encoder = {
     .name           = "vorbis",
     .type           = AVMEDIA_TYPE_AUDIO,
-    .id             = CODEC_ID_VORBIS,
+    .id             = AV_CODEC_ID_VORBIS,
     .priv_data_size = sizeof(vorbis_enc_context),
     .init           = vorbis_encode_init,
     .encode2        = vorbis_encode_frame,

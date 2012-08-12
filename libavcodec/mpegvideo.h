@@ -218,7 +218,7 @@ typedef struct MpegEncContext {
     int h263_plus;    ///< h263 plus headers
     int h263_flv;     ///< use flv h263 header
 
-    enum CodecID codec_id;     /* see CODEC_ID_xxx */
+    enum AVCodecID codec_id;     /* see AV_CODEC_ID_xxx */
     int fixed_qscale; ///< fixed qscale if non zero
     int encoding;     ///< true if we are encoding (vs decoding)
     int flags;        ///< AVCodecContext.flags (HQ, MV4, ...)
@@ -599,6 +599,7 @@ typedef struct MpegEncContext {
     struct MJpegContext *mjpeg_ctx;
     int mjpeg_vsample[3];       ///< vertical sampling factors, default = {2, 1, 1}
     int mjpeg_hsample[3];       ///< horizontal sampling factors, default = {2, 1, 1}
+    int esc_pos;
 
     /* MSMPEG4 specific */
     int mv_table_index;
@@ -704,6 +705,12 @@ typedef struct MpegEncContext {
 
     int mpv_flags;      ///< flags set by private options
     int quantizer_noise_shaping;
+
+    /* error resilience stuff */
+    uint8_t *er_temp_buffer;
+
+    /* temp buffers for rate control */
+    float *cplx_tab, *bits_tab;
 } MpegEncContext;
 
 #define REBASE_PICTURE(pic, new_ctx, old_ctx) (pic ? \
@@ -740,6 +747,13 @@ static const AVClass name ## _class = {\
     .option     = ff_mpv_generic_options,\
     .version    = LIBAVUTIL_VERSION_INT,\
 };
+
+/**
+ * Set the given MpegEncContext to common defaults (same for encoding
+ * and decoding).  The changed fields will not depend upon the prior
+ * state of the MpegEncContext.
+ */
+void ff_MPV_common_defaults(MpegEncContext *s);
 
 void ff_MPV_decode_defaults(MpegEncContext *s);
 int ff_MPV_common_init(MpegEncContext *s);
@@ -779,9 +793,17 @@ void ff_er_add_slice(MpegEncContext *s, int startx, int starty, int endx, int en
 int ff_dct_common_init(MpegEncContext *s);
 void ff_convert_matrix(DSPContext *dsp, int (*qmat)[64], uint16_t (*qmat16)[2][64],
                        const uint16_t *quant_matrix, int bias, int qmin, int qmax, int intra);
+int ff_dct_quantize_c(MpegEncContext *s, DCTELEM *block, int n, int qscale, int *overflow);
 
 void ff_init_block_index(MpegEncContext *s);
 void ff_copy_picture(Picture *dst, Picture *src);
+
+void ff_MPV_motion(MpegEncContext *s,
+                   uint8_t *dest_y, uint8_t *dest_cb,
+                   uint8_t *dest_cr, int dir,
+                   uint8_t **ref_picture,
+                   op_pixels_func (*pix_op)[4],
+                   qpel_mc_func (*qpix_op)[16]);
 
 /**
  * Allocate a Picture.

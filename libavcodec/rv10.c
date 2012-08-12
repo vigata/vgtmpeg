@@ -349,7 +349,7 @@ static int rv20_decode_picture_header(RVDecContext *rv)
     }
 
     if(RV_GET_MINOR_VER(rv->sub_id) >= 2)
-        s->loop_filter = get_bits1(&s->gb);
+        s->loop_filter = get_bits1(&s->gb) && !s->avctx->lowres;
 
     if(RV_GET_MINOR_VER(rv->sub_id) <= 1)
         seq = get_bits(&s->gb, 8) << 7;
@@ -435,14 +435,15 @@ av_log(s->avctx, AV_LOG_DEBUG, "\n");*/
 //    s->obmc=1;
 //    s->umvplus=1;
     s->modified_quant=1;
-    s->loop_filter=1;
+    if(!s->avctx->lowres)
+        s->loop_filter=1;
 
     if(s->avctx->debug & FF_DEBUG_PICT_INFO){
             av_log(s->avctx, AV_LOG_INFO, "num:%5d x:%2d y:%2d type:%d qscale:%2d rnd:%d\n",
                    seq, s->mb_x, s->mb_y, s->pict_type, s->qscale, s->no_rounding);
     }
 
-    assert(s->pict_type != AV_PICTURE_TYPE_B || !s->low_delay);
+    av_assert0(s->pict_type != AV_PICTURE_TYPE_B || !s->low_delay);
 
     return s->mb_width*s->mb_height - mb_pos;
 }
@@ -535,7 +536,7 @@ static int rv10_decode_packet(AVCodecContext *avctx,
 
     active_bits_size = buf_size * 8;
     init_get_bits(&s->gb, buf, FFMAX(buf_size, buf_size2) * 8);
-    if(s->codec_id ==CODEC_ID_RV10)
+    if(s->codec_id ==AV_CODEC_ID_RV10)
         mb_count = rv10_decode_picture_header(s);
     else
         mb_count = rv20_decode_picture_header(rv);
@@ -576,7 +577,7 @@ static int rv10_decode_packet(AVCodecContext *avctx,
     av_dlog(avctx, "qscale=%d\n", s->qscale);
 
     /* default quantization values */
-    if(s->codec_id== CODEC_ID_RV10){
+    if(s->codec_id== AV_CODEC_ID_RV10){
         if(s->mb_y==0) s->first_slice_line=1;
     }else{
         s->first_slice_line=1;
@@ -748,12 +749,13 @@ static int rv10_decode_frame(AVCodecContext *avctx,
 AVCodec ff_rv10_decoder = {
     .name           = "rv10",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_RV10,
+    .id             = AV_CODEC_ID_RV10,
     .priv_data_size = sizeof(RVDecContext),
     .init           = rv10_decode_init,
     .close          = rv10_decode_end,
     .decode         = rv10_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
+    .max_lowres     = 3,
     .long_name      = NULL_IF_CONFIG_SMALL("RealVideo 1.0"),
     .pix_fmts       = ff_pixfmt_list_420,
 };
@@ -761,13 +763,14 @@ AVCodec ff_rv10_decoder = {
 AVCodec ff_rv20_decoder = {
     .name           = "rv20",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_RV20,
+    .id             = AV_CODEC_ID_RV20,
     .priv_data_size = sizeof(RVDecContext),
     .init           = rv10_decode_init,
     .close          = rv10_decode_end,
     .decode         = rv10_decode_frame,
     .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY,
     .flush          = ff_mpeg_flush,
+    .max_lowres     = 3,
     .long_name      = NULL_IF_CONFIG_SMALL("RealVideo 2.0"),
     .pix_fmts       = ff_pixfmt_list_420,
 };

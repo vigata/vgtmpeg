@@ -13,7 +13,7 @@
  * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
@@ -28,10 +28,14 @@
  */
 
 #include <stdio.h>
+#include "libavutil/audioconvert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/opt.h"
 #include "libswresample/swresample.h"
+#include "audio.h"
 #include "avfilter.h"
+#include "formats.h"
+#include "internal.h"
 
 #define MAX_CHANNELS 63
 
@@ -92,11 +96,11 @@ static void skip_spaces(char **arg)
     *arg += len;
 }
 
-static av_cold int init(AVFilterContext *ctx, const char *args0, void *opaque)
+static av_cold int init(AVFilterContext *ctx, const char *args0)
 {
     PanContext *const pan = ctx->priv;
     char *arg, *arg0, *tokenizer, *args = av_strdup(args0);
-    int out_ch_id, in_ch_id, len, named;
+    int out_ch_id, in_ch_id, len, named, ret;
     int nb_in_channels[2] = { 0, 0 }; // number of unnamed and named input channels
     double gain;
 
@@ -109,11 +113,9 @@ static av_cold int init(AVFilterContext *ctx, const char *args0, void *opaque)
     if (!args)
         return AVERROR(ENOMEM);
     arg = av_strtok(args, ":", &tokenizer);
-    pan->out_channel_layout = av_get_channel_layout(arg);
-    if (!pan->out_channel_layout) {
-        av_log(ctx, AV_LOG_ERROR, "Unknown channel layout \"%s\"\n", arg);
-        return AVERROR(EINVAL);
-    }
+    ret = ff_parse_channel_layout(&pan->out_channel_layout, arg, ctx);
+    if (ret < 0)
+        return ret;
     pan->nb_output_channels = av_get_channel_layout_nb_channels(pan->out_channel_layout);
 
     /* parse channel specifications */
@@ -211,21 +213,26 @@ static int query_formats(AVFilterContext *ctx)
     PanContext *pan = ctx->priv;
     AVFilterLink *inlink  = ctx->inputs[0];
     AVFilterLink *outlink = ctx->outputs[0];
-    AVFilterFormats *formats;
+    AVFilterFormats *formats = NULL;
+    AVFilterChannelLayouts *layouts;
 
     pan->pure_gains = are_gains_pure(pan);
     /* libswr supports any sample and packing formats */
-    avfilter_set_common_sample_formats(ctx, avfilter_make_all_formats(AVMEDIA_TYPE_AUDIO));
-    avfilter_set_common_packing_formats(ctx, avfilter_make_all_packing_formats());
+    ff_set_common_formats(ctx, ff_all_formats(AVMEDIA_TYPE_AUDIO));
+
+    formats = ff_all_samplerates();
+    if (!formats)
+        return AVERROR(ENOMEM);
+    ff_set_common_samplerates(ctx, formats);
 
     // inlink supports any channel layout
-    formats = avfilter_make_all_channel_layouts();
-    avfilter_formats_ref(formats, &inlink->out_chlayouts);
+    layouts = ff_all_channel_layouts();
+    ff_channel_layouts_ref(layouts, &inlink->out_channel_layouts);
 
     // outlink supports only requested output channel layout
-    formats = NULL;
-    avfilter_add_format(&formats, pan->out_channel_layout);
-    avfilter_formats_ref(formats, &outlink->in_chlayouts);
+    layouts = NULL;
+    ff_add_channel_layout(&layouts, pan->out_channel_layout);
+    ff_channel_layouts_ref(layouts, &outlink->in_channel_layouts);
     return 0;
 }
 
@@ -320,7 +327,7 @@ static int config_props(AVFilterLink *link)
                          j ? " + " : "", pan->gain[i][j], j);
             cur += FFMIN(buf + sizeof(buf) - cur, r);
         }
-        av_log(ctx, AV_LOG_INFO, "o%d = %s\n", i, buf);
+        av_log(ctx, AV_LOG_VERBOSE, "o%d = %s\n", i, buf);
     }
     // add channel mapping summary if possible
     if (pan->pure_gains) {
@@ -336,8 +343,9 @@ static int config_props(AVFilterLink *link)
     return 0;
 }
 
-static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
+static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
 {
+    int ret;
     int n = insamples->audio->nb_samples;
     AVFilterLink *const outlink = inlink->dst->outputs[0];
     AVFilterBufferRef *outsamples = ff_get_audio_buffer(outlink, AV_PERM_WRITE, n);
@@ -346,10 +354,10 @@ static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
     swr_convert(pan->swr, outsamples->data, n, (void *)insamples->data, n);
     avfilter_copy_buffer_ref_props(outsamples, insamples);
     outsamples->audio->channel_layout = outlink->channel_layout;
-    outsamples->audio->planar         = outlink->planar;
 
-    ff_filter_samples(outlink, outsamples);
+    ret = ff_filter_samples(outlink, outsamples);
     avfilter_unref_buffer(insamples);
+    return ret;
 }
 
 static av_cold void uninit(AVFilterContext *ctx)

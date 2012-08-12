@@ -25,6 +25,9 @@
 
 #include "libavutil/imgutils.h"
 #include "avfilter.h"
+#include "formats.h"
+#include "internal.h"
+#include "video.h"
 
 typedef struct {
     int x1, y1, x2, y2;
@@ -46,7 +49,7 @@ static int query_formats(AVFilterContext *ctx)
         PIX_FMT_NONE
     };
 
-    avfilter_set_common_pixel_formats(ctx, avfilter_make_format_list(pix_fmts));
+    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
     return 0;
 }
 
@@ -77,7 +80,7 @@ static int checkline(void *ctx, const unsigned char *src, int stride, int len, i
     return total;
 }
 
-static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
+static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     CropDetectContext *cd = ctx->priv;
 
@@ -89,7 +92,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     if (args)
         sscanf(args, "%d:%d:%d", &cd->limit, &cd->round, &cd->reset_count);
 
-    av_log(ctx, AV_LOG_INFO, "limit:%d round:%d reset_count:%d\n",
+    av_log(ctx, AV_LOG_VERBOSE, "limit:%d round:%d reset_count:%d\n",
            cd->limit, cd->round, cd->reset_count);
 
     return 0;
@@ -111,7 +114,7 @@ static int config_input(AVFilterLink *inlink)
     return 0;
 }
 
-static void end_frame(AVFilterLink *inlink)
+static int end_frame(AVFilterLink *inlink)
 {
     AVFilterContext *ctx = inlink->dst;
     CropDetectContext *cd = ctx->priv;
@@ -188,7 +191,7 @@ static void end_frame(AVFilterLink *inlink)
                w, h, x, y);
     }
 
-    avfilter_end_frame(inlink->dst->outputs[0]);
+    return ff_end_frame(inlink->dst->outputs[0]);
 }
 
 AVFilter avfilter_vf_cropdetect = {
@@ -200,15 +203,15 @@ AVFilter avfilter_vf_cropdetect = {
 
     .query_formats = query_formats,
 
-    .inputs    = (const AVFilterPad[]) {{ .name       = "default",
-                                    .type             = AVMEDIA_TYPE_VIDEO,
-                                    .config_props     = config_input,
-                                    .get_video_buffer = avfilter_null_get_video_buffer,
-                                    .start_frame      = avfilter_null_start_frame,
-                                    .end_frame        = end_frame, },
-                                  { .name = NULL}},
+    .inputs    = (const AVFilterPad[]) {{ .name = "default",
+                                          .type             = AVMEDIA_TYPE_VIDEO,
+                                          .config_props     = config_input,
+                                          .get_video_buffer = ff_null_get_video_buffer,
+                                          .start_frame      = ff_null_start_frame,
+                                          .end_frame        = end_frame, },
+                                        { .name = NULL}},
 
-    .outputs   = (const AVFilterPad[]) {{ .name       = "default",
-                                    .type             = AVMEDIA_TYPE_VIDEO },
-                                  { .name = NULL}},
+    .outputs   = (const AVFilterPad[]) {{ .name             = "default",
+                                          .type             = AVMEDIA_TYPE_VIDEO },
+                                        { .name = NULL}},
 };

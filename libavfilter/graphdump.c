@@ -21,6 +21,7 @@
 
 #include <string.h>
 
+#include "libavutil/audioconvert.h"
 #include "libavutil/bprint.h"
 #include "libavutil/pixdesc.h"
 #include "avfilter.h"
@@ -46,9 +47,8 @@ static int print_link_prop(AVBPrint *buf, AVFilterLink *link)
             av_get_channel_layout_string(layout, sizeof(layout),
                                          -1, link->channel_layout);
             format = av_x_if_null(av_get_sample_fmt_name(link->format), "?");
-            av_bprintf(buf, "[%dHz %s:%s:%s]",
-                    (int)link->sample_rate, format, layout,
-                    link->planar ? "planar" : "packed");
+            av_bprintf(buf, "[%dHz %s:%s]",
+                       (int)link->sample_rate, format, layout);
             break;
 
         default:

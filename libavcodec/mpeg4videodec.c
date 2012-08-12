@@ -1179,7 +1179,7 @@ static int mpeg4_decode_mb(MpegEncContext *s,
     static int8_t quant_tab[4] = { -1, -2, 1, 2 };
     const int xy= s->mb_x + s->mb_y * s->mb_stride;
 
-    assert(s->h263_pred);
+    av_assert2(s->h263_pred);
 
     if (s->pict_type == AV_PICTURE_TYPE_P || s->pict_type==AV_PICTURE_TYPE_S) {
         do{
@@ -1490,7 +1490,7 @@ intra:
 end:
 
         /* per-MB end of slice check */
-    if(s->codec_id==CODEC_ID_MPEG4){
+    if(s->codec_id==AV_CODEC_ID_MPEG4){
         int next= mpeg4_is_resync(s);
         if(next) {
             if        (s->mb_x + s->mb_y*s->mb_width + 1 >  next && (s->avctx->err_recognition & AV_EF_AGGRESSIVE)) {
@@ -1588,7 +1588,7 @@ static int decode_vol_header(MpegEncContext *s, GetBitContext *gb){
             skip_bits1(gb);     /* marker */
         }
     }else{
-        // set low delay flag only once the smartest? low delay detection won't be overriden
+        // set low delay flag only once the smartest? low delay detection won't be overridden
         if(s->picture_number==0)
             s->low_delay=0;
     }
@@ -1854,6 +1854,18 @@ no_cplx_est:
             // bin shape stuff FIXME
         }
     }
+
+    if(s->avctx->debug&FF_DEBUG_PICT_INFO) {
+        av_log(s->avctx, AV_LOG_DEBUG, "tb %d/%d, tincrbits:%d, qp_prec:%d, ps:%d,  %s%s%s%s\n",
+               s->avctx->time_base.num, s->avctx->time_base.den,
+               s->time_increment_bits,
+               s->quant_precision,
+               s->progressive_sequence,
+               s->scalability ? "scalability " :"" , s->quarter_sample ? "qpel " : "",
+               s->data_partitioning ? "partition " : "", s->rvlc ? "rvlc " : ""
+        );
+    }
+
     return 0;
 }
 
@@ -2038,6 +2050,10 @@ static int decode_vop_header(MpegEncContext *s, GetBitContext *gb){
          if(s->pict_type == AV_PICTURE_TYPE_B)
             skip_bits_long(gb, s->cplx_estimation_trash_b);
 
+         if(get_bits_left(gb) < 3) {
+             av_log(s->avctx, AV_LOG_ERROR, "Header truncated\n");
+             return -1;
+         }
          s->intra_dc_threshold= ff_mpeg4_dc_threshold[ get_bits(gb, 3) ];
          if(!s->progressive_sequence){
              s->top_field_first= get_bits1(gb);
@@ -2093,12 +2109,16 @@ static int decode_vop_header(MpegEncContext *s, GetBitContext *gb){
              s->b_code=1;
 
          if(s->avctx->debug&FF_DEBUG_PICT_INFO){
-             av_log(s->avctx, AV_LOG_DEBUG, "qp:%d fc:%d,%d %s size:%d pro:%d alt:%d top:%d %spel part:%d resync:%d w:%d a:%d rnd:%d vot:%d%s dc:%d ce:%d/%d/%d\n",
+             av_log(s->avctx, AV_LOG_DEBUG, "qp:%d fc:%d,%d %s size:%d pro:%d alt:%d top:%d %spel part:%d resync:%d w:%d a:%d rnd:%d vot:%d%s dc:%d ce:%d/%d/%d time:%"PRId64" tincr:%d\n",
                  s->qscale, s->f_code, s->b_code,
                  s->pict_type == AV_PICTURE_TYPE_I ? "I" : (s->pict_type == AV_PICTURE_TYPE_P ? "P" : (s->pict_type == AV_PICTURE_TYPE_B ? "B" : "S")),
                  gb->size_in_bits,s->progressive_sequence, s->alternate_scan, s->top_field_first,
                  s->quarter_sample ? "q" : "h", s->data_partitioning, s->resync_marker, s->num_sprite_warping_points,
-                 s->sprite_warping_accuracy, 1-s->no_rounding, s->vo_type, s->vol_control_parameters ? " VOLC" : " ", s->intra_dc_threshold, s->cplx_estimation_trash_i, s->cplx_estimation_trash_p, s->cplx_estimation_trash_b);
+                 s->sprite_warping_accuracy, 1-s->no_rounding, s->vo_type, s->vol_control_parameters ? " VOLC" : " ", s->intra_dc_threshold,
+                 s->cplx_estimation_trash_i, s->cplx_estimation_trash_p, s->cplx_estimation_trash_b,
+                 s->time,
+                 time_increment
+                   );
          }
 
          if(!s->scalability){
@@ -2267,7 +2287,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     }
 
     s->h263_pred = 1;
-    s->low_delay = 0; //default, might be overriden in the vol header during header parsing
+    s->low_delay = 0; //default, might be overridden in the vol header during header parsing
     s->decode_mb= mpeg4_decode_mb;
     s->time_increment_bits = 4; /* default value for broken headers */
     avctx->chroma_sample_location = AVCHROMA_LOC_LEFT;
@@ -2318,7 +2338,7 @@ static const AVClass mpeg4_vdpau_class = {
 AVCodec ff_mpeg4_decoder = {
     .name                  = "mpeg4",
     .type                  = AVMEDIA_TYPE_VIDEO,
-    .id                    = CODEC_ID_MPEG4,
+    .id                    = AV_CODEC_ID_MPEG4,
     .priv_data_size        = sizeof(MpegEncContext),
     .init                  = decode_init,
     .close                 = ff_h263_decode_end,
@@ -2327,6 +2347,7 @@ AVCodec ff_mpeg4_decoder = {
                              CODEC_CAP_TRUNCATED | CODEC_CAP_DELAY |
                              CODEC_CAP_FRAME_THREADS,
     .flush                 = ff_mpeg_flush,
+    .max_lowres            = 3,
     .long_name             = NULL_IF_CONFIG_SMALL("MPEG-4 part 2"),
     .pix_fmts              = ff_hwaccel_pixfmt_list_420,
     .profiles              = NULL_IF_CONFIG_SMALL(mpeg4_video_profiles),
@@ -2339,7 +2360,7 @@ AVCodec ff_mpeg4_decoder = {
 AVCodec ff_mpeg4_vdpau_decoder = {
     .name           = "mpeg4_vdpau",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_MPEG4,
+    .id             = AV_CODEC_ID_MPEG4,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = decode_init,
     .close          = ff_h263_decode_end,

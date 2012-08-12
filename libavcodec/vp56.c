@@ -196,7 +196,7 @@ static void vp56_decode_4mv(VP56Context *s, int row, int col)
     s->macroblocks[row * s->mb_width + col].mv = s->mv[3];
 
     /* chroma vectors are average luma vectors */
-    if (s->avctx->codec->id == CODEC_ID_VP5) {
+    if (s->avctx->codec->id == AV_CODEC_ID_VP5) {
         s->mv[4].x = s->mv[5].x = RSHIFT(mv.x,2);
         s->mv[4].y = s->mv[5].y = RSHIFT(mv.y,2);
     } else {
@@ -281,7 +281,7 @@ static void vp56_add_predictors_dc(VP56Context *s, VP56Frame ref_frame)
             dc += ab->dc_coeff;
             count++;
         }
-        if (s->avctx->codec->id == CODEC_ID_VP5)
+        if (s->avctx->codec->id == AV_CODEC_ID_VP5)
             for (i=0; i<2; i++)
                 if (count < 2 && ref_frame == ab[-1+2*i].ref_frame) {
                     dc += ab[-1+2*i].dc_coeff;
@@ -411,7 +411,7 @@ static void vp56_decode_mb(VP56Context *s, int row, int col, int is_alpha)
         case VP56_MB_INTRA:
             for (b=0; b<b_max; b++) {
                 plane = ff_vp56_b2p[b+ab];
-                s->dsp.idct_put(frame_current->data[plane] + s->block_offset[b],
+                s->vp3dsp.idct_put(frame_current->data[plane] + s->block_offset[b],
                                 s->stride[plane], s->block_coeff[b]);
             }
             break;
@@ -424,7 +424,7 @@ static void vp56_decode_mb(VP56Context *s, int row, int col, int is_alpha)
                 s->dsp.put_pixels_tab[1][0](frame_current->data[plane] + off,
                                             frame_ref->data[plane] + off,
                                             s->stride[plane], 8);
-                s->dsp.idct_add(frame_current->data[plane] + off,
+                s->vp3dsp.idct_add(frame_current->data[plane] + off,
                                 s->stride[plane], s->block_coeff[b]);
             }
             break;
@@ -442,7 +442,7 @@ static void vp56_decode_mb(VP56Context *s, int row, int col, int is_alpha)
                 plane = ff_vp56_b2p[b+ab];
                 vp56_mc(s, b, plane, frame_ref->data[plane], s->stride[plane],
                         16*col+x_off, 16*row+y_off);
-                s->dsp.idct_add(frame_current->data[plane] + s->block_offset[b],
+                s->vp3dsp.idct_add(frame_current->data[plane] + s->block_offset[b],
                                 s->stride[plane], s->block_coeff[b]);
             }
             break;
@@ -666,10 +666,10 @@ av_cold void ff_vp56_init(AVCodecContext *avctx, int flip, int has_alpha)
     s->avctx = avctx;
     avctx->pix_fmt = has_alpha ? PIX_FMT_YUVA420P : PIX_FMT_YUV420P;
 
-    if (avctx->idct_algo == FF_IDCT_AUTO)
-        avctx->idct_algo = FF_IDCT_VP3;
     ff_dsputil_init(&s->dsp, avctx);
+    ff_vp3dsp_init(&s->vp3dsp, avctx->flags);
     ff_vp56dsp_init(&s->vp56dsp, avctx->codec->id);
+    ff_init_scantable_permutation(s->dsp.idct_permutation, s->vp3dsp.idct_perm);
     ff_init_scantable(s->dsp.idct_permutation, &s->scantable,ff_zigzag_direct);
 
     for (i=0; i<4; i++) {

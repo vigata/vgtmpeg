@@ -6,16 +6,16 @@ HTMLPAGES   = $(PROGS-yes:%=doc/%.html)                                 \
               doc/fate.html                                             \
               doc/general.html                                          \
               doc/git-howto.html                                        \
-              doc/libavfilter.html                                      \
               doc/platform.html                                         \
+              doc/syntax.html                                           \
 
 TXTPAGES    = doc/fate.txt                                              \
 
 
-DOCS = $(HTMLPAGES) $(MANPAGES) $(PODPAGES)
-ifdef HAVE_MAKEINFO
-DOCS += $(TXTPAGES)
-endif
+DOCS-$(HAVE_TEXI2HTML)  += $(HTMLPAGES)
+DOCS-$(HAVE_POD2MAN)    += $(MANPAGES) $(PODPAGES)
+DOCS-$(HAVE_MAKEINFO)   += $(TXTPAGES)
+DOCS = $(DOCS-yes)
 
 all-$(CONFIG_DOC): documentation
 
@@ -28,13 +28,11 @@ doc/%.txt: doc/%.texi
 	$(Q)$(TEXIDEP)
 	$(M)makeinfo --force --no-headers -o $@ $< 2>/dev/null
 
-doc/print_options.o: libavformat/options_table.h libavcodec/options_table.h
-
 GENTEXI  = format codec
 GENTEXI := $(GENTEXI:%=doc/avoptions_%.texi)
 
 $(GENTEXI): TAG = GENTEXI
-$(GENTEXI): doc/avoptions_%.texi: doc/print_options
+$(GENTEXI): doc/avoptions_%.texi: doc/print_options$(HOSTEXESUF)
 	$(M)doc/print_options $* > $@
 
 doc/%.html: TAG = HTML
@@ -45,7 +43,7 @@ doc/%.html: doc/%.texi $(SRC_PATH)/doc/t2h.init $(GENTEXI)
 doc/%.pod: TAG = POD
 doc/%.pod: doc/%.texi $(GENTEXI)
 	$(Q)$(TEXIDEP)
-	$(M)$(SRC_PATH)/doc/texi2pod.pl -Idoc $< $@
+	$(M)perl $(SRC_PATH)/doc/texi2pod.pl -Idoc $< $@
 
 doc/%.1: TAG = MAN
 doc/%.1: doc/%.pod $(GENTEXI)
@@ -53,11 +51,15 @@ doc/%.1: doc/%.pod $(GENTEXI)
 
 $(DOCS): | doc/
 
+install-man:
+
+ifdef HAVE_POD2MAN
 install-progs-$(CONFIG_DOC): install-man
 
 install-man: $(MANPAGES)
 	$(Q)mkdir -p "$(MANDIR)/man1"
 	$(INSTALL) -m 644 $(MANPAGES) "$(MANDIR)/man1"
+endif
 
 uninstall: uninstall-man
 

@@ -20,9 +20,8 @@
  */
 #include "avcodec.h"
 #include "bytestream.h"
+#include "libavutil/avassert.h"
 
-#undef NDEBUG
-#include <assert.h>
 
 // ncnt is the nibble counter
 #define PUTNIBBLE(val)\
@@ -53,7 +52,7 @@ static void dvd_encode_rle(uint8_t **pq,
                 if (bitmap[x+len] != color)
                     break;
             color = cmap[color];
-            assert(color < 4);
+            av_assert0(color < 4);
             if (len < 0x04) {
                 PUTNIBBLE((len << 2)|color);
             } else if (len < 0x10) {
@@ -218,7 +217,7 @@ static int dvdsub_encode(AVCodecContext *avctx,
 AVCodec ff_dvdsub_encoder = {
     .name           = "dvdsub",
     .type           = AVMEDIA_TYPE_SUBTITLE,
-    .id             = CODEC_ID_DVD_SUBTITLE,
+    .id             = AV_CODEC_ID_DVD_SUBTITLE,
     .encode         = dvdsub_encode,
     .long_name      = NULL_IF_CONFIG_SMALL("DVD subtitles"),
 };

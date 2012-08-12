@@ -30,9 +30,9 @@
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
 #include "libavutil/dict.h"
+#include "libavutil/time.h"
 #include "avformat.h"
 #include "internal.h"
-#include <unistd.h>
 #include "avio_internal.h"
 #include "url.h"
 
@@ -42,7 +42,7 @@
  * An apple http stream consists of a playlist with media segment files,
  * played sequentially. There may be several playlists with the same
  * video content, in different bandwidth variants, that are played in
- * parallel (preferrably only one bandwidth variant at a time). In this case,
+ * parallel (preferably only one bandwidth variant at a time). In this case,
  * the user supplied the url to a main playlist that only lists the variant
  * playlists.
  *
@@ -407,7 +407,7 @@ reload:
             while (av_gettime() - v->last_load_time < reload_interval) {
                 if (ff_check_interrupt(c->interrupt_callback))
                     return AVERROR_EXIT;
-                usleep(100*1000);
+                av_usleep(100*1000);
             }
             /* Enough time has elapsed since the last reload */
             goto reload;
@@ -419,8 +419,6 @@ reload:
     }
     ret = ffurl_read(v->input, buf, buf_size);
     if (ret > 0)
-        return ret;
-    if (ret < 0 && ret != AVERROR_EOF)
         return ret;
     ffurl_close(v->input);
     v->input = NULL;
@@ -519,12 +517,18 @@ static int hls_read_header(AVFormatContext *s)
              * so avformat_close_input shouldn't be called. If
              * avformat_open_input fails below, it frees and zeros the
              * context, so it doesn't need any special treatment like this. */
+            av_log(s, AV_LOG_ERROR, "Error when loading first segment '%s'\n", v->segments[0]->url);
             avformat_free_context(v->ctx);
             v->ctx = NULL;
             goto fail;
         }
         v->ctx->pb       = &v->pb;
         ret = avformat_open_input(&v->ctx, v->segments[0]->url, in_fmt, NULL);
+        if (ret < 0)
+            goto fail;
+
+        v->ctx->ctx_flags &= ~AVFMTCTX_NOHEADER;
+        ret = avformat_find_stream_info(v->ctx, NULL);
         if (ret < 0)
             goto fail;
         v->stream_offset = stream_offset;
@@ -745,7 +749,7 @@ static int hls_probe(AVProbeData *p)
 
 AVInputFormat ff_hls_demuxer = {
     .name           = "hls,applehttp",
-    .long_name      = NULL_IF_CONFIG_SMALL("Apple HTTP Live Streaming format"),
+    .long_name      = NULL_IF_CONFIG_SMALL("Apple HTTP Live Streaming"),
     .priv_data_size = sizeof(HLSContext),
     .read_probe     = hls_probe,
     .read_header    = hls_read_header,

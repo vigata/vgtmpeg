@@ -242,7 +242,7 @@ static int dv_extract_audio_info(DVDemuxContext* c, uint8_t* frame)
                break;
            avpriv_set_pts_info(c->ast[i], 64, 1, 30000);
            c->ast[i]->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-           c->ast[i]->codec->codec_id   = CODEC_ID_PCM_S16LE;
+           c->ast[i]->codec->codec_id   = AV_CODEC_ID_PCM_S16LE;
 
            av_init_packet(&c->audio_pkt[i]);
            c->audio_pkt[i].size         = 0;
@@ -273,9 +273,6 @@ static int dv_extract_video_info(DVDemuxContext *c, uint8_t* frame)
         avpriv_set_pts_info(c->vst, 64, c->sys->time_base.num,
                         c->sys->time_base.den);
         avctx->time_base= c->sys->time_base;
-        if (!avctx->width)
-            avcodec_set_dimensions(avctx, c->sys->width, c->sys->height);
-        avctx->pix_fmt = c->sys->pix_fmt;
 
         /* finding out SAR is a little bit messy */
         vsc_pack = dv_extract_pack(frame, dv_video_control);
@@ -326,7 +323,7 @@ DVDemuxContext* avpriv_dv_init_demux(AVFormatContext *s)
 
     c->fctx                   = s;
     c->vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-    c->vst->codec->codec_id   = CODEC_ID_DVVIDEO;
+    c->vst->codec->codec_id   = AV_CODEC_ID_DVVIDEO;
     c->vst->codec->bit_rate   = 25000000;
     c->vst->start_time        = 0;
 
@@ -594,7 +591,7 @@ static int dv_probe(AVProbeData *p)
 #if CONFIG_DV_DEMUXER
 AVInputFormat ff_dv_demuxer = {
     .name           = "dv",
-    .long_name      = NULL_IF_CONFIG_SMALL("DV video format"),
+    .long_name      = NULL_IF_CONFIG_SMALL("DV (Digital Video)"),
     .priv_data_size = sizeof(RawDVContext),
     .read_probe     = dv_probe,
     .read_header    = dv_read_header,

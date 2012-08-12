@@ -55,6 +55,11 @@ static av_cold int mp_decode_init(AVCodecContext *avctx)
     int w4 = (avctx->width  + 3) & ~3;
     int h4 = (avctx->height + 3) & ~3;
 
+    if(avctx->extradata_size < 2){
+        av_log(avctx, AV_LOG_ERROR, "extradata too small\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     motionpixels_tableinit();
     mp->avctx = avctx;
     ff_dsputil_init(&mp->dsp, avctx);
@@ -318,7 +323,7 @@ static av_cold int mp_decode_end(AVCodecContext *avctx)
 AVCodec ff_motionpixels_decoder = {
     .name           = "motionpixels",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_MOTIONPIXELS,
+    .id             = AV_CODEC_ID_MOTIONPIXELS,
     .priv_data_size = sizeof(MotionPixelsContext),
     .init           = mp_decode_init,
     .close          = mp_decode_end,

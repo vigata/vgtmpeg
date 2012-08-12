@@ -447,7 +447,7 @@ static av_cold int common_init(AVCodecContext *avctx){
 
     s->width= avctx->width;
     s->height= avctx->height;
-    assert(s->width>0 && s->height>0);
+    av_assert1(s->width>0 && s->height>0);
 
     return 0;
 }
@@ -593,7 +593,7 @@ static int store_table(HYuvContext *s, const uint8_t *len, uint8_t *buf){
         for(; i<256 && len[i]==val && repeat<255; i++)
             repeat++;
 
-        assert(val < 32 && val >0 && repeat<256 && repeat>0);
+        av_assert0(val < 32 && val >0 && repeat<256 && repeat>0);
         if(repeat>7){
             buf[index++]= val;
             buf[index++]= repeat;
@@ -649,7 +649,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
         }
     }else s->context= 0;
 
-    if(avctx->codec->id==CODEC_ID_HUFFYUV){
+    if(avctx->codec->id==AV_CODEC_ID_HUFFYUV){
         if(avctx->pix_fmt==PIX_FMT_YUV420P){
             av_log(avctx, AV_LOG_ERROR, "Error: YV12 is not supported by huffyuv; use vcodec=ffvhuff or format=422p\n");
             return -1;
@@ -1513,7 +1513,7 @@ static av_cold int encode_end(AVCodecContext *avctx)
 AVCodec ff_huffyuv_decoder = {
     .name             = "huffyuv",
     .type             = AVMEDIA_TYPE_VIDEO,
-    .id               = CODEC_ID_HUFFYUV,
+    .id               = AV_CODEC_ID_HUFFYUV,
     .priv_data_size   = sizeof(HYuvContext),
     .init             = decode_init,
     .close            = decode_end,
@@ -1529,7 +1529,7 @@ AVCodec ff_huffyuv_decoder = {
 AVCodec ff_ffvhuff_decoder = {
     .name             = "ffvhuff",
     .type             = AVMEDIA_TYPE_VIDEO,
-    .id               = CODEC_ID_FFVHUFF,
+    .id               = AV_CODEC_ID_FFVHUFF,
     .priv_data_size   = sizeof(HYuvContext),
     .init             = decode_init,
     .close            = decode_end,
@@ -1545,7 +1545,7 @@ AVCodec ff_ffvhuff_decoder = {
 AVCodec ff_huffyuv_encoder = {
     .name           = "huffyuv",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_HUFFYUV,
+    .id             = AV_CODEC_ID_HUFFYUV,
     .priv_data_size = sizeof(HYuvContext),
     .init           = encode_init,
     .encode2        = encode_frame,
@@ -1561,7 +1561,7 @@ AVCodec ff_huffyuv_encoder = {
 AVCodec ff_ffvhuff_encoder = {
     .name           = "ffvhuff",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_FFVHUFF,
+    .id             = AV_CODEC_ID_FFVHUFF,
     .priv_data_size = sizeof(HYuvContext),
     .init           = encode_init,
     .encode2        = encode_frame,

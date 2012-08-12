@@ -17,7 +17,8 @@ PROGS-$(CONFIG_FFSERVER) += ffserver
 
 PROGS      := $(PROGS-yes:%=%$(EXESUF))
 INSTPROGS   = $(PROGS-yes:%=%$(PROGSSUF)$(EXESUF))
-OBJS        = $(PROGS-yes:%=%.o) cmdutils.o
+OBJS        = cmdutils.o
+OBJS-ffmpeg = ffmpeg_opt.o ffmpeg_filter.o
 TESTTOOLS   = audiogen videogen rotozoom tiny_psnr base64
 HOSTPROGS  := $(TESTTOOLS:%=tests/%) doc/print_options
 TOOLS       = qt-faststart trasher
@@ -40,6 +41,7 @@ FFLIBS-$(CONFIG_SWSCALE)  += swscale
 FFLIBS := avutil
 
 DATA_FILES := $(wildcard $(SRC_PATH)/presets/*.ffpreset) $(SRC_PATH)/doc/ffprobe.xsd
+EXAMPLES_FILES := $(wildcard $(SRC_PATH)/doc/examples/*.c) $(SRC_PATH)/doc/examples/Makefile
 
 SKIPHEADERS = cmdutils_common_opts.h
 
@@ -67,9 +69,11 @@ config.h: .config
 
 SUBDIR_VARS := CLEANFILES EXAMPLES FFLIBS HOSTPROGS TESTPROGS TOOLS      \
                ARCH_HEADERS BUILT_HEADERS SKIPHEADERS                    \
-               ALTIVEC-OBJS ARMV5TE-OBJS ARMV6-OBJS ARMVFP-OBJS MMI-OBJS \
-               MMX-OBJS NEON-OBJS VIS-OBJS YASM-OBJS                     \
-               OBJS TESTOBJS
+               ARMV5TE-OBJS ARMV6-OBJS ARMVFP-OBJS NEON-OBJS             \
+               MMI-OBJS ALTIVEC-OBJS VIS-OBJS                            \
+               MMX-OBJS YASM-OBJS                                        \
+               MIPSFPU-OBJS MIPSDSPR2-OBJS MIPSDSPR1-OBJS MIPS32R2-OBJS  \
+               OBJS HOSTOBJS TESTOBJS
 
 define RESET
 $(1) :=
@@ -86,12 +90,19 @@ endef
 
 $(foreach D,$(FFLIBS),$(eval $(call DOSUBDIR,lib$(D))))
 
-ffplay.o: CFLAGS += $(SDL_CFLAGS)
-ffplay_g$(EXESUF): FF_EXTRALIBS += $(SDL_LIBS)
-ffserver_g$(EXESUF): LDFLAGS += $(FFSERVERLDFLAGS)
+define DOPROG
+OBJS-$(1) += $(1).o
+$(1)_g$(EXESUF): $(OBJS-$(1))
+$$(OBJS-$(1)): CFLAGS  += $(CFLAGS-$(1))
+$(1)_g$(EXESUF): LDFLAGS += $(LDFLAGS-$(1))
+$(1)_g$(EXESUF): FF_EXTRALIBS += $(LIBS-$(1))
+-include $$(OBJS-$(1):.o=.d)
+endef
+
+$(foreach P,$(PROGS-yes),$(eval $(call DOPROG,$(P))))
 
 %$(PROGSSUF)_g$(EXESUF): %.o cmdutils.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) -o $@ $< cmdutils.o $(FF_EXTRALIBS)
+	$(LD) $(LDFLAGS) -o $@ $(OBJS-$*) cmdutils.o $(FF_EXTRALIBS)
 
 OBJDIRS += tools
 
@@ -125,9 +136,10 @@ install-progs: install-progs-yes $(PROGS)
 	$(Q)mkdir -p "$(BINDIR)"
 	$(INSTALL) -c -m 755 $(INSTPROGS) "$(BINDIR)"
 
-install-data: $(DATA_FILES)
-	$(Q)mkdir -p "$(DATADIR)"
+install-data: $(DATA_FILES) $(EXAMPLES_FILES)
+	$(Q)mkdir -p "$(DATADIR)/examples"
 	$(INSTALL) -m 644 $(DATA_FILES) "$(DATADIR)"
+	$(INSTALL) -m 644 $(EXAMPLES_FILES) "$(DATADIR)/examples"
 
 uninstall: uninstall-libs uninstall-headers uninstall-progs uninstall-data
 
@@ -161,6 +173,8 @@ coverage-html: coverage.info
 	$(Q)genhtml -o $@ $<
 	$(Q)touch $@
 
+check: all alltools examples testprogs fate
+
 include $(SRC_PATH)/doc/Makefile
 include $(SRC_PATH)/tests/Makefile
 
@@ -175,5 +189,5 @@ $(sort $(OBJDIRS)):
 # so this saves some time on slow systems.
 .SUFFIXES:
 
-.PHONY: all all-yes alltools *clean config examples install*
+.PHONY: all all-yes alltools check *clean config install*
 .PHONY: testprogs uninstall*

@@ -31,6 +31,8 @@ static av_cold int ass_decode_init(AVCodecContext *avctx)
     memcpy(avctx->subtitle_header, avctx->extradata, avctx->extradata_size);
     avctx->subtitle_header_size = avctx->extradata_size;
     avctx->priv_data = ff_ass_split(avctx->extradata);
+    if(!avctx->priv_data)
+        return -1;
     return 0;
 }
 
@@ -66,9 +68,9 @@ static int ass_decode_close(AVCodecContext *avctx)
 
 AVCodec ff_ass_decoder = {
     .name         = "ass",
-    .long_name    = NULL_IF_CONFIG_SMALL("Advanced SubStation Alpha subtitle"),
+    .long_name    = NULL_IF_CONFIG_SMALL("SSA (SubStation Alpha) subtitle"),
     .type         = AVMEDIA_TYPE_SUBTITLE,
-    .id           = CODEC_ID_SSA,
+    .id           = AV_CODEC_ID_SSA,
     .init         = ass_decode_init,
     .decode       = ass_decode_frame,
     .close        = ass_decode_close,

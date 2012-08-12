@@ -23,9 +23,13 @@
  * Audio silence detector
  */
 
+#include "libavutil/audioconvert.h"
 #include "libavutil/opt.h"
 #include "libavutil/timestamp.h"
+#include "audio.h"
+#include "formats.h"
 #include "avfilter.h"
+#include "internal.h"
 
 typedef struct {
     const AVClass *class;
@@ -46,18 +50,9 @@ static const AVOption silencedetect_options[] = {
     { NULL },
 };
 
-static const char *silencedetect_get_name(void *ctx)
-{
-    return "silencedetect";
-}
+AVFILTER_DEFINE_CLASS(silencedetect);
 
-static const AVClass silencedetect_class = {
-    .class_name = "SilenceDetectContext",
-    .item_name  = silencedetect_get_name,
-    .option     = silencedetect_options,
-};
-
-static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
+static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     int ret;
     char *tail;
@@ -66,10 +61,8 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     silence->class = &silencedetect_class;
     av_opt_set_defaults(silence);
 
-    if ((ret = av_set_options_string(silence, args, "=", ":")) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options string: '%s'\n", args);
+    if ((ret = av_set_options_string(silence, args, "=", ":")) < 0)
         return ret;
-    }
 
     silence->noise = strtod(silence->noise_str, &tail);
     if (!strcmp(tail, "dB")) {
@@ -83,7 +76,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
     return 0;
 }
 
-static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
+static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
 {
     int i;
     SilenceDetectContext *silence = inlink->dst->priv;
@@ -123,32 +116,32 @@ static void filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
         }
     }
 
-    ff_filter_samples(inlink->dst->outputs[0], insamples);
+    return ff_filter_samples(inlink->dst->outputs[0], insamples);
 }
 
 static int query_formats(AVFilterContext *ctx)
 {
     AVFilterFormats *formats = NULL;
+    AVFilterChannelLayouts *layouts = NULL;
     enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBL,
         AV_SAMPLE_FMT_NONE
     };
-    int packing_fmts[] = { AVFILTER_PACKED, -1 };
 
-    formats = avfilter_make_all_channel_layouts();
+    layouts = ff_all_channel_layouts();
+    if (!layouts)
+        return AVERROR(ENOMEM);
+    ff_set_common_channel_layouts(ctx, layouts);
+
+    formats = ff_make_format_list(sample_fmts);
     if (!formats)
         return AVERROR(ENOMEM);
-    avfilter_set_common_channel_layouts(ctx, formats);
+    ff_set_common_formats(ctx, formats);
 
-    formats = avfilter_make_format_list(sample_fmts);
+    formats = ff_all_samplerates();
     if (!formats)
         return AVERROR(ENOMEM);
-    avfilter_set_common_sample_formats(ctx, formats);
-
-    formats = avfilter_make_format_list(packing_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    avfilter_set_common_packing_formats(ctx, formats);
+    ff_set_common_samplerates(ctx, formats);
 
     return 0;
 }

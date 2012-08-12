@@ -119,7 +119,9 @@ section .text
     pand    m2, m6
     pand    m3, m2  ; d final
 
-    PSIGNW  m3, m7
+    psraw   m7, 15
+    pxor    m3, m7
+    psubw   m3, m7
     psubw   m0, m3
     paddw   m1, m3
     packuswb m0, m0
@@ -227,13 +229,6 @@ section .text
     imul r2, 0x01010101
 %endmacro
 
-; I do not know why the sign extension is needed...
-%macro PSIGNW_SRA_MMX 2
-    psraw %2, 15
-    PSIGNW_MMX %1, %2
-%endmacro
-
-
 %macro VC1_LF_MMX 1
 INIT_MMX
 cglobal vc1_v_loop_filter_internal_%1
@@ -274,10 +269,6 @@ cglobal vc1_h_loop_filter8_%1, 3,5,0
     RET
 %endmacro
 
-%define PABSW PABSW_MMX
-%define PSIGNW PSIGNW_SRA_MMX
-VC1_LF_MMX mmx
-
 %define PABSW PABSW_MMX2
 VC1_LF_MMX mmx2
 
@@ -295,7 +286,6 @@ cglobal vc1_h_loop_filter8_sse2, 3,6,8
     RET
 
 %define PABSW PABSW_SSSE3
-%define PSIGNW PSIGNW_SSSE3
 
 INIT_MMX
 ; void ff_vc1_v_loop_filter4_ssse3(uint8_t *src, int stride, int pq)

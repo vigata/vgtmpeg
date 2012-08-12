@@ -1,13 +1,15 @@
-# use pkg-config for getting CFLAGS abd LDFLAGS
+# use pkg-config for getting CFLAGS and LDLIBS
 FFMPEG_LIBS=    libavdevice                        \
                 libavformat                        \
                 libavfilter                        \
                 libavcodec                         \
+                libswresample                      \
                 libswscale                         \
                 libavutil                          \
 
-CFLAGS+=-Wall $(shell pkg-config  --cflags $(FFMPEG_LIBS))
-LDFLAGS+=$(shell pkg-config --libs $(FFMPEG_LIBS))
+CFLAGS += -Wall -O2 -g
+CFLAGS += $(shell pkg-config --cflags $(FFMPEG_LIBS))
+LDLIBS += $(shell pkg-config --libs $(FFMPEG_LIBS))
 
 EXAMPLES=       decoding_encoding                  \
                 filtering_video                    \
@@ -17,11 +19,9 @@ EXAMPLES=       decoding_encoding                  \
 
 OBJS=$(addsuffix .o,$(EXAMPLES))
 
-%: %.o
-	$(CC) $< $(LDFLAGS) -o $@
-
-%.o: %.c
-	$(CC) $< $(CFLAGS) -c -o $@
+# the following examples make explicit use of the math library
+decoding_encoding: LDLIBS += -lm
+muxing:            LDLIBS += -lm
 
 .phony: all clean
 

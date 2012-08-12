@@ -64,7 +64,7 @@ static void rl2_rle_decode(Rl2Context *s,const unsigned char* in,int size,
     const unsigned char* back_frame = s->back_frame;
     const unsigned char* in_end = in + size;
     const unsigned char* out_end = out + stride * s->avctx->height;
-    unsigned char* line_end = out + s->avctx->width;
+    unsigned char* line_end;
 
     /** copy start of the background frame */
     for(i=0;i<=base_y;i++){
@@ -222,7 +222,7 @@ static av_cold int rl2_decode_end(AVCodecContext *avctx)
 AVCodec ff_rl2_decoder = {
     .name           = "rl2",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_RL2,
+    .id             = AV_CODEC_ID_RL2,
     .priv_data_size = sizeof(Rl2Context),
     .init           = rl2_decode_init,
     .close          = rl2_decode_end,

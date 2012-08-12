@@ -152,7 +152,7 @@ int av_dup_packet(AVPacket *pkt)
                    pkt->side_data_elems * sizeof(*pkt->side_data));
             for (i = 0; i < pkt->side_data_elems; i++)
                 DUP_DATA(pkt->side_data[i].data, tmp_pkt.side_data[i].data,
-                         pkt->side_data[i].size, 1);
+                         tmp_pkt.side_data[i].size, 1);
         }
     }
     return 0;
@@ -259,7 +259,7 @@ int av_packet_split_side_data(AVPacket *pkt){
         p = pkt->data + pkt->size - 8 - 5;
         for (i=1; ; i++){
             size = AV_RB32(p);
-            if (size>INT_MAX || p - pkt->data <= size)
+            if (size>INT_MAX || p - pkt->data < size)
                 return 0;
             if (p[4]&128)
                 break;
@@ -273,7 +273,7 @@ int av_packet_split_side_data(AVPacket *pkt){
         p= pkt->data + pkt->size - 8 - 5;
         for (i=0; ; i++){
             size= AV_RB32(p);
-            av_assert0(size<=INT_MAX && p - pkt->data > size);
+            av_assert0(size<=INT_MAX && p - pkt->data >= size);
             pkt->side_data[i].data = av_malloc(size + FF_INPUT_BUFFER_PADDING_SIZE);
             pkt->side_data[i].size = size;
             pkt->side_data[i].type = p[4]&127;

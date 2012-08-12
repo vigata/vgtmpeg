@@ -46,6 +46,7 @@ static const struct ogg_codec * const ogg_codecs[] = {
     &ff_theora_codec,
     &ff_flac_codec,
     &ff_celt_codec,
+    &ff_opus_codec,
     &ff_old_dirac_codec,
     &ff_old_flac_codec,
     &ff_ogm_video_codec,
@@ -54,6 +55,8 @@ static const struct ogg_codec * const ogg_codecs[] = {
     &ff_ogm_old_codec,
     NULL
 };
+
+static int64_t ogg_calc_pts(AVFormatContext *s, int idx, int64_t *dts);
 
 //FIXME We could avoid some structure duplication
 static int ogg_save(AVFormatContext *s)
@@ -334,6 +337,13 @@ static int ogg_read_page(AVFormatContext *s, int *str)
     return 0;
 }
 
+/**
+ * @brief find the next Ogg packet
+ * @param *str is set to the stream for the packet or -1 if there is
+ *             no matching stream, in that case assume all other return
+ *             values to be uninitialized.
+ * @return negative value on error or EOF.
+ */
 static int ogg_packet(AVFormatContext *s, int *str, int *dstart, int *dsize,
                       int64_t *fpos)
 {
@@ -344,6 +354,8 @@ static int ogg_packet(AVFormatContext *s, int *str, int *dstart, int *dsize,
     int segp = 0, psize = 0;
 
     av_dlog(s, "ogg_packet: curidx=%i\n", ogg->curidx);
+    if (str)
+        *str = -1;
 
     do{
         idx = ogg->curidx;
@@ -520,19 +532,19 @@ static int ogg_get_length(AVFormatContext *s)
     ogg_restore (s, 0);
 
     ogg_save (s);
-    avio_seek (s->pb, 0, SEEK_SET);
-    while (!ogg_read_page (s, &i)){
-        if (ogg->streams[i].granule != -1 && ogg->streams[i].granule != 0 &&
-            ogg->streams[i].codec) {
-            if(s->streams[i]->duration && s->streams[i]->start_time == AV_NOPTS_VALUE && !ogg->streams[i].got_start){
-                int64_t start= ogg_gptopts (s, i, ogg->streams[i].granule, NULL);
-                if(av_rescale_q(start, s->streams[i]->time_base, AV_TIME_BASE_Q) > AV_TIME_BASE)
-                    s->streams[i]->duration -= start;
-                ogg->streams[i].got_start= 1;
-                streams_left--;
-            }
-            if(streams_left<=0)
-                break;
+    avio_seek (s->pb, s->data_offset, SEEK_SET);
+    ogg_reset(s);
+    while (streams_left > 0 && !ogg_packet(s, &i, NULL, NULL, NULL)) {
+        int64_t pts;
+        if (i < 0) continue;
+        pts = ogg_calc_pts(s, i, NULL);
+        if (pts != AV_NOPTS_VALUE && s->streams[i]->start_time == AV_NOPTS_VALUE && !ogg->streams[i].got_start){
+            s->streams[i]->duration -= pts;
+            ogg->streams[i].got_start= 1;
+            streams_left--;
+        }else if(s->streams[i]->start_time != AV_NOPTS_VALUE && !ogg->streams[i].got_start){
+            ogg->streams[i].got_start= 1;
+            streams_left--;
         }
     }
     ogg_restore (s, 0);
@@ -595,7 +607,7 @@ static void ogg_validate_keyframe(AVFormatContext *s, int idx, int pstart, int p
 {
     struct ogg *ogg = s->priv_data;
     struct ogg_stream *os = ogg->streams + idx;
-    if (psize && s->streams[idx]->codec->codec_id == CODEC_ID_THEORA) {
+    if (psize && s->streams[idx]->codec->codec_id == AV_CODEC_ID_THEORA) {
         if (!!(os->pflags & AV_PKT_FLAG_KEY) != !(os->buf[pstart] & 0x40)) {
             os->pflags ^= AV_PKT_FLAG_KEY;
             av_log(s, AV_LOG_WARNING, "Broken file, %skeyframe not correctly marked.\n",
@@ -608,7 +620,7 @@ static int ogg_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     struct ogg *ogg;
     struct ogg_stream *os;
-    int idx = -1, ret;
+    int idx, ret;
     int pstart, psize;
     int64_t fpos, pts, dts;
 
@@ -667,7 +679,7 @@ static int64_t ogg_read_timestamp(AVFormatContext *s, int stream_index,
     AVIOContext *bc = s->pb;
     int64_t pts = AV_NOPTS_VALUE;
     int64_t keypos = -1;
-    int i = -1;
+    int i;
     int pstart, psize;
     avio_seek(bc, *pos_arg, SEEK_SET);
     ogg_reset(s);

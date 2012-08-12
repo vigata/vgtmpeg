@@ -30,6 +30,7 @@
 
 #include "avcodec.h"
 #include "internal.h"
+#include "libavutil/avassert.h"
 #include "libavutil/base64.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
@@ -74,6 +75,7 @@ typedef struct VP8EncoderContext {
     int lag_in_frames;
     int error_resilient;
     int crf;
+    int max_intra_rate;
 } VP8Context;
 
 /** String mappings for enum vp8e_enc_control_id */
@@ -95,6 +97,7 @@ static const char *const ctlidstr[] = {
     [VP8E_SET_ARNR_STRENGTH]     = "VP8E_SET_ARNR_STRENGTH",
     [VP8E_SET_ARNR_TYPE]         = "VP8E_SET_ARNR_TYPE",
     [VP8E_SET_CQ_LEVEL]          = "VP8E_SET_CQ_LEVEL",
+    [VP8E_SET_MAX_INTRA_BITRATE_PCT] = "VP8E_SET_MAX_INTRA_BITRATE_PCT",
 };
 
 static av_cold void log_encoder_error(AVCodecContext *avctx, const char *desc)
@@ -353,6 +356,8 @@ static av_cold int vp8_init(AVCodecContext *avctx)
     codecctl_int(avctx, VP8E_SET_TOKEN_PARTITIONS,  av_log2(avctx->slices));
     codecctl_int(avctx, VP8E_SET_STATIC_THRESHOLD,  avctx->mb_threshold);
     codecctl_int(avctx, VP8E_SET_CQ_LEVEL,          ctx->crf);
+    if (ctx->max_intra_rate >= 0)
+        codecctl_int(avctx, VP8E_SET_MAX_INTRA_BITRATE_PCT, ctx->max_intra_rate);
 
     av_log(avctx, AV_LOG_DEBUG, "Using deadline: %d\n", ctx->deadline);
 
@@ -443,7 +448,7 @@ static int queue_frames(AVCodecContext *avctx, AVPacket *pkt_out,
 
                 /* avoid storing the frame when the list is empty and we haven't yet
                    provided a frame for output */
-                assert(!ctx->coded_frame_list);
+                av_assert0(!ctx->coded_frame_list);
                 cx_pktcpy(&cx_frame, pkt);
                 size = storeframe(avctx, &cx_frame, pkt_out, coded_frame);
                 if (size < 0)
@@ -499,6 +504,7 @@ static int vp8_encode(AVCodecContext *avctx, AVPacket *pkt,
     VP8Context *ctx = avctx->priv_data;
     struct vpx_image *rawimg = NULL;
     int64_t timestamp = 0;
+    long flags = 0;
     int res, coded_size;
 
     if (frame) {
@@ -510,10 +516,11 @@ static int vp8_encode(AVCodecContext *avctx, AVPacket *pkt,
         rawimg->stride[VPX_PLANE_U] = frame->linesize[1];
         rawimg->stride[VPX_PLANE_V] = frame->linesize[2];
         timestamp                   = frame->pts;
+        flags                       = frame->pict_type == AV_PICTURE_TYPE_I ? VPX_EFLAG_FORCE_KF : 0;
     }
 
     res = vpx_codec_encode(&ctx->encoder, rawimg, timestamp,
-                           avctx->ticks_per_frame, 0, ctx->deadline);
+                           avctx->ticks_per_frame, flags, ctx->deadline);
     if (res != VPX_CODEC_OK) {
         log_encoder_error(avctx, "Error encoding frame");
         return AVERROR_INVALIDDATA;
@@ -556,6 +563,7 @@ static const AVOption options[] = {
     { "good",            NULL, 0, AV_OPT_TYPE_CONST, {VPX_DL_GOOD_QUALITY}, 0, 0, VE, "quality"},
     { "realtime",        NULL, 0, AV_OPT_TYPE_CONST, {VPX_DL_REALTIME},     0, 0, VE, "quality"},
     { "error-resilient", "Error resilience configuration", OFFSET(error_resilient), AV_OPT_TYPE_FLAGS, {0}, INT_MIN, INT_MAX, VE, "er"},
+    { "max-intra-rate",  "Maximum I-frame bitrate (pct) 0=unlimited",  OFFSET(max_intra_rate),  AV_OPT_TYPE_INT,  {-1}, -1,      INT_MAX, VE},
 #ifdef VPX_ERROR_RESILIENT_DEFAULT
     { "default",         "Improve resiliency against losses of whole frames", 0, AV_OPT_TYPE_CONST, {VPX_ERROR_RESILIENT_DEFAULT}, 0, 0, VE, "er"},
     { "partitions",      "The frame partitions are independently decodable "
@@ -594,7 +602,7 @@ static const AVCodecDefault defaults[] = {
 AVCodec ff_libvpx_encoder = {
     .name           = "libvpx",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_VP8,
+    .id             = AV_CODEC_ID_VP8,
     .priv_data_size = sizeof(VP8Context),
     .init           = vp8_init,
     .encode2        = vp8_encode,
