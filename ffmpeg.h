@@ -322,6 +322,10 @@ typedef struct OutputFile {
     int64_t recording_time;  ///< desired length of the resulting file in microseconds == AV_TIME_BASE units
     int64_t start_time;      ///< start time in microseconds == AV_TIME_BASE units
     uint64_t limit_filesize; /* filesize limit expressed in bytes */
+    
+	/* --vgtmpeg */
+    int wrote_header; /* flag indicated that the header was already written.  --vgtmpeg */
+	/* --vgtmpeg */
 } OutputFile;
 
 extern InputStream **input_streams;

@@ -24,12 +24,14 @@
 #ifndef __NLREPORT_H
 #define __NLREPORT_H
 
+#include "libavutil/opt.h"
+
 //#define _XOPEN_SOURCE 600
 //#define STATS_DELAY 100000
 #define STATS_DELAY 200000  /* delay between progress info messages */
 static void print_nlreport( OutputFile **output_files,
                          OutputStream **ost_table, int nb_ostreams,
-                         int is_last_report, int64_t timer_start )
+                         int is_last_report, int64_t timer_start, int nb_frames_dup, int nb_frames_drop )
 {
     //char buf[1024];
     OutputStream *ost;

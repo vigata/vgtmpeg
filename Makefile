@@ -10,7 +10,8 @@ vpath %.v    $(SRC_PATH)
 vpath %.texi $(SRC_PATH)
 vpath %/fate_config.sh.template $(SRC_PATH)
 
-PROGS-$(CONFIG_FFMPEG)   += vgtmpeg
+PROGS-yes	+= vgtmpeg
+PROGS-$(CONFIG_FFMPEG)   += ffmpeg
 PROGS-$(CONFIG_FFPLAY)   += ffplay
 PROGS-$(CONFIG_FFPROBE)  += ffprobe
 PROGS-$(CONFIG_FFSERVER) += ffserver
@@ -19,12 +20,13 @@ PROGS      := $(PROGS-yes:%=%$(EXESUF))
 INSTPROGS   = $(PROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 OBJS        = cmdutils.o
 OBJS-ffmpeg = ffmpeg_opt.o ffmpeg_filter.o
+OBJS-vgtmpeg = ffmpeg_opt.o ffmpeg_filter.o
 TESTTOOLS   = audiogen videogen rotozoom tiny_psnr base64
 HOSTPROGS  := $(TESTTOOLS:%=tests/%) doc/print_options
 TOOLS       = qt-faststart trasher
 TOOLS-$(CONFIG_ZLIB) += cws2fws
 
-BASENAMES   = ffmpeg ffplay ffprobe ffserver
+BASENAMES   = vgtmpeg ffmpeg ffplay ffprobe ffserver
 ALLPROGS    = $(BASENAMES:%=%$(PROGSSUF)$(EXESUF))
 ALLPROGS_G  = $(BASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
 ALLMANPAGES = $(BASENAMES:%=%.1)

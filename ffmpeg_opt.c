@@ -21,6 +21,14 @@
 #include <stdint.h>
 
 #include "ffmpeg.h"
+/* --vgtmpeg */
+#include "vgtmpeg.h"
+int output_xml = 0;
+int server_mode = 0;
+int banner = 1;
+int default_program_id = -1;
+/* --vgtmpeg */
+
 #include "cmdutils.h"
 
 #include "libavformat/avformat.h"
@@ -660,7 +668,13 @@ static void dump_attachment(AVStream *st, const char *filename)
     avio_close(out);
 }
 
-static int opt_input_file(OptionsContext *o, const char *opt, const char *filename)
+/* --vgtmpeg start 
+ *
+ * the parsing of the input file is modified to support extra protocols on the input file handler.
+ * parse_input_file is the original opt_input_file from ffmpeg. 
+ *
+ **/
+static int parse_input_file(OptionsContext *o, const char *opt, const char *filename)
 {
     AVFormatContext *ic;
     AVInputFormat *file_iformat = NULL;
@@ -680,8 +694,12 @@ static int opt_input_file(OptionsContext *o, const char *opt, const char *filena
     if (!strcmp(filename, "-"))
         filename = "pipe:";
 
+    /* --vgtmpeg */
     stdin_interaction &= strncmp(filename, "pipe:", 5) &&
-                         strcmp(filename, "/dev/stdin");
+                         strcmp(filename, "/dev/stdin") && 
+                         server_mode;
+	/* --vgtmpeg */
+
 
     /* get default parameters from command line */
     ic = avformat_alloc_context();
@@ -775,6 +793,11 @@ static int opt_input_file(OptionsContext *o, const char *opt, const char *filena
     /* dump the file content */
     av_dump_format(ic, nb_input_files, filename, 0);
 
+  	/* --vgtmpeg */
+    if( output_xml )
+        dump_nlformat(ic, nb_input_files, filename, 0);
+	/* --vgtmpeg */
+
     input_files = grow_array(input_files, sizeof(*input_files), &nb_input_files, nb_input_files + 1);
     if (!(input_files[nb_input_files - 1] = av_mallocz(sizeof(*input_files[0]))))
         exit_program(1);
@@ -803,6 +826,31 @@ static int opt_input_file(OptionsContext *o, const char *opt, const char *filena
     reset_options(o, 1);
     return 0;
 }
+
+/* called by input file parsers to select a default program */
+static void select_default_program(int programid) {
+    default_program_id = programid;
+}
+
+/* A veneer function to parse_input_file */
+static int parse_file_veneer(void *ctx, char *opt, char *filename) {
+    return parse_input_file((OptionsContext *)ctx, opt, filename);
+}
+
+static ff_input_func_t ff_input_funcs = {
+		parse_file_veneer,
+		select_default_program
+};
+
+static int opt_input_file(OptionsContext *o, const char *opt, const char *filename) {
+#if CONFIG_DVD_PROTOCOL || CONFIG_BD_PROTOCOL
+	if (parse_optmedia_path(o, opt, filename, &ff_input_funcs)) {
+		return 1;
+	}
+#endif
+	return parse_input_file(o, opt, filename);
+}
+/* --vgtmpeg end */
 
 static uint8_t *get_line(AVIOContext *s)
 {
@@ -1453,7 +1501,10 @@ void opt_output_file(void *optctx, const char *filename)
             for (i = 0; i < nb_input_streams; i++) {
                 ist = input_streams[i];
                 if (ist->st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
-                    ist->st->codec->width * ist->st->codec->height > area) {
+                    ist->st->codec->width * ist->st->codec->height > area 
+                    /* --vgtmpeg */
+                    && ist->st->discard != AVDISCARD_ALL  ) {
+	                /* --vgtmpeg */
                     if((qcr==MKTAG('A', 'P', 'I', 'C')) && !(ist->st->disposition & AV_DISPOSITION_ATTACHED_PIC))
                         continue;
                     area = ist->st->codec->width * ist->st->codec->height;
@@ -1470,7 +1521,10 @@ void opt_output_file(void *optctx, const char *filename)
             for (i = 0; i < nb_input_streams; i++) {
                 ist = input_streams[i];
                 if (ist->st->codec->codec_type == AVMEDIA_TYPE_AUDIO &&
-                    ist->st->codec->channels > channels) {
+                    ist->st->codec->channels > channels
+                    /* --vgtmpeg */
+                    && ist->st->discard != AVDISCARD_ALL  ) {
+	                /* --vgtmpeg */
                     channels = ist->st->codec->channels;
                     idx = i;
                 }
@@ -1482,7 +1536,10 @@ void opt_output_file(void *optctx, const char *filename)
         /* subtitles: pick first */
         if (!o->subtitle_disable && (oc->oformat->subtitle_codec != AV_CODEC_ID_NONE || subtitle_codec_name)) {
             for (i = 0; i < nb_input_streams; i++)
-                if (input_streams[i]->st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+                if (input_streams[i]->st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE
+                  	/* --vgtmpeg */
+                       && input_streams[i]->st->discard!=AVDISCARD_ALL   ) {
+   	                /* --vgtmpeg */
                     new_subtitle_stream(o, oc, i);
                     break;
                 }
@@ -2158,6 +2215,9 @@ static int opt_progress(const char *opt, const char *arg)
 const OptionDef options[] = {
     /* main options */
 #include "cmdutils_common_opts.h"
+  	/* --vgtmpeg */
+#include "vgtmpeg_opts.h"
+	/* --vgtmpeg */
     { "f", HAS_ARG | OPT_STRING | OPT_OFFSET, {.off = OFFSET(format)}, "force format", "fmt" },
     { "i", HAS_ARG | OPT_FUNC2, {(void*)opt_input_file}, "input file name", "filename" },
     { "y", OPT_BOOL, {(void*)&file_overwrite}, "overwrite output files" },

@@ -32,5 +32,11 @@
 
 /* optical media public functions */
 #include "libavformat/optmedia.h"
+extern int output_xml;
+extern int server_mode;
+extern int banner;
+extern int default_program_id;
+
+/* running options */
 
 #endif

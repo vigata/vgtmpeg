@@ -24,7 +24,9 @@
 #ifndef __NLDUMP_FORMAT_H
 #define __NLDUMP_FORMAT_H
 
+#include "libavutil/avstring.h"
 #include "libavutil/dict.h"
+#include "libavutil/pixdesc.h"
 
 static int get_bit_rate(AVCodecContext *ctx)
 {
