@@ -52,7 +52,6 @@ static int split_init(AVFilterContext *ctx, const char *args)
         snprintf(name, sizeof(name), "output%d", i);
         pad.type = ctx->filter->inputs[0].type;
         pad.name = av_strdup(name);
-        pad.rej_perms = AV_PERM_WRITE;
 
         ff_insert_outpad(ctx, i, &pad);
     }
@@ -68,17 +67,17 @@ static void split_uninit(AVFilterContext *ctx)
         av_freep(&ctx->output_pads[i].name);
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
+static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
     int i, ret = AVERROR_EOF;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        AVFilterBufferRef *buf_out;
+        AVFrame *buf_out;
 
         if (ctx->outputs[i]->closed)
             continue;
-        buf_out = avfilter_ref_buffer(frame, ~AV_PERM_WRITE);
+        buf_out = av_frame_clone(frame);
         if (!buf_out) {
             ret = AVERROR(ENOMEM);
             break;
@@ -88,7 +87,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
         if (ret < 0)
             break;
     }
-    avfilter_unref_bufferp(&frame);
+    av_frame_free(&frame);
     return ret;
 }
 

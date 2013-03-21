@@ -83,8 +83,8 @@ static void apply_delogo(uint8_t *dst, int dst_linesize,
     if (!direct)
         av_image_copy_plane(dst, dst_linesize, src, src_linesize, w, h);
 
-    dst += (logo_y1+1)*dst_linesize;
-    src += (logo_y1+1)*src_linesize;
+    dst += (logo_y1 + 1) * dst_linesize;
+    src += (logo_y1 + 1) * src_linesize;
 
     for (y = logo_y1+1; y < logo_y2-1; y++) {
         for (x = logo_x1+1,
@@ -171,19 +171,6 @@ static int query_formats(AVFilterContext *ctx)
 static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     DelogoContext *delogo = ctx->priv;
-    int ret = 0;
-
-    delogo->class = &delogo_class;
-    av_opt_set_defaults(delogo);
-
-    if (args)
-        ret = sscanf(args, "%d:%d:%d:%d:%d",
-                     &delogo->x, &delogo->y, &delogo->w, &delogo->h, &delogo->band);
-    if (ret == 5) {
-        if (delogo->band < 0)
-            delogo->show = 1;
-    } else if ((ret = (av_set_options_string(delogo, args, "=", ":"))) < 0)
-        return ret;
 
 #define CHECK_UNSET_OPT(opt)                                            \
     if (delogo->opt == -1) {                                            \
@@ -195,8 +182,10 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
     CHECK_UNSET_OPT(w);
     CHECK_UNSET_OPT(h);
 
-    if (delogo->show)
+    if (delogo->band < 0 || delogo->show) {
+        delogo->show = 1;
         delogo->band = 4;
+    }
 
     av_log(ctx, AV_LOG_VERBOSE, "x:%d y:%d, w:%d h:%d band:%d show:%d\n",
            delogo->x, delogo->y, delogo->w, delogo->h, delogo->band, delogo->show);
@@ -209,27 +198,28 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *in)
+static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
     DelogoContext *delogo = inlink->dst->priv;
     AVFilterLink *outlink = inlink->dst->outputs[0];
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
-    AVFilterBufferRef *out;
+    AVFrame *out;
     int hsub0 = desc->log2_chroma_w;
     int vsub0 = desc->log2_chroma_h;
     int direct = 0;
     int plane;
 
-    if (in->perms & AV_PERM_WRITE) {
+    if (av_frame_is_writable(in)) {
         direct = 1;
         out = in;
     } else {
-        out = ff_get_video_buffer(outlink, AV_PERM_WRITE, outlink->w, outlink->h);
+        out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
         if (!out) {
-            avfilter_unref_bufferp(&in);
+            av_frame_free(&in);
             return AVERROR(ENOMEM);
         }
-        avfilter_copy_buffer_ref_props(out, in);
+
+        av_frame_copy_props(out, in);
     }
 
     for (plane = 0; plane < 4 && in->data[plane]; plane++) {
@@ -246,7 +236,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *in)
     }
 
     if (!direct)
-        avfilter_unref_bufferp(&in);
+        av_frame_free(&in);
 
     return ff_filter_frame(outlink, out);
 }
@@ -257,7 +247,6 @@ static const AVFilterPad avfilter_vf_delogo_inputs[] = {
         .type             = AVMEDIA_TYPE_VIDEO,
         .get_video_buffer = ff_null_get_video_buffer,
         .filter_frame     = filter_frame,
-        .min_perms        = AV_PERM_WRITE | AV_PERM_READ,
     },
     { NULL }
 };
@@ -270,6 +259,8 @@ static const AVFilterPad avfilter_vf_delogo_outputs[] = {
     { NULL }
 };
 
+static const char *const shorthand[] = { "x", "y", "w", "h", "band", NULL };
+
 AVFilter avfilter_vf_delogo = {
     .name          = "delogo",
     .description   = NULL_IF_CONFIG_SMALL("Remove logo from input video."),
@@ -280,4 +271,5 @@ AVFilter avfilter_vf_delogo = {
     .inputs    = avfilter_vf_delogo_inputs,
     .outputs   = avfilter_vf_delogo_outputs,
     .priv_class = &delogo_class,
+    .shorthand = shorthand,
 };

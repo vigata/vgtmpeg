@@ -59,7 +59,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args, const AVClass *c
     aspect->class = class;
     av_opt_set_defaults(aspect);
 
-    if (sscanf(args, "%d:%d%c", &q.num, &q.den, &c) == 2) {
+    if (args && sscanf(args, "%d:%d%c", &q.num, &q.den, &c) == 2) {
         aspect->ratio_str = av_strdup(args);
         av_log(ctx, AV_LOG_WARNING,
                "num:den syntax is deprecated, please use num/den or named options instead\n");
@@ -80,11 +80,11 @@ static av_cold int init(AVFilterContext *ctx, const char *args, const AVClass *c
     return 0;
 }
 
-static int filter_frame(AVFilterLink *link, AVFilterBufferRef *frame)
+static int filter_frame(AVFilterLink *link, AVFrame *frame)
 {
     AspectContext *aspect = link->dst->priv;
 
-    frame->video->sample_aspect_ratio = aspect->ratio;
+    frame->sample_aspect_ratio = aspect->ratio;
     return ff_filter_frame(link->dst->outputs[0], frame);
 }
 

@@ -31,7 +31,6 @@
  */
 
 #include "avcodec.h"
-#include "dsputil.h"
 #include "internal.h"
 #include "mpegvideo.h"
 #include "mjpeg.h"
@@ -57,12 +56,22 @@ static int encode_picture_lossless(AVCodecContext *avctx, AVPacket *pkt,
         max_pkt_size += mb_width * mb_height * 3 * 4
                         * s->mjpeg_hsample[0] * s->mjpeg_vsample[0];
     }
+
+    if (!s->edge_emu_buffer &&
+        (ret = ff_mpv_frame_size_alloc(s, pict->linesize[0])) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "failed to allocate context scratch buffers.\n");
+        return ret;
+    }
+
     if ((ret = ff_alloc_packet2(avctx, pkt, max_pkt_size)) < 0)
         return ret;
 
     init_put_bits(&s->pb, pkt->data, pkt->size);
 
-    *p = *pict;
+    av_frame_unref(p);
+    ret = av_frame_ref(p, pict);
+    if (ret < 0)
+        return ret;
     p->pict_type= AV_PICTURE_TYPE_I;
     p->key_frame= 1;
 

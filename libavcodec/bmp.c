@@ -25,32 +25,20 @@
 #include "internal.h"
 #include "msrledec.h"
 
-static av_cold int bmp_decode_init(AVCodecContext *avctx)
-{
-    BMPContext *s = avctx->priv_data;
-
-    avcodec_get_frame_defaults(&s->picture);
-    avctx->coded_frame = &s->picture;
-
-    return 0;
-}
-
 static int bmp_decode_frame(AVCodecContext *avctx,
                             void *data, int *got_frame,
                             AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
-    BMPContext *s      = avctx->priv_data;
-    AVFrame *picture   = data;
-    AVFrame *p         = &s->picture;
+    AVFrame *p         = data;
     unsigned int fsize, hsize;
     int width, height;
     unsigned int depth;
     BiCompression comp;
     unsigned int ihsize;
     int i, j, n, linesize, ret;
-    uint32_t rgb[3];
+    uint32_t rgb[3] = {0};
     uint32_t alpha = 0;
     uint8_t *ptr;
     int dsize;
@@ -208,14 +196,8 @@ static int bmp_decode_frame(AVCodecContext *avctx,
         return AVERROR_INVALIDDATA;
     }
 
-    if (p->data[0])
-        avctx->release_buffer(avctx, p);
-
-    p->reference = 0;
-    if ((ret = ff_get_buffer(avctx, p)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
         return ret;
-    }
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
 
@@ -261,6 +243,10 @@ static int bmp_decode_frame(AVCodecContext *avctx,
         buf = buf0 + 14 + ihsize; //palette location
         // OS/2 bitmap, 3 bytes per palette entry
         if ((hsize-ihsize-14) < (colors << 2)) {
+            if ((hsize-ihsize-14) < colors * 3) {
+                av_log(avctx, AV_LOG_ERROR, "palette doesnt fit in packet\n");
+                return AVERROR_INVALIDDATA;
+            }
             for (i = 0; i < colors; i++)
                 ((uint32_t*)p->data[1])[i] = (0xFFU<<24) | bytestream_get_le24(&buf);
         } else {
@@ -337,29 +323,15 @@ static int bmp_decode_frame(AVCodecContext *avctx,
         }
     }
 
-    *picture = s->picture;
     *got_frame = 1;
 
     return buf_size;
-}
-
-static av_cold int bmp_decode_end(AVCodecContext *avctx)
-{
-    BMPContext* c = avctx->priv_data;
-
-    if (c->picture.data[0])
-        avctx->release_buffer(avctx, &c->picture);
-
-    return 0;
 }
 
 AVCodec ff_bmp_decoder = {
     .name           = "bmp",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_BMP,
-    .priv_data_size = sizeof(BMPContext),
-    .init           = bmp_decode_init,
-    .close          = bmp_decode_end,
     .decode         = bmp_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
     .long_name      = NULL_IF_CONFIG_SMALL("BMP (Windows and OS/2 bitmap)"),

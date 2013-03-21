@@ -91,17 +91,6 @@ static int query_formats(AVFilterContext *ctx)
     return 0;
 }
 
-static int config_input(AVFilterLink *inlink)
-{
-    if (inlink->sample_rate != 44100) {
-        av_log(inlink->dst, AV_LOG_ERROR,
-               "The earwax filter only works for 44.1kHz audio. Insert "
-               "a resample filter before this\n");
-        return AVERROR(EINVAL);
-    }
-    return 0;
-}
-
 //FIXME: replace with DSPContext.scalarproduct_int16
 static inline int16_t *scalarproduct(const int16_t *in, const int16_t *endin, int16_t *out)
 {
@@ -120,18 +109,18 @@ static inline int16_t *scalarproduct(const int16_t *in, const int16_t *endin, in
     return out;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *insamples)
+static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
 {
     AVFilterLink *outlink = inlink->dst->outputs[0];
     int16_t *taps, *endin, *in, *out;
-    AVFilterBufferRef *outsamples =
-        ff_get_audio_buffer(inlink, AV_PERM_WRITE,
-                                  insamples->audio->nb_samples);
+    AVFrame *outsamples = ff_get_audio_buffer(inlink, insamples->nb_samples);
     int ret;
 
-    if (!outsamples)
+    if (!outsamples) {
+        av_frame_free(&insamples);
         return AVERROR(ENOMEM);
-    avfilter_copy_buffer_ref_props(outsamples, insamples);
+    }
+    av_frame_copy_props(outsamples, insamples);
 
     taps  = ((EarwaxContext *)inlink->dst->priv)->taps;
     out   = (int16_t *)outsamples->data[0];
@@ -142,14 +131,14 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *insamples)
     out   = scalarproduct(taps, taps + NUMTAPS, out);
 
     // process current input
-    endin = in + insamples->audio->nb_samples * 2 - NUMTAPS;
+    endin = in + insamples->nb_samples * 2 - NUMTAPS;
     scalarproduct(in, endin, out);
 
     // save part of input for next round
     memcpy(taps, endin, NUMTAPS * sizeof(*taps));
 
     ret = ff_filter_frame(outlink, outsamples);
-    avfilter_unref_buffer(insamples);
+    av_frame_free(&insamples);
     return ret;
 }
 
@@ -158,8 +147,6 @@ static const AVFilterPad earwax_inputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_AUDIO,
         .filter_frame = filter_frame,
-        .config_props = config_input,
-        .min_perms    = AV_PERM_READ,
     },
     { NULL }
 };

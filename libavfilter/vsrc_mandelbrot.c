@@ -382,15 +382,12 @@ static void draw_mandelbrot(AVFilterContext *ctx, uint32_t *color, int linesize,
 static int request_frame(AVFilterLink *link)
 {
     MBContext *mb = link->src->priv;
-    AVFilterBufferRef *picref = ff_get_video_buffer(link, AV_PERM_WRITE, mb->w, mb->h);
-    picref->video->sample_aspect_ratio = (AVRational) {1, 1};
+    AVFrame *picref = ff_get_video_buffer(link, mb->w, mb->h);
+    picref->sample_aspect_ratio = (AVRational) {1, 1};
     picref->pts = mb->pts++;
-    picref->pos = -1;
 
     draw_mandelbrot(link->src, (uint32_t*)picref->data[0], picref->linesize[0]/4, picref->pts);
-    ff_filter_frame(link, picref);
-
-    return 0;
+    return ff_filter_frame(link, picref);
 }
 
 static const AVFilterPad mandelbrot_outputs[] = {

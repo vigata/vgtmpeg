@@ -42,35 +42,19 @@ typedef struct {
 
 static int query_formats(AVFilterContext *ctx)
 {
-    static const enum AVPixelFormat pix_fmts[] = {
-        AV_PIX_FMT_RGB48BE,      AV_PIX_FMT_RGB48LE,
-        AV_PIX_FMT_BGR48BE,      AV_PIX_FMT_BGR48LE,
-        AV_PIX_FMT_ARGB,         AV_PIX_FMT_RGBA,
-        AV_PIX_FMT_ABGR,         AV_PIX_FMT_BGRA,
-        AV_PIX_FMT_RGB24,        AV_PIX_FMT_BGR24,
-        AV_PIX_FMT_RGB565BE,     AV_PIX_FMT_RGB565LE,
-        AV_PIX_FMT_RGB555BE,     AV_PIX_FMT_RGB555LE,
-        AV_PIX_FMT_RGB444BE,     AV_PIX_FMT_RGB444LE,
-        AV_PIX_FMT_BGR565BE,     AV_PIX_FMT_BGR565LE,
-        AV_PIX_FMT_BGR555BE,     AV_PIX_FMT_BGR555LE,
-        AV_PIX_FMT_BGR444BE,     AV_PIX_FMT_BGR444LE,
-        AV_PIX_FMT_GRAY16BE,     AV_PIX_FMT_GRAY16LE,
-        AV_PIX_FMT_YUV420P16LE,  AV_PIX_FMT_YUV420P16BE,
-        AV_PIX_FMT_YUV422P16LE,  AV_PIX_FMT_YUV422P16BE,
-        AV_PIX_FMT_YUV444P16LE,  AV_PIX_FMT_YUV444P16BE,
-        AV_PIX_FMT_YUV444P,      AV_PIX_FMT_YUV422P,
-        AV_PIX_FMT_YUV420P,      AV_PIX_FMT_YUV411P,
-        AV_PIX_FMT_YUV410P,      AV_PIX_FMT_YUV440P,
-        AV_PIX_FMT_YUVJ444P,     AV_PIX_FMT_YUVJ422P,
-        AV_PIX_FMT_YUVJ420P,     AV_PIX_FMT_YUVJ440P,
-        AV_PIX_FMT_YUVA420P,
-        AV_PIX_FMT_RGB8,         AV_PIX_FMT_BGR8,
-        AV_PIX_FMT_RGB4_BYTE,    AV_PIX_FMT_BGR4_BYTE,
-        AV_PIX_FMT_PAL8,         AV_PIX_FMT_GRAY8,
-        AV_PIX_FMT_NONE
-    };
+    AVFilterFormats *pix_fmts = NULL;
+    int fmt;
 
-    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    for (fmt = 0; fmt < AV_PIX_FMT_NB; fmt++) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
+        if (!(desc->flags & PIX_FMT_HWACCEL ||
+              desc->flags & PIX_FMT_BITSTREAM ||
+              (desc->log2_chroma_w != desc->log2_chroma_h &&
+               desc->comp[0].plane == desc->comp[1].plane)))
+            ff_add_format(&pix_fmts, fmt);
+    }
+
+    ff_set_common_formats(ctx, pix_fmts);
     return 0;
 }
 
@@ -86,21 +70,21 @@ static int config_props(AVFilterLink *inlink)
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *in)
+static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
     AVFilterContext *ctx  = inlink->dst;
     FlipContext *flip     = ctx->priv;
     AVFilterLink *outlink = ctx->outputs[0];
-    AVFilterBufferRef *out;
+    AVFrame *out;
     uint8_t *inrow, *outrow;
     int i, j, plane, step, hsub, vsub;
 
-    out = ff_get_video_buffer(outlink, AV_PERM_WRITE, outlink->w, outlink->h);
+    out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out) {
-        avfilter_unref_bufferp(&in);
+        av_frame_free(&in);
         return AVERROR(ENOMEM);
     }
-    avfilter_copy_buffer_ref_props(out, in);
+    av_frame_copy_props(out, in);
 
     /* copy palette if required */
     if (av_pix_fmt_desc_get(inlink->format)->flags & PIX_FMT_PAL)
@@ -113,7 +97,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *in)
 
         outrow = out->data[plane];
         inrow  = in ->data[plane] + ((inlink->w >> hsub) - 1) * step;
-        for (i = 0; i < in->video->h >> vsub; i++) {
+        for (i = 0; i < in->height >> vsub; i++) {
             switch (step) {
             case 1:
                 for (j = 0; j < (inlink->w >> hsub); j++)
@@ -159,7 +143,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *in)
         }
     }
 
-    avfilter_unref_bufferp(&in);
+    av_frame_free(&in);
     return ff_filter_frame(outlink, out);
 }
 
@@ -169,7 +153,6 @@ static const AVFilterPad avfilter_vf_hflip_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
         .config_props = config_props,
-        .min_perms    = AV_PERM_READ,
     },
     { NULL }
 };

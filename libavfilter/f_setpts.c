@@ -27,6 +27,7 @@
 #include "libavutil/eval.h"
 #include "libavutil/internal.h"
 #include "libavutil/mathematics.h"
+#include "libavutil/time.h"
 #include "avfilter.h"
 #include "internal.h"
 #include "audio.h"
@@ -49,6 +50,8 @@ static const char *const var_names[] = {
     "STARTT",      ///< time at start of movie
     "T",           ///< original time in the file of the frame
     "TB",          ///< timebase
+    "RTCTIME",     ///< wallclock (RTC) time in micro seconds
+    "RTCSTART",    ///< wallclock (RTC) time at the start of the movie in micro seconds
     NULL
 };
 
@@ -69,6 +72,8 @@ enum var_name {
     VAR_STARTT,
     VAR_T,
     VAR_TB,
+    VAR_RTCTIME,
+    VAR_RTCSTART,
     VAR_VARS_NB
 };
 
@@ -103,6 +108,7 @@ static int config_input(AVFilterLink *inlink)
 
     setpts->type = inlink->type;
     setpts->var_values[VAR_TB] = av_q2d(inlink->time_base);
+    setpts->var_values[VAR_RTCSTART] = av_gettime();
 
     setpts->var_values[VAR_SAMPLE_RATE] =
         setpts->type == AVMEDIA_TYPE_AUDIO ? inlink->sample_rate : NAN;
@@ -132,7 +138,7 @@ static inline char *double2int64str(char *buf, double v)
 
 #define d2istr(v) double2int64str((char[BUF_SIZE]){0}, v)
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
+static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     SetPTSContext *setpts = inlink->dst->priv;
     int64_t in_pts = frame->pts;
@@ -144,15 +150,16 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
     }
     setpts->var_values[VAR_PTS       ] = TS2D(frame->pts);
     setpts->var_values[VAR_T         ] = TS2T(frame->pts, inlink->time_base);
-    setpts->var_values[VAR_POS       ] = frame->pos == -1 ? NAN : frame->pos;
+    setpts->var_values[VAR_POS       ] = av_frame_get_pkt_pos(frame) == -1 ? NAN : av_frame_get_pkt_pos(frame);
+    setpts->var_values[VAR_RTCTIME   ] = av_gettime();
 
     switch (inlink->type) {
     case AVMEDIA_TYPE_VIDEO:
-        setpts->var_values[VAR_INTERLACED] = frame->video->interlaced;
+        setpts->var_values[VAR_INTERLACED] = frame->interlaced_frame;
         break;
 
     case AVMEDIA_TYPE_AUDIO:
-        setpts->var_values[VAR_NB_SAMPLES] = frame->audio->nb_samples;
+        setpts->var_values[VAR_NB_SAMPLES] = frame->nb_samples;
         break;
     }
 
@@ -185,7 +192,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
     setpts->var_values[VAR_PREV_OUTT]   = TS2T(frame->pts, inlink->time_base);
     setpts->var_values[VAR_N] += 1.0;
     if (setpts->type == AVMEDIA_TYPE_AUDIO) {
-        setpts->var_values[VAR_NB_CONSUMED_SAMPLES] += frame->audio->nb_samples;
+        setpts->var_values[VAR_NB_CONSUMED_SAMPLES] += frame->nb_samples;
     }
     return ff_filter_frame(inlink->dst->outputs[0], frame);
 }

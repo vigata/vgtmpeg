@@ -14,6 +14,7 @@ HEADERS = adler32.h                                                     \
           blowfish.h                                                    \
           bprint.h                                                      \
           bswap.h                                                       \
+          buffer.h                                                      \
           channel_layout.h                                              \
           common.h                                                      \
           cpu.h                                                         \
@@ -22,6 +23,7 @@ HEADERS = adler32.h                                                     \
           eval.h                                                        \
           fifo.h                                                        \
           file.h                                                        \
+          frame.h                                                       \
           hmac.h                                                        \
           imgutils.h                                                    \
           intfloat.h                                                    \
@@ -59,11 +61,13 @@ BUILT_HEADERS = avconfig.h
 
 OBJS = adler32.o                                                        \
        aes.o                                                            \
+       atomic.o                                                         \
        audio_fifo.o                                                     \
        avstring.o                                                       \
        base64.o                                                         \
        blowfish.o                                                       \
        bprint.o                                                         \
+       buffer.o                                                         \
        channel_layout.o                                                 \
        cpu.o                                                            \
        crc.o                                                            \
@@ -73,6 +77,7 @@ OBJS = adler32.o                                                        \
        fifo.o                                                           \
        file.o                                                           \
        float_dsp.o                                                      \
+       frame.o                                                          \
        hmac.o                                                           \
        imgutils.o                                                       \
        intfloat_readwrite.o                                             \
@@ -106,8 +111,13 @@ OBJS += $(COMPAT_OBJS:%=../compat/%)
 
 SKIPHEADERS          = old_pix_fmts.h
 
+SKIPHEADERS-$(HAVE_MACHINE_RW_BARRIER)          += atomic_suncc.h
+SKIPHEADERS-$(HAVE_MEMORYBARRIER)               += atomic_win32.h
+SKIPHEADERS-$(HAVE_SYNC_VAL_COMPARE_AND_SWAP)   += atomic_gcc.h
+
 TESTPROGS = adler32                                                     \
             aes                                                         \
+            atomic                                                      \
             avstring                                                    \
             base64                                                      \
             blowfish                                                    \

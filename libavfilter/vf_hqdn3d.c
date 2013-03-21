@@ -26,6 +26,7 @@
  * libmpcodecs/vf_hqdn3d.c.
  */
 
+#include "config.h"
 #include "libavutil/common.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/intreadwrite.h"
@@ -33,26 +34,13 @@
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
-
-typedef struct {
-    int16_t *coefs[4];
-    uint16_t *line;
-    uint16_t *frame_prev[3];
-    double strength[4];
-    int hsub, vsub;
-    int depth;
-    void (*denoise_row[17])(uint8_t *src, uint8_t *dst, uint16_t *line_ant, uint16_t *frame_ant, ptrdiff_t w, int16_t *spatial, int16_t *temporal);
-} HQDN3DContext;
-
-void ff_hqdn3d_row_8_x86(uint8_t *src, uint8_t *dst, uint16_t *line_ant, uint16_t *frame_ant, ptrdiff_t w, int16_t *spatial, int16_t *temporal);
-void ff_hqdn3d_row_9_x86(uint8_t *src, uint8_t *dst, uint16_t *line_ant, uint16_t *frame_ant, ptrdiff_t w, int16_t *spatial, int16_t *temporal);
-void ff_hqdn3d_row_10_x86(uint8_t *src, uint8_t *dst, uint16_t *line_ant, uint16_t *frame_ant, ptrdiff_t w, int16_t *spatial, int16_t *temporal);
-void ff_hqdn3d_row_16_x86(uint8_t *src, uint8_t *dst, uint16_t *line_ant, uint16_t *frame_ant, ptrdiff_t w, int16_t *spatial, int16_t *temporal);
+#include "vf_hqdn3d.h"
 
 #define LUT_BITS (depth==16 ? 8 : 4)
-#define LOAD(x) (((depth==8 ? src[x] : AV_RN16A(src+(x)*2)) << (16-depth)) + (((1<<(16-depth))-1)>>1))
-#define STORE(x,val) (depth==8 ? dst[x] = (val) >> (16-depth)\
-                    : AV_WN16A(dst+(x)*2, (val) >> (16-depth)))
+#define LOAD(x) (((depth == 8 ? src[x] : AV_RN16A(src + (x) * 2)) << (16 - depth))\
+                 + (((1 << (16 - depth)) - 1) >> 1))
+#define STORE(x,val) (depth == 8 ? dst[x] = (val) >> (16 - depth) : \
+                                   AV_WN16A(dst + (x) * 2, (val) >> (16 - depth)))
 
 av_always_inline
 static uint32_t lowpass(int prev, int cur, int16_t *coef, int depth)
@@ -311,47 +299,45 @@ static int config_input(AVFilterLink *inlink)
             return AVERROR(ENOMEM);
     }
 
-#if HAVE_YASM
-    hqdn3d->denoise_row[ 8] = ff_hqdn3d_row_8_x86;
-    hqdn3d->denoise_row[ 9] = ff_hqdn3d_row_9_x86;
-    hqdn3d->denoise_row[10] = ff_hqdn3d_row_10_x86;
-    hqdn3d->denoise_row[16] = ff_hqdn3d_row_16_x86;
-#endif
+    if (ARCH_X86)
+        ff_hqdn3d_init_x86(hqdn3d);
 
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *in)
+static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {
     HQDN3DContext *hqdn3d = inlink->dst->priv;
     AVFilterLink *outlink = inlink->dst->outputs[0];
 
-    AVFilterBufferRef *out;
-    int direct = 0, c;
+    AVFrame *out;
+    int direct, c;
 
-    if (in->perms & AV_PERM_WRITE) {
+    if (av_frame_is_writable(in)) {
         direct = 1;
         out = in;
     } else {
-        out = ff_get_video_buffer(outlink, AV_PERM_WRITE, outlink->w, outlink->h);
+        direct = 0;
+        out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
         if (!out) {
-            avfilter_unref_bufferp(&in);
+            av_frame_free(&in);
             return AVERROR(ENOMEM);
         }
-        avfilter_copy_buffer_ref_props(out, in);
+
+        av_frame_copy_props(out, in);
     }
 
     for (c = 0; c < 3; c++) {
         denoise(hqdn3d, in->data[c], out->data[c],
                 hqdn3d->line, &hqdn3d->frame_prev[c],
-                in->video->w >> (!!c * hqdn3d->hsub),
-                in->video->h >> (!!c * hqdn3d->vsub),
+                in->width  >> (!!c * hqdn3d->hsub),
+                in->height >> (!!c * hqdn3d->vsub),
                 in->linesize[c], out->linesize[c],
                 hqdn3d->coefs[c?2:0], hqdn3d->coefs[c?3:1]);
     }
 
     if (!direct)
-        avfilter_unref_bufferp(&in);
+        av_frame_free(&in);
 
     return ff_filter_frame(outlink, out);
 }

@@ -40,7 +40,7 @@ typedef struct {
     unsigned nb_frames;
     FFDrawContext draw;
     FFDrawColor blank;
-    AVFilterBufferRef *out_ref;
+    AVFrame *out_ref;
 } TileContext;
 
 #define REASONABLE_SIZE 1024
@@ -65,14 +65,6 @@ AVFILTER_DEFINE_CLASS(tile);
 static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     TileContext *tile = ctx->priv;
-    static const char *shorthand[] = { "layout", "nb_frames", "margin", "padding", NULL };
-    int ret;
-
-    tile->class = &tile_class;
-    av_opt_set_defaults(tile);
-
-    if ((ret = av_opt_set_from_string(tile, args, shorthand, "=", ":")) < 0)
-        return ret;
 
     if (tile->w > REASONABLE_SIZE || tile->h > REASONABLE_SIZE) {
         av_log(ctx, AV_LOG_ERROR, "Tile size %ux%u is insane.\n",
@@ -138,7 +130,7 @@ static void get_current_tile_pos(AVFilterContext *ctx, unsigned *x, unsigned *y)
     *y = tile->margin + (inlink->h + tile->padding) * ty;
 }
 
-static void draw_blank_frame(AVFilterContext *ctx, AVFilterBufferRef *out_buf)
+static void draw_blank_frame(AVFilterContext *ctx, AVFrame *out_buf)
 {
     TileContext *tile    = ctx->priv;
     AVFilterLink *inlink = ctx->inputs[0];
@@ -154,7 +146,7 @@ static int end_last_frame(AVFilterContext *ctx)
 {
     TileContext *tile     = ctx->priv;
     AVFilterLink *outlink = ctx->outputs[0];
-    AVFilterBufferRef *out_buf = tile->out_ref;
+    AVFrame *out_buf = tile->out_ref;
     int ret;
 
     while (tile->current < tile->nb_frames)
@@ -168,7 +160,7 @@ static int end_last_frame(AVFilterContext *ctx)
  * buffers are fed to filter_frame in the order they were obtained from
  * get_buffer (think B-frames). */
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *picref)
+static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
 {
     AVFilterContext *ctx  = inlink->dst;
     TileContext *tile     = ctx->priv;
@@ -176,13 +168,12 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *picref)
     unsigned x0, y0;
 
     if (!tile->current) {
-        tile->out_ref = ff_get_video_buffer(outlink, AV_PERM_WRITE,
-                                            outlink->w, outlink->h);
+        tile->out_ref = ff_get_video_buffer(outlink, outlink->w, outlink->h);
         if (!tile->out_ref)
             return AVERROR(ENOMEM);
-        avfilter_copy_buffer_ref_props(tile->out_ref, picref);
-        tile->out_ref->video->w = outlink->w;
-        tile->out_ref->video->h = outlink->h;
+        av_frame_copy_props(tile->out_ref, picref);
+        tile->out_ref->width  = outlink->w;
+        tile->out_ref->height = outlink->h;
 
         /* fill surface once for margin/padding */
         if (tile->margin || tile->padding)
@@ -198,7 +189,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *picref)
                        picref->data, picref->linesize,
                        x0, y0, 0, 0, inlink->w, inlink->h);
 
-    avfilter_unref_bufferp(&picref);
+    av_frame_free(&picref);
     if (++tile->current == tile->nb_frames)
         return end_last_frame(ctx);
 
@@ -230,7 +221,6 @@ static const AVFilterPad tile_inputs[] = {
         .name         = "default",
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
-        .min_perms    = AV_PERM_READ,
     },
     { NULL }
 };
@@ -245,6 +235,9 @@ static const AVFilterPad tile_outputs[] = {
     { NULL }
 };
 
+static const char *const shorthand[] =
+    { "layout", "nb_frames", "margin", "padding", NULL };
+
 AVFilter avfilter_vf_tile = {
     .name          = "tile",
     .description   = NULL_IF_CONFIG_SMALL("Tile several successive frames together."),
@@ -254,4 +247,5 @@ AVFilter avfilter_vf_tile = {
     .inputs        = tile_inputs,
     .outputs       = tile_outputs,
     .priv_class    = &tile_class,
+    .shorthand     = shorthand,
 };

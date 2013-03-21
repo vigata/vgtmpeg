@@ -1,4 +1,4 @@
-FATE_SAMPLES_DEMUX += fate-avio-direct
+FATE_SAMPLES_DEMUX-$(call DEMDEC, AVI, FRAPS) += fate-avio-direct
 fate-avio-direct: CMD = framecrc -avioflags direct -i $(SAMPLES)/fraps/fraps-v5-bouncing-balls-partial.avi -avioflags direct
 
 FATE_SAMPLES_DEMUX-$(CONFIG_AAC_DEMUXER) += fate-adts-demux
@@ -24,6 +24,9 @@ fate-cdxl-demux: CMD = framecrc -i $(SAMPLES)/cdxl/mirage.cdxl -vcodec copy -aco
 
 FATE_SAMPLES_DEMUX-$(CONFIG_DAUD_DEMUXER) += fate-d-cinema-demux
 fate-d-cinema-demux: CMD = framecrc -i $(SAMPLES)/d-cinema/THX_Science_FLT_1920-partial.302 -acodec copy
+
+FATE_SAMPLES_DEMUX-$(CONFIG_GIF_DEMUXER) += fate-gif-demux
+fate-gif-demux: CMD = framecrc -i $(SAMPLES)/gif/Newtons_cradle_animation_book_2.gif -vcodec copy
 
 FATE_SAMPLES_DEMUX-$(CONFIG_IV8_DEMUXER) += fate-iv8-demux
 fate-iv8-demux: CMD = framecrc -i $(SAMPLES)/iv8/zzz-partial.mpg -vcodec copy

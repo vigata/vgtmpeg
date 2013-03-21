@@ -23,16 +23,16 @@
  * Ported from MPlayer libmpcodecs/vf_cropdetect.c.
  */
 
-#include <stdio.h>
-
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
+#include "libavutil/opt.h"
 #include "avfilter.h"
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
 
 typedef struct {
+    const AVClass *class;
     int x1, y1, x2, y2;
     int limit;
     int round;
@@ -40,6 +40,18 @@ typedef struct {
     int frame_nb;
     int max_pixsteps[4];
 } CropDetectContext;
+
+#define OFFSET(x) offsetof(CropDetectContext, x)
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+
+static const AVOption cropdetect_options[] = {
+    { "limit", "set black threshold", OFFSET(limit), AV_OPT_TYPE_INT, {.i64=24}, 0, 255, FLAGS },
+    { "round", "set width/height round value", OFFSET(round), AV_OPT_TYPE_INT, {.i64=16}, 0, INT_MAX, FLAGS },
+    { "reset_count", "set after how many frames to reset detected info",  OFFSET(reset_count), AV_OPT_TYPE_INT, {.i64=0}, 0, INT_MAX, FLAGS },
+    { NULL }
+};
+
+AVFILTER_DEFINE_CLASS(cropdetect);
 
 static int query_formats(AVFilterContext *ctx)
 {
@@ -86,19 +98,26 @@ static int checkline(void *ctx, const unsigned char *src, int stride, int len, i
 static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     CropDetectContext *cd = ctx->priv;
+    static const char *shorthand[] = { "limit", "round", "reset_count", NULL };
+    int ret;
 
-    cd->limit = 24;
-    cd->round = 0;
-    cd->reset_count = 0;
     cd->frame_nb = -2;
+    cd->class = &cropdetect_class;
+    av_opt_set_defaults(cd);
 
-    if (args)
-        sscanf(args, "%d:%d:%d", &cd->limit, &cd->round, &cd->reset_count);
+    if ((ret = av_opt_set_from_string(cd, args, shorthand, "=", ":")) < 0)
+        return ret;
 
     av_log(ctx, AV_LOG_VERBOSE, "limit:%d round:%d reset_count:%d\n",
            cd->limit, cd->round, cd->reset_count);
 
     return 0;
+}
+
+static av_cold void uninit(AVFilterContext *ctx)
+{
+    CropDetectContext *cd = ctx->priv;
+    av_opt_free(cd);
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -117,7 +136,7 @@ static int config_input(AVFilterLink *inlink)
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
+static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
     CropDetectContext *cd = ctx->priv;
@@ -128,36 +147,36 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
     if (++cd->frame_nb > 0) {
         // Reset the crop area every reset_count frames, if reset_count is > 0
         if (cd->reset_count > 0 && cd->frame_nb > cd->reset_count) {
-            cd->x1 = frame->video->w-1;
-            cd->y1 = frame->video->h-1;
+            cd->x1 = frame->width  - 1;
+            cd->y1 = frame->height - 1;
             cd->x2 = 0;
             cd->y2 = 0;
             cd->frame_nb = 1;
         }
 
         for (y = 0; y < cd->y1; y++) {
-            if (checkline(ctx, frame->data[0] + frame->linesize[0] * y, bpp, frame->video->w, bpp) > cd->limit) {
+            if (checkline(ctx, frame->data[0] + frame->linesize[0] * y, bpp, frame->width, bpp) > cd->limit) {
                 cd->y1 = y;
                 break;
             }
         }
 
-        for (y = frame->video->h-1; y > cd->y2; y--) {
-            if (checkline(ctx, frame->data[0] + frame->linesize[0] * y, bpp, frame->video->w, bpp) > cd->limit) {
+        for (y = frame->height - 1; y > cd->y2; y--) {
+            if (checkline(ctx, frame->data[0] + frame->linesize[0] * y, bpp, frame->width, bpp) > cd->limit) {
                 cd->y2 = y;
                 break;
             }
         }
 
         for (y = 0; y < cd->x1; y++) {
-            if (checkline(ctx, frame->data[0] + bpp*y, frame->linesize[0], frame->video->h, bpp) > cd->limit) {
+            if (checkline(ctx, frame->data[0] + bpp*y, frame->linesize[0], frame->height, bpp) > cd->limit) {
                 cd->x1 = y;
                 break;
             }
         }
 
-        for (y = frame->video->w-1; y > cd->x2; y--) {
-            if (checkline(ctx, frame->data[0] + bpp*y, frame->linesize[0], frame->video->h, bpp) > cd->limit) {
+        for (y = frame->width - 1; y > cd->x2; y--) {
+            if (checkline(ctx, frame->data[0] + bpp*y, frame->linesize[0], frame->height, bpp) > cd->limit) {
                 cd->x2 = y;
                 break;
             }
@@ -187,8 +206,8 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
         y += (shrink_by/2 + 1) & ~1;
 
         av_log(ctx, AV_LOG_INFO,
-               "x1:%d x2:%d y1:%d y2:%d w:%d h:%d x:%d y:%d pos:%"PRId64" pts:%"PRId64" t:%f crop=%d:%d:%d:%d\n",
-               cd->x1, cd->x2, cd->y1, cd->y2, w, h, x, y, frame->pos, frame->pts,
+               "x1:%d x2:%d y1:%d y2:%d w:%d h:%d x:%d y:%d pts:%"PRId64" t:%f crop=%d:%d:%d:%d\n",
+               cd->x1, cd->x2, cd->y1, cd->y2, w, h, x, y, frame->pts,
                frame->pts == AV_NOPTS_VALUE ? -1 : frame->pts * av_q2d(inlink->time_base),
                w, h, x, y);
     }
@@ -221,10 +240,9 @@ AVFilter avfilter_vf_cropdetect = {
 
     .priv_size = sizeof(CropDetectContext),
     .init      = init,
-
+    .uninit    = uninit,
     .query_formats = query_formats,
-
     .inputs    = avfilter_vf_cropdetect_inputs,
-
     .outputs   = avfilter_vf_cropdetect_outputs,
+    .priv_class = &cropdetect_class,
 };

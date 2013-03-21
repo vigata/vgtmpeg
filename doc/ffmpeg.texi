@@ -167,6 +167,8 @@ Complex filtergraphs are configured with the @option{-filter_complex} option.
 Note that this option is global, since a complex filtergraph by its nature
 cannot be unambiguously associated with a single stream or file.
 
+The @option{-lavfi} option is equivalent to @option{-filter_complex}.
+
 A trivial example of a complex filtergraph is the @code{overlay} filter, which
 has two video inputs and one video output, containing one video overlaid on top
 of the other. Its audio counterpart is the @code{amix} filter.
@@ -255,6 +257,14 @@ libx264, and the 138th audio, which will be encoded with libvorbis.
 @item -t @var{duration} (@emph{output})
 Stop writing the output after its duration reaches @var{duration}.
 @var{duration} may be a number in seconds, or in @code{hh:mm:ss[.xxx]} form.
+
+-to and -t are mutually exclusive and -t has priority.
+
+@item -to @var{position} (@emph{output})
+Stop writing the output at @var{position}.
+@var{position} may be a number in seconds, or in @code{hh:mm:ss[.xxx]} form.
+
+-to and -t are mutually exclusive and -t has priority.
 
 @item -fs @var{limit_size} (@emph{output})
 Set the file size limit, expressed in bytes.
@@ -353,7 +363,8 @@ want to create filter graphs with multiple inputs and/or outputs.
 Specify the preset for matching stream(s).
 
 @item -stats (@emph{global})
-Print encoding progress/statistics. On by default.
+Print encoding progress/statistics. It is on by default, to explicitly
+disable it you need to specify @code{-nostats}.
 
 @item -progress @var{url} (@emph{global})
 Send program-friendly progress information to @var{url}.
@@ -403,11 +414,11 @@ will be used.
 
 E.g. to extract the first attachment to a file named 'out.ttf':
 @example
-ffmpeg -dump_attachment:t:0 out.ttf INPUT
+ffmpeg -dump_attachment:t:0 out.ttf -i INPUT
 @end example
 To extract all attachments to files determined by the @code{filename} tag:
 @example
-ffmpeg -dump_attachment:t "" INPUT
+ffmpeg -dump_attachment:t "" -i INPUT
 @end example
 
 Technical note -- attachments are implemented as codec extradata, so this
@@ -450,21 +461,6 @@ Set the video display aspect ratio specified by @var{aspect}.
 form @var{num}:@var{den}, where @var{num} and @var{den} are the
 numerator and denominator of the aspect ratio. For example "4:3",
 "16:9", "1.3333", and "1.7777" are valid argument values.
-
-@item -croptop @var{size}
-@item -cropbottom @var{size}
-@item -cropleft @var{size}
-@item -cropright @var{size}
-All the crop options have been removed. Use -vf
-crop=width:height:x:y instead.
-
-@item -padtop @var{size}
-@item -padbottom @var{size}
-@item -padleft @var{size}
-@item -padright @var{size}
-@item -padcolor @var{hex_color}
-All the pad options have been removed. Use -vf
-pad=width:height:x:y:color instead.
 
 @item -vn (@emph{output})
 Disable video recording.
@@ -552,9 +548,16 @@ Force video tag/fourcc. This is an alias for @code{-tag:v}.
 Show QP histogram
 @item -vbsf @var{bitstream_filter}
 Deprecated see -bsf
+
 @item -force_key_frames[:@var{stream_specifier}] @var{time}[,@var{time}...] (@emph{output,per-stream})
+@item -force_key_frames[:@var{stream_specifier}] expr:@var{expr} (@emph{output,per-stream})
 Force key frames at the specified timestamps, more precisely at the first
 frames after each specified time.
+
+If the argument is prefixed with @code{expr:}, the string @var{expr}
+is interpreted like an expression and is evaluated for each frame. A
+key frame is forced in case the evaluation is non-zero.
+
 If one of the times is "@code{chapters}[@var{delta}]", it is expanded into
 the time of the beginning of all chapters in the file, shifted by
 @var{delta}, expressed as a time in seconds.
@@ -566,6 +569,37 @@ before the beginning of every chapter:
 @example
 -force_key_frames 0:05:00,chapters-0.1
 @end example
+
+The expression in @var{expr} can contain the following constants:
+@table @option
+@item n
+the number of current processed frame, starting from 0
+@item n_forced
+the number of forced frames
+@item prev_forced_n
+the number of the previous forced frame, it is @code{NAN} when no
+keyframe was forced yet
+@item prev_forced_t
+the time of the previous forced frame, it is @code{NAN} when no
+keyframe was forced yet
+@item t
+the time of the current processed frame
+@end table
+
+For example to force a key frame every 5 seconds, you can specify:
+@example
+-force_key_frames expr:gte(t,n_forced*5)
+@end example
+
+To force a key frame 5 seconds after the time of the last forced one,
+starting from second 13:
+@example
+-force_key_frames expr:if(isnan(prev_forced_t),gte(t,13),gte(t,prev_forced_t+5))
+@end example
+
+Note that forcing too many keyframes is very harmful for the lookahead
+algorithms of certain encoders: using fixed-GOP options or similar
+would be more efficient.
 
 @item -copyinkf[:@var{stream_specifier}] (@emph{output,per-stream})
 When doing stream copy, copy also non-key frames found at the
@@ -611,6 +645,12 @@ This is an alias for @code{-filter:a}, see the @ref{filter_option,,-filter optio
 Force audio tag/fourcc. This is an alias for @code{-tag:a}.
 @item -absf @var{bitstream_filter}
 Deprecated, see -bsf
+@item -guess_layout_max @var{channels} (@emph{input,per-stream})
+If some input channel layout is not known, try to guess only if it
+corresponds to at most the specified number of channels. For example, 2
+tells to @command{ffmpeg} to recognize 1 channel as mono and 2 channels as
+stereo but not 6 channels as 5.1. The default is to always try to guess. Use
+0 to disable all guessing.
 @end table
 
 @section Subtitle options:
@@ -642,6 +682,9 @@ non-monotonic timestamps.
 Note that this option will delay the output of all data until the next
 subtitle packet is decoded: it may increase memory consumption and latency a
 lot.
+
+@item -canvas_size @var{size}
+Set the size of the canvas used to render subtitles.
 
 @end table
 
@@ -859,6 +902,10 @@ Chooses between 1 and 2 depending on muxer capabilities. This is the
 default method.
 @end table
 
+Note that the timestamps may be further modified by the muxer, after this.
+For example, in the case that the format option @option{avoid_negative_ts}
+is enabled.
+
 With -map you can select from which stream the timestamps should be
 taken. You can leave either video or audio unchanged and sync the
 remaining stream(s) to the unchanged one.
@@ -868,6 +915,11 @@ Audio sync method. "Stretches/squeezes" the audio stream to match the timestamps
 the parameter is the maximum samples per second by which the audio is changed.
 -async 1 is a special case where only the start of the audio stream is corrected
 without any later correction.
+
+Note that the timestamps may be further modified by the muxer, after this.
+For example, in the case that the format option @option{avoid_negative_ts}
+is enabled.
+
 This option has been deprecated. Use the @code{aresample} audio filter instead.
 
 @item -copyts
@@ -876,7 +928,8 @@ to sanitize them. In particular, do not remove the initial start time
 offset value.
 
 Note that, depending on the @option{vsync} option or on specific muxer
-processing, the output timestamps may mismatch with the input
+processing (e.g. in case the format option @option{avoid_negative_ts}
+is enabled) the output timestamps may mismatch with the input
 timestamps even when this option is selected.
 
 @item -copytb @var{mode}
@@ -991,11 +1044,16 @@ To generate 5 seconds of pure red video using lavfi @code{color} source:
 @example
 ffmpeg -filter_complex 'color=c=red' -t 5 out.mkv
 @end example
+
+@item -lavfi @var{filtergraph} (@emph{global})
+Define a complex filter graph, i.e. one with arbitrary number of inputs and/or
+outputs. Equivalent to @option{-filter_complex}.
+
 @end table
 
 As a special exception, you can use a bitmap subtitle stream as input: it
 will be converted into a video with the same size as the largest video in
-the file, or 720×576 if no video is present. Note that this is an
+the file, or 720x576 if no video is present. Note that this is an
 experimental and temporary solution. It will be removed once libavfilter has
 proper support for subtitles.
 
@@ -1301,7 +1359,7 @@ ffmpeg -i src.ext -lmax 21*QP2LAMBDA dst.ext
 @url{ffmpeg-scaler.html,ffmpeg-scaler},
 @url{ffmpeg-resampler.html,ffmpeg-resampler},
 @url{ffmpeg-codecs.html,ffmpeg-codecs},
-@url{ffmpeg-bitstream-filters,ffmpeg-bitstream-filters},
+@url{ffmpeg-bitstream-filters.html,ffmpeg-bitstream-filters},
 @url{ffmpeg-formats.html,ffmpeg-formats},
 @url{ffmpeg-devices.html,ffmpeg-devices},
 @url{ffmpeg-protocols.html,ffmpeg-protocols},

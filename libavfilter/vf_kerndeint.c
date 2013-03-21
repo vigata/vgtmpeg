@@ -40,8 +40,10 @@ typedef struct {
     int           frame; ///< frame count, starting from 0
     int           thresh, map, order, sharp, twoway;
     int           vsub;
-    uint8_t       *tmp_data [4];  ///< temporary plane data buffer
-    int           tmp_bwidth[4];  ///< temporary plane byte width
+    int           is_packed_rgb;
+    uint8_t       *tmp_data    [4];  ///< temporary plane data buffer
+    int            tmp_linesize[4];  ///< temporary plane byte linesize
+    int            tmp_bwidth  [4];  ///< temporary plane byte width
 } KerndeintContext;
 
 #define OFFSET(x) offsetof(KerndeintContext, x)
@@ -96,24 +98,29 @@ static int query_formats(AVFilterContext *ctx)
 static int config_props(AVFilterLink *inlink)
 {
     KerndeintContext *kerndeint = inlink->dst->priv;
-    const AVPixFmtDescriptor *desc = &av_pix_fmt_descriptors[inlink->format];
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
     int ret;
 
+    kerndeint->is_packed_rgb = av_pix_fmt_desc_get(inlink->format)->flags & PIX_FMT_RGB;
     kerndeint->vsub = desc->log2_chroma_h;
 
-    ret = av_image_alloc(kerndeint->tmp_data, kerndeint->tmp_bwidth,
-                          inlink->w, inlink->h, inlink->format, 1);
+    ret = av_image_alloc(kerndeint->tmp_data, kerndeint->tmp_linesize,
+                         inlink->w, inlink->h, inlink->format, 16);
     if (ret < 0)
         return ret;
     memset(kerndeint->tmp_data[0], 0, ret);
+
+    if ((ret = av_image_fill_linesizes(kerndeint->tmp_bwidth, inlink->format, inlink->w)) < 0)
+        return ret;
+
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *inpic)
+static int filter_frame(AVFilterLink *inlink, AVFrame *inpic)
 {
     KerndeintContext *kerndeint = inlink->dst->priv;
     AVFilterLink *outlink = inlink->dst->outputs[0];
-    AVFilterBufferRef *outpic;
+    AVFrame *outpic;
     const uint8_t *prvp;   ///< Previous field's pixel line number n
     const uint8_t *prvpp;  ///< Previous field's pixel line number (n - 1)
     const uint8_t *prvpn;  ///< Previous field's pixel line number (n + 1)
@@ -145,15 +152,15 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *inpic)
     const int sharp  = kerndeint->sharp;
     const int twoway = kerndeint->twoway;
 
-    const int is_packed_rgb = av_pix_fmt_desc_get(inlink->format)->flags & PIX_FMT_RGB;
+    const int is_packed_rgb = kerndeint->is_packed_rgb;
 
-    outpic = ff_get_video_buffer(outlink, AV_PERM_WRITE|AV_PERM_ALIGN, outlink->w, outlink->h);
+    outpic = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!outpic) {
-        avfilter_unref_bufferp(&inpic);
+        av_frame_free(&inpic);
         return AVERROR(ENOMEM);
     }
-    avfilter_copy_buffer_ref_props(outpic, inpic);
-    outpic->video->interlaced = 0;
+    av_frame_copy_props(outpic, inpic);
+    outpic->interlaced_frame = 0;
 
     for (plane = 0; inpic->data[plane] && plane < 4; plane++) {
         h = plane == 0 ? inlink->h : inlink->h >> kerndeint->vsub;
@@ -161,7 +168,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *inpic)
 
         srcp = srcp_saved = inpic->data[plane];
         src_linesize      = inpic->linesize[plane];
-        psrc_linesize     = kerndeint->tmp_bwidth[plane];
+        psrc_linesize     = kerndeint->tmp_linesize[plane];
         dstp = dstp_saved = outpic->data[plane];
         dst_linesize      = outpic->linesize[plane];
         srcp              = srcp_saved + (1 - order) * src_linesize;
@@ -288,7 +295,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *inpic)
         av_image_copy_plane(dstp, psrc_linesize, srcp, src_linesize, bwidth, h);
     }
 
-    avfilter_unref_buffer(inpic);
+    av_frame_free(&inpic);
     return ff_filter_frame(outlink, outpic);
 }
 
@@ -298,7 +305,6 @@ static const AVFilterPad kerndeint_inputs[] = {
         .type         = AVMEDIA_TYPE_VIDEO,
         .filter_frame = filter_frame,
         .config_props = config_props,
-        .min_perms    = AV_PERM_READ,
     },
     { NULL }
 };

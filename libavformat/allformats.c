@@ -263,6 +263,7 @@ void av_register_all(void)
     REGISTER_DEMUXER (SUBVIEWER,        subviewer);
     REGISTER_MUXDEMUX(SWF,              swf);
     REGISTER_DEMUXER (TAK,              tak);
+    REGISTER_MUXER   (TEE, tee);
     REGISTER_DEMUXER (TEDCAPTIONS,      tedcaptions);
     REGISTER_MUXER   (TG2,              tg2);
     REGISTER_MUXER   (TGP,              tgp);
@@ -274,7 +275,7 @@ void av_register_all(void)
     REGISTER_DEMUXER (TTA,              tta);
     REGISTER_DEMUXER (TXD,              txd);
     REGISTER_DEMUXER (TTY,              tty);
-    REGISTER_DEMUXER (VC1,              vc1);
+    REGISTER_MUXDEMUX(VC1,              vc1);
     REGISTER_MUXDEMUX(VC1T,             vc1t);
     REGISTER_DEMUXER (VIVO,             vivo);
     REGISTER_DEMUXER (VMD,              vmd);
@@ -299,9 +300,6 @@ void av_register_all(void)
     REGISTER_MUXDEMUX(YUV4MPEGPIPE,     yuv4mpegpipe);
 
     /* protocols */
-#if FF_API_APPLEHTTP_PROTO
-    REGISTER_PROTOCOL(APPLEHTTP,        applehttp);
-#endif
     REGISTER_PROTOCOL(BLURAY,           bluray);
     REGISTER_PROTOCOL(CACHE,            cache);
     REGISTER_PROTOCOL(CONCAT,           concat);

@@ -23,6 +23,7 @@
 
 #include "libavutil/avassert.h"
 #include "avcodec.h"
+#include "error_resilience.h"
 #include "get_bits.h"
 #include "mpegvideo.h"
 #include "msmpeg4data.h"
@@ -770,18 +771,18 @@ int ff_intrax8_decode_picture(IntraX8Context * const w, int dquant, int quant_of
                 /*emulate MB info in the relevant tables*/
                 s->mbskip_table [mb_xy]=0;
                 s->mbintra_table[mb_xy]=1;
-                s->current_picture.f.qscale_table[mb_xy] = w->quant;
+                s->current_picture.qscale_table[mb_xy] = w->quant;
                 mb_xy++;
             }
             s->dest[0]+= 8;
         }
         if(s->mb_y&1){
-            ff_draw_horiz_band(s, (s->mb_y-1)*8, 16);
+            ff_mpeg_draw_horiz_band(s, (s->mb_y-1)*8, 16);
         }
     }
 
 error:
-    ff_er_add_slice(s, s->resync_mb_x, s->resync_mb_y,
+    ff_er_add_slice(&s->er, s->resync_mb_x, s->resync_mb_y,
                         (s->mb_x>>1)-1, (s->mb_y>>1)-1,
                         ER_MB_END );
     return 0;

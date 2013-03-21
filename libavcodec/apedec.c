@@ -129,7 +129,6 @@ typedef struct APEPredictor {
 typedef struct APEContext {
     AVClass *class;                          ///< class for AVOptions
     AVCodecContext *avctx;
-    AVFrame frame;
     DSPContext dsp;
     int channels;
     int samples;                             ///< samples left to decode in current frame
@@ -162,7 +161,25 @@ typedef struct APEContext {
     const uint8_t *ptr;                      ///< current position in frame data
 
     int error;
+
+    void (*entropy_decode_mono)(struct APEContext *ctx, int blockstodecode);
+    void (*entropy_decode_stereo)(struct APEContext *ctx, int blockstodecode);
+    void (*predictor_decode_mono)(struct APEContext *ctx, int count);
+    void (*predictor_decode_stereo)(struct APEContext *ctx, int count);
 } APEContext;
+
+static void ape_apply_filters(APEContext *ctx, int32_t *decoded0,
+                              int32_t *decoded1, int count);
+
+static void entropy_decode_mono_3900(APEContext *ctx, int blockstodecode);
+static void entropy_decode_stereo_3900(APEContext *ctx, int blockstodecode);
+static void entropy_decode_mono_3990(APEContext *ctx, int blockstodecode);
+static void entropy_decode_stereo_3990(APEContext *ctx, int blockstodecode);
+
+static void predictor_decode_mono_3930(APEContext *ctx, int count);
+static void predictor_decode_stereo_3930(APEContext *ctx, int count);
+static void predictor_decode_mono_3950(APEContext *ctx, int count);
+static void predictor_decode_stereo_3950(APEContext *ctx, int count);
 
 // TODO: dsputilize
 
@@ -206,8 +223,8 @@ static av_cold int ape_decode_init(AVCodecContext *avctx)
         avctx->sample_fmt = AV_SAMPLE_FMT_S32P;
         break;
     default:
-        av_log_ask_for_sample(avctx, "Unsupported bits per coded sample %d\n",
-                              s->bps);
+        avpriv_request_sample(avctx,
+                              "%d bits per coded sample", s->bps);
         return AVERROR_PATCHWELCOME;
     }
     s->avctx             = avctx;
@@ -232,11 +249,24 @@ static av_cold int ape_decode_init(AVCodecContext *avctx)
                          filter_alloc_fail);
     }
 
+    if (s->fileversion < 3990) {
+        s->entropy_decode_mono   = entropy_decode_mono_3900;
+        s->entropy_decode_stereo = entropy_decode_stereo_3900;
+    } else {
+        s->entropy_decode_mono   = entropy_decode_mono_3990;
+        s->entropy_decode_stereo = entropy_decode_stereo_3990;
+    }
+
+    if (s->fileversion < 3950) {
+        s->predictor_decode_mono   = predictor_decode_mono_3930;
+        s->predictor_decode_stereo = predictor_decode_stereo_3930;
+    } else {
+        s->predictor_decode_mono   = predictor_decode_mono_3950;
+        s->predictor_decode_stereo = predictor_decode_stereo_3950;
+    }
+
     ff_dsputil_init(&s->dsp, avctx);
     avctx->channel_layout = (avctx->channels==2) ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO;
-
-    avcodec_get_frame_defaults(&s->frame);
-    avctx->coded_frame = &s->frame;
 
     return 0;
 filter_alloc_fail:
@@ -405,66 +435,29 @@ static inline void update_rice(APERice *rice, unsigned int x)
         rice->k++;
 }
 
-static inline int ape_decode_value(APEContext *ctx, APERice *rice)
+static inline int ape_decode_value_3900(APEContext *ctx, APERice *rice)
 {
     unsigned int x, overflow;
+    int tmpk;
 
-    if (ctx->fileversion < 3990) {
-        int tmpk;
+    overflow = range_get_symbol(ctx, counts_3970, counts_diff_3970);
 
-        overflow = range_get_symbol(ctx, counts_3970, counts_diff_3970);
+    if (overflow == (MODEL_ELEMENTS - 1)) {
+        tmpk = range_decode_bits(ctx, 5);
+        overflow = 0;
+    } else
+        tmpk = (rice->k < 1) ? 0 : rice->k - 1;
 
-        if (overflow == (MODEL_ELEMENTS - 1)) {
-            tmpk = range_decode_bits(ctx, 5);
-            overflow = 0;
-        } else
-            tmpk = (rice->k < 1) ? 0 : rice->k - 1;
-
-        if (tmpk <= 16)
-            x = range_decode_bits(ctx, tmpk);
-        else if (tmpk <= 32) {
-            x = range_decode_bits(ctx, 16);
-            x |= (range_decode_bits(ctx, tmpk - 16) << 16);
-        } else {
-            av_log(ctx->avctx, AV_LOG_ERROR, "Too many bits: %d\n", tmpk);
-            return AVERROR_INVALIDDATA;
-        }
-        x += overflow << tmpk;
+    if (tmpk <= 16)
+        x = range_decode_bits(ctx, tmpk);
+    else if (tmpk <= 32) {
+        x = range_decode_bits(ctx, 16);
+        x |= (range_decode_bits(ctx, tmpk - 16) << 16);
     } else {
-        int base, pivot;
-
-        pivot = rice->ksum >> 5;
-        if (pivot == 0)
-            pivot = 1;
-
-        overflow = range_get_symbol(ctx, counts_3980, counts_diff_3980);
-
-        if (overflow == (MODEL_ELEMENTS - 1)) {
-            overflow  = range_decode_bits(ctx, 16) << 16;
-            overflow |= range_decode_bits(ctx, 16);
-        }
-
-        if (pivot < 0x10000) {
-            base = range_decode_culfreq(ctx, pivot);
-            range_decode_update(ctx, 1, base);
-        } else {
-            int base_hi = pivot, base_lo;
-            int bbits = 0;
-
-            while (base_hi & ~0xFFFF) {
-                base_hi >>= 1;
-                bbits++;
-            }
-            base_hi = range_decode_culfreq(ctx, base_hi + 1);
-            range_decode_update(ctx, 1, base_hi);
-            base_lo = range_decode_culfreq(ctx, 1 << bbits);
-            range_decode_update(ctx, 1, base_lo);
-
-            base = (base_hi << bbits) + base_lo;
-        }
-
-        x = base + overflow * pivot;
+        av_log(ctx->avctx, AV_LOG_ERROR, "Too many bits: %d\n", tmpk);
+        return AVERROR_INVALIDDATA;
     }
+    x += overflow << tmpk;
 
     update_rice(rice, x);
 
@@ -475,15 +468,87 @@ static inline int ape_decode_value(APEContext *ctx, APERice *rice)
         return -(x >> 1);
 }
 
-static void entropy_decode(APEContext *ctx, int blockstodecode, int stereo)
+static inline int ape_decode_value_3990(APEContext *ctx, APERice *rice)
+{
+    unsigned int x, overflow;
+    int base, pivot;
+
+    pivot = rice->ksum >> 5;
+    if (pivot == 0)
+        pivot = 1;
+
+    overflow = range_get_symbol(ctx, counts_3980, counts_diff_3980);
+
+    if (overflow == (MODEL_ELEMENTS - 1)) {
+        overflow  = range_decode_bits(ctx, 16) << 16;
+        overflow |= range_decode_bits(ctx, 16);
+    }
+
+    if (pivot < 0x10000) {
+        base = range_decode_culfreq(ctx, pivot);
+        range_decode_update(ctx, 1, base);
+    } else {
+        int base_hi = pivot, base_lo;
+        int bbits = 0;
+
+        while (base_hi & ~0xFFFF) {
+            base_hi >>= 1;
+            bbits++;
+        }
+        base_hi = range_decode_culfreq(ctx, base_hi + 1);
+        range_decode_update(ctx, 1, base_hi);
+        base_lo = range_decode_culfreq(ctx, 1 << bbits);
+        range_decode_update(ctx, 1, base_lo);
+
+        base = (base_hi << bbits) + base_lo;
+    }
+
+    x = base + overflow * pivot;
+
+    update_rice(rice, x);
+
+    /* Convert to signed */
+    if (x & 1)
+        return (x >> 1) + 1;
+    else
+        return -(x >> 1);
+}
+
+static void entropy_decode_mono_3900(APEContext *ctx, int blockstodecode)
+{
+    int32_t *decoded0 = ctx->decoded[0];
+
+    while (blockstodecode--)
+        *decoded0++ = ape_decode_value_3900(ctx, &ctx->riceY);
+}
+
+static void entropy_decode_stereo_3900(APEContext *ctx, int blockstodecode)
 {
     int32_t *decoded0 = ctx->decoded[0];
     int32_t *decoded1 = ctx->decoded[1];
 
     while (blockstodecode--) {
-        *decoded0++ = ape_decode_value(ctx, &ctx->riceY);
-        if (stereo)
-            *decoded1++ = ape_decode_value(ctx, &ctx->riceX);
+        *decoded0++ = ape_decode_value_3900(ctx, &ctx->riceY);
+        *decoded1++ = ape_decode_value_3900(ctx, &ctx->riceX);
+    }
+}
+
+static void entropy_decode_mono_3990(APEContext *ctx, int blockstodecode)
+{
+    int32_t *decoded0 = ctx->decoded[0];
+
+    while (blockstodecode--)
+        *decoded0++ = ape_decode_value_3990(ctx, &ctx->riceY);
+}
+
+static void entropy_decode_stereo_3990(APEContext *ctx, int blockstodecode)
+{
+    int32_t *decoded0 = ctx->decoded[0];
+    int32_t *decoded1 = ctx->decoded[1];
+
+    while (blockstodecode--) {
+        *decoded0++ = ape_decode_value_3990(ctx, &ctx->riceY);
+        *decoded1++ = ape_decode_value_3990(ctx, &ctx->riceX);
     }
 }
 
@@ -545,6 +610,86 @@ static inline int APESIGN(int32_t x) {
     return (x < 0) - (x > 0);
 }
 
+static av_always_inline int predictor_update_3930(APEPredictor *p,
+                                                  const int decoded, const int filter,
+                                                  const int delayA)
+{
+    int32_t predictionA, sign;
+    int32_t d0, d1, d2, d3;
+
+    p->buf[delayA]     = p->lastA[filter];
+    d0 = p->buf[delayA    ];
+    d1 = p->buf[delayA    ] - p->buf[delayA - 1];
+    d2 = p->buf[delayA - 1] - p->buf[delayA - 2];
+    d3 = p->buf[delayA - 2] - p->buf[delayA - 3];
+
+    predictionA = d0 * p->coeffsA[filter][0] +
+                  d1 * p->coeffsA[filter][1] +
+                  d2 * p->coeffsA[filter][2] +
+                  d3 * p->coeffsA[filter][3];
+
+    p->lastA[filter] = decoded + (predictionA >> 9);
+    p->filterA[filter] = p->lastA[filter] + ((p->filterA[filter] * 31) >> 5);
+
+    sign = APESIGN(decoded);
+    p->coeffsA[filter][0] += ((d0 < 0) * 2 - 1) * sign;
+    p->coeffsA[filter][1] += ((d1 < 0) * 2 - 1) * sign;
+    p->coeffsA[filter][2] += ((d2 < 0) * 2 - 1) * sign;
+    p->coeffsA[filter][3] += ((d3 < 0) * 2 - 1) * sign;
+
+    return p->filterA[filter];
+}
+
+static void predictor_decode_stereo_3930(APEContext *ctx, int count)
+{
+    APEPredictor *p = &ctx->predictor;
+    int32_t *decoded0 = ctx->decoded[0];
+    int32_t *decoded1 = ctx->decoded[1];
+
+    ape_apply_filters(ctx, ctx->decoded[0], ctx->decoded[1], count);
+
+    while (count--) {
+        /* Predictor Y */
+        int Y = *decoded1, X = *decoded0;
+        *decoded0 = predictor_update_3930(p, Y, 0, YDELAYA);
+        decoded0++;
+        *decoded1 = predictor_update_3930(p, X, 1, XDELAYA);
+        decoded1++;
+
+        /* Combined */
+        p->buf++;
+
+        /* Have we filled the history buffer? */
+        if (p->buf == p->historybuffer + HISTORY_SIZE) {
+            memmove(p->historybuffer, p->buf,
+                    PREDICTOR_SIZE * sizeof(*p->historybuffer));
+            p->buf = p->historybuffer;
+        }
+    }
+}
+
+static void predictor_decode_mono_3930(APEContext *ctx, int count)
+{
+    APEPredictor *p = &ctx->predictor;
+    int32_t *decoded0 = ctx->decoded[0];
+
+    ape_apply_filters(ctx, ctx->decoded[0], NULL, count);
+
+    while (count--) {
+        *decoded0 = predictor_update_3930(p, *decoded0, 0, YDELAYA);
+        decoded0++;
+
+        p->buf++;
+
+        /* Have we filled the history buffer? */
+        if (p->buf == p->historybuffer + HISTORY_SIZE) {
+            memmove(p->historybuffer, p->buf,
+                    PREDICTOR_SIZE * sizeof(*p->historybuffer));
+            p->buf = p->historybuffer;
+        }
+    }
+}
+
 static av_always_inline int predictor_update_filter(APEPredictor *p,
                                                     const int decoded, const int filter,
                                                     const int delayA,  const int delayB,
@@ -592,11 +737,13 @@ static av_always_inline int predictor_update_filter(APEPredictor *p,
     return p->filterA[filter];
 }
 
-static void predictor_decode_stereo(APEContext *ctx, int count)
+static void predictor_decode_stereo_3950(APEContext *ctx, int count)
 {
     APEPredictor *p = &ctx->predictor;
     int32_t *decoded0 = ctx->decoded[0];
     int32_t *decoded1 = ctx->decoded[1];
+
+    ape_apply_filters(ctx, ctx->decoded[0], ctx->decoded[1], count);
 
     while (count--) {
         /* Predictor Y */
@@ -619,11 +766,13 @@ static void predictor_decode_stereo(APEContext *ctx, int count)
     }
 }
 
-static void predictor_decode_mono(APEContext *ctx, int count)
+static void predictor_decode_mono_3950(APEContext *ctx, int count)
 {
     APEPredictor *p = &ctx->predictor;
     int32_t *decoded0 = ctx->decoded[0];
     int32_t predictionA, currentA, A, sign;
+
+    ape_apply_filters(ctx, ctx->decoded[0], NULL, count);
 
     currentA = p->lastA[0];
 
@@ -783,11 +932,10 @@ static void ape_unpack_mono(APEContext *ctx, int count)
         return;
     }
 
-    entropy_decode(ctx, count, 0);
-    ape_apply_filters(ctx, ctx->decoded[0], NULL, count);
+    ctx->entropy_decode_mono(ctx, count);
 
     /* Now apply the predictor decoding */
-    predictor_decode_mono(ctx, count);
+    ctx->predictor_decode_mono(ctx, count);
 
     /* Pseudo-stereo - just copy left channel to right channel */
     if (ctx->channels == 2) {
@@ -807,11 +955,10 @@ static void ape_unpack_stereo(APEContext *ctx, int count)
         return;
     }
 
-    entropy_decode(ctx, count, 1);
-    ape_apply_filters(ctx, decoded0, decoded1, count);
+    ctx->entropy_decode_stereo(ctx, count);
 
     /* Now apply the predictor decoding */
-    predictor_decode_stereo(ctx, count);
+    ctx->predictor_decode_stereo(ctx, count);
 
     /* Decorrelate and scale to output depth */
     while (count--) {
@@ -826,6 +973,7 @@ static void ape_unpack_stereo(APEContext *ctx, int count)
 static int ape_decode_frame(AVCodecContext *avctx, void *data,
                             int *got_frame_ptr, AVPacket *avpkt)
 {
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     APEContext *s = avctx->priv_data;
     uint8_t *sample8;
@@ -855,11 +1003,13 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
             av_log(avctx, AV_LOG_WARNING, "packet size is not a multiple of 4. "
                    "extra bytes at the end will be skipped.\n");
         }
-
+        if (s->fileversion < 3950) // previous versions overread two bytes
+            buf_size += 2;
         av_fast_malloc(&s->data, &s->data_size, buf_size);
         if (!s->data)
             return AVERROR(ENOMEM);
         s->dsp.bswap_buf((uint32_t*)s->data, (const uint32_t*)buf, buf_size >> 2);
+        memset(s->data + (buf_size & ~3), 0, buf_size & 3);
         s->ptr = s->data;
         s->data_end = s->data + buf_size;
 
@@ -906,11 +1056,9 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
     s->decoded[1] = s->decoded_buffer + FFALIGN(blockstodecode, 8);
 
     /* get output buffer */
-    s->frame.nb_samples = blockstodecode;
-    if ((ret = ff_get_buffer(avctx, &s->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    frame->nb_samples = blockstodecode;
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
 
     s->error=0;
 
@@ -929,21 +1077,21 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
     switch (s->bps) {
     case 8:
         for (ch = 0; ch < s->channels; ch++) {
-            sample8 = (uint8_t *)s->frame.data[ch];
+            sample8 = (uint8_t *)frame->data[ch];
             for (i = 0; i < blockstodecode; i++)
                 *sample8++ = (s->decoded[ch][i] + 0x80) & 0xff;
         }
         break;
     case 16:
         for (ch = 0; ch < s->channels; ch++) {
-            sample16 = (int16_t *)s->frame.data[ch];
+            sample16 = (int16_t *)frame->data[ch];
             for (i = 0; i < blockstodecode; i++)
                 *sample16++ = s->decoded[ch][i];
         }
         break;
     case 24:
         for (ch = 0; ch < s->channels; ch++) {
-            sample24 = (int32_t *)s->frame.data[ch];
+            sample24 = (int32_t *)frame->data[ch];
             for (i = 0; i < blockstodecode; i++)
                 *sample24++ = s->decoded[ch][i] << 8;
         }
@@ -952,8 +1100,7 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
 
     s->samples -= blockstodecode;
 
-    *got_frame_ptr   = 1;
-    *(AVFrame *)data = s->frame;
+    *got_frame_ptr = 1;
 
     return !s->samples ? avpkt->size : 0;
 }

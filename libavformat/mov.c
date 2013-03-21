@@ -696,6 +696,9 @@ static int mov_read_chan(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (atom.size < 16)
         return 0;
 
+    /* skip version and flags */
+    avio_skip(pb, 4);
+
     ff_mov_read_chan(c->fc, pb, st, atom.size - 4);
 
     return 0;
@@ -832,7 +835,7 @@ static int mov_read_mdhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     version = avio_r8(pb);
     if (version > 1) {
-        av_log_ask_for_sample(c, "unsupported version %d\n", version);
+        avpriv_request_sample(c->fc, "Version %d", version);
         return AVERROR_PATCHWELCOME;
     }
     avio_rb24(pb); /* flags */
@@ -2695,15 +2698,6 @@ static int mov_read_elst(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
-static int mov_read_chan2(MOVContext *c, AVIOContext *pb, MOVAtom atom)
-{
-    if (atom.size < 16)
-        return 0;
-    avio_skip(pb, 4);
-    ff_mov_read_chan(c->fc, pb, c->fc->streams[0],  atom.size - 4);
-    return 0;
-}
-
 static int mov_read_tmcd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     MOVStreamContext *sc;
@@ -3179,7 +3173,7 @@ static int mov_read_header(AVFormatContext *s)
                 if (s->streams[j]->id == sc->timecode_track)
                     tmcd_st_id = j;
 
-            if (tmcd_st_id < 0)
+            if (tmcd_st_id < 0 || tmcd_st_id == i)
                 continue;
             tcr = av_dict_get(s->streams[tmcd_st_id]->metadata, "timecode", NULL, 0);
             if (tcr)

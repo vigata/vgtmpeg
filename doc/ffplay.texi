@@ -84,6 +84,12 @@ output. In the filter graph, the input is associated to the label
 ffmpeg-filters manual for more information about the filtergraph
 syntax.
 
+@item -af @var{filter_graph}
+@var{filter_graph} is a description of the filter graph to apply to
+the input audio.
+Use the option "-filters" to show all the available filters (including
+sources and sinks).
+
 @item -i @var{input_file}
 Read @var{input_file}.
 @end table
@@ -93,9 +99,13 @@ Read @var{input_file}.
 @item -pix_fmt @var{format}
 Set pixel format.
 This option has been deprecated in favor of private options, try -pixel_format.
+
 @item -stats
-Show the stream duration, the codec parameters, the current position in
-the stream and the audio/video synchronisation drift.
+Print several playback statistics, in particular show the stream
+duration, the codec parameters, the current position in the stream and
+the audio/video synchronisation drift. It is on by default, to
+explicitly disable it you need to specify @code{-nostats}.
+
 @item -bug
 Work around bugs.
 @item -fast
@@ -199,7 +209,7 @@ Seek to percentage in file corresponding to fraction of width.
 @url{ffmpeg-scaler.html,ffmpeg-scaler},
 @url{ffmpeg-resampler.html,ffmpeg-resampler},
 @url{ffmpeg-codecs.html,ffmpeg-codecs},
-@url{ffmpeg-bitstream-filters,ffmpeg-bitstream-filters},
+@url{ffmpeg-bitstream-filters.html,ffmpeg-bitstream-filters},
 @url{ffmpeg-formats.html,ffmpeg-formats},
 @url{ffmpeg-devices.html,ffmpeg-devices},
 @url{ffmpeg-protocols.html,ffmpeg-protocols},

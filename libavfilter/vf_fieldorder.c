@@ -23,11 +23,7 @@
  * video field order filter, heavily influenced by vf_pad.c
  */
 
-/* #define DEBUG */
-
-#include <stdio.h>
-#include <string.h>
-
+#include "libavutil/opt.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 #include "libavutil/pixdesc.h"
@@ -36,34 +32,45 @@
 #include "internal.h"
 #include "video.h"
 
-typedef struct
-{
+enum FieldOrder {
+    ORDER_TFF,
+    ORDER_BFF,
+    ORDER_NB,
+};
+
+typedef struct {
+    const AVClass *class;
+    enum FieldOrder order;
     unsigned int dst_tff;      ///< output bff/tff
     int          line_size[4]; ///< bytes of pixel data per line for each plane
 } FieldOrderContext;
 
+#define OFFSET(x) offsetof(FieldOrderContext, x)
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+
+static const AVOption fieldorder_options[] = {
+    { "order", "set output field order", OFFSET(order), AV_OPT_TYPE_INT, {.i64=ORDER_TFF}, 0, ORDER_NB-1, FLAGS, "order" },
+    { "tff",   "set top field first",    0, AV_OPT_TYPE_CONST, {.i64=ORDER_TFF}, .flags=FLAGS, .unit="order" },
+    { "bff",   "set bottom field first", 0, AV_OPT_TYPE_CONST, {.i64=ORDER_BFF}, .flags=FLAGS, .unit="order" },
+    { NULL }
+};
+
+AVFILTER_DEFINE_CLASS(fieldorder);
+
 static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     FieldOrderContext *fieldorder = ctx->priv;
+    int ret;
+    static const char *shorthand[] = { "order", NULL };
 
-    const char *tff = "tff";
-    const char *bff = "bff";
+    fieldorder->class = &fieldorder_class;
+    av_opt_set_defaults(fieldorder);
 
-    if (!args) {
-        fieldorder->dst_tff = 1;
-    } else if (sscanf(args, "%u", &fieldorder->dst_tff) == 1) {
-        fieldorder->dst_tff = !!fieldorder->dst_tff;
-    } else if (!strcmp(tff, args)) {
-        fieldorder->dst_tff = 1;
-    } else if (!strcmp(bff, args)) {
-        fieldorder->dst_tff = 0;
-    } else {
-        av_log(ctx, AV_LOG_ERROR, "Invalid argument '%s'.\n", args);
-        return AVERROR(EINVAL);
-    }
+    if ((ret = av_opt_set_from_string(fieldorder, args, shorthand, "=", ":")) < 0)
+        return ret;
 
-    av_log(ctx, AV_LOG_VERBOSE, "output field order: %s\n",
-            fieldorder->dst_tff ? tff : bff);
+    fieldorder->dst_tff = fieldorder->order == ORDER_TFF;
+    av_log(ctx, AV_LOG_VERBOSE, "tff:%d\n", fieldorder->dst_tff);
 
     return 0;
 }
@@ -113,15 +120,15 @@ static int config_input(AVFilterLink *inlink)
     return 0;
 }
 
-static AVFilterBufferRef *get_video_buffer(AVFilterLink *inlink, int perms, int w, int h)
+static AVFrame *get_video_buffer(AVFilterLink *inlink, int w, int h)
 {
     AVFilterContext   *ctx        = inlink->dst;
     AVFilterLink      *outlink    = ctx->outputs[0];
 
-    return ff_get_video_buffer(outlink, perms, w, h);
+    return ff_get_video_buffer(outlink, w, h);
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
+static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext   *ctx     = inlink->dst;
     FieldOrderContext *s       = ctx->priv;
@@ -129,14 +136,14 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
     int h, plane, line_step, line_size, line;
     uint8_t *data;
 
-    if (!frame->video->interlaced ||
-        frame->video->top_field_first == s->dst_tff)
+    if (!frame->interlaced_frame ||
+        frame->top_field_first == s->dst_tff)
         return ff_filter_frame(outlink, frame);
 
     av_dlog(ctx,
             "picture will move %s one line\n",
             s->dst_tff ? "up" : "down");
-    h = frame->video->h;
+    h = frame->height;
     for (plane = 0; plane < 4 && frame->data[plane]; plane++) {
         line_step = frame->linesize[plane];
         line_size = s->line_size[plane];
@@ -148,7 +155,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
              *  The new last line is created as a copy of the
              *  penultimate line from that field. */
             for (line = 0; line < h; line++) {
-                if (1 + line < frame->video->h) {
+                if (1 + line < frame->height) {
                     memcpy(data, data + line_step, line_size);
                 } else {
                     memcpy(data, data - line_step - line_step, line_size);
@@ -172,7 +179,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
             }
         }
     }
-    frame->video->top_field_first = s->dst_tff;
+    frame->top_field_first = s->dst_tff;
 
     return ff_filter_frame(outlink, frame);
 }
@@ -184,7 +191,7 @@ static const AVFilterPad avfilter_vf_fieldorder_inputs[] = {
         .config_props     = config_input,
         .get_video_buffer = get_video_buffer,
         .filter_frame     = filter_frame,
-        .min_perms        = AV_PERM_READ | AV_PERM_WRITE,
+        .needs_writable   = 1,
     },
     { NULL }
 };
@@ -205,4 +212,5 @@ AVFilter avfilter_vf_fieldorder = {
     .query_formats = query_formats,
     .inputs        = avfilter_vf_fieldorder_inputs,
     .outputs       = avfilter_vf_fieldorder_outputs,
+    .priv_class    = &fieldorder_class,
 };

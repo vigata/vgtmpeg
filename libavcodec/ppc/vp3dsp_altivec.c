@@ -29,7 +29,6 @@
 
 #include "libavutil/ppc/types_altivec.h"
 #include "libavutil/ppc/util_altivec.h"
-#include "libavcodec/dsputil.h"
 #include "dsputil_altivec.h"
 
 static const vec_s16 constants =
@@ -116,7 +115,7 @@ static inline vec_s16 M16(vec_s16 a, vec_s16 C)
 #define ADD8(a) vec_add(a, eight)
 #define SHIFT4(a) vec_sra(a, four)
 
-static void vp3_idct_put_altivec(uint8_t *dst, int stride, DCTELEM block[64])
+static void vp3_idct_put_altivec(uint8_t *dst, int stride, int16_t block[64])
 {
     vec_u8 t;
     IDCT_START
@@ -145,7 +144,7 @@ static void vp3_idct_put_altivec(uint8_t *dst, int stride, DCTELEM block[64])
     memset(block, 0, sizeof(*block) * 64);
 }
 
-static void vp3_idct_add_altivec(uint8_t *dst, int stride, DCTELEM block[64])
+static void vp3_idct_add_altivec(uint8_t *dst, int stride, int16_t block[64])
 {
     LOAD_ZERO;
     vec_u8 t, vdst;
@@ -185,7 +184,6 @@ av_cold void ff_vp3dsp_init_ppc(VP3DSPContext *c, int flags)
     if (av_get_cpu_flags() & AV_CPU_FLAG_ALTIVEC) {
         c->idct_put  = vp3_idct_put_altivec;
         c->idct_add  = vp3_idct_add_altivec;
-        c->idct_perm = FF_TRANSPOSE_IDCT_PERM;
     }
 #endif
 }

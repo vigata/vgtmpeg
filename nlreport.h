@@ -25,6 +25,7 @@
 #define __NLREPORT_H
 
 #include "libavutil/opt.h"
+#include "libavutil/time.h"
 
 //#define _XOPEN_SOURCE 600
 //#define STATS_DELAY 100000

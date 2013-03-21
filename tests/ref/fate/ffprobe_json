@@ -28,7 +28,8 @@
             "pkt_size": "2048",
             "sample_fmt": "s16",
             "nb_samples": 1024,
-            "channels": 1
+            "channels": 1,
+            "channel_layout": "mono"
         },
         {
             "type": "packet",
@@ -64,8 +65,7 @@
             "display_picture_number": 0,
             "interlaced_frame": 0,
             "top_field_first": 0,
-            "repeat_pict": 0,
-            "reference": 0
+            "repeat_pict": 0
         },
         {
             "type": "packet",
@@ -101,8 +101,7 @@
             "display_picture_number": 0,
             "interlaced_frame": 0,
             "top_field_first": 0,
-            "repeat_pict": 0,
-            "reference": 0
+            "repeat_pict": 0
         },
         {
             "type": "packet",
@@ -132,7 +131,8 @@
             "pkt_size": "2048",
             "sample_fmt": "s16",
             "nb_samples": 1024,
-            "channels": 1
+            "channels": 1,
+            "channel_layout": "mono"
         },
         {
             "type": "packet",
@@ -168,8 +168,7 @@
             "display_picture_number": 0,
             "interlaced_frame": 0,
             "top_field_first": 0,
-            "repeat_pict": 0,
-            "reference": 0
+            "repeat_pict": 0
         },
         {
             "type": "packet",
@@ -205,8 +204,7 @@
             "display_picture_number": 0,
             "interlaced_frame": 0,
             "top_field_first": 0,
-            "repeat_pict": 0,
-            "reference": 0
+            "repeat_pict": 0
         },
         {
             "type": "packet",
@@ -236,7 +234,8 @@
             "pkt_size": "2048",
             "sample_fmt": "s16",
             "nb_samples": 1024,
-            "channels": 1
+            "channels": 1,
+            "channel_layout": "mono"
         },
         {
             "type": "packet",
@@ -266,7 +265,8 @@
             "pkt_size": "2048",
             "sample_fmt": "s16",
             "nb_samples": 1024,
-            "channels": 1
+            "channels": 1,
+            "channel_layout": "mono"
         },
         {
             "type": "packet",
@@ -302,8 +302,7 @@
             "display_picture_number": 0,
             "interlaced_frame": 0,
             "top_field_first": 0,
-            "repeat_pict": 0,
-            "reference": 0
+            "repeat_pict": 0
         },
         {
             "type": "packet",
@@ -339,8 +338,7 @@
             "display_picture_number": 0,
             "interlaced_frame": 0,
             "top_field_first": 0,
-            "repeat_pict": 0,
-            "reference": 0
+            "repeat_pict": 0
         },
         {
             "type": "packet",
@@ -370,7 +368,8 @@
             "pkt_size": "2048",
             "sample_fmt": "s16",
             "nb_samples": 1024,
-            "channels": 1
+            "channels": 1,
+            "channel_layout": "mono"
         },
         {
             "type": "packet",
@@ -400,7 +399,8 @@
             "pkt_size": "2048",
             "sample_fmt": "s16",
             "nb_samples": 1024,
-            "channels": 1
+            "channels": 1,
+            "channel_layout": "mono"
         },
         {
             "type": "packet",
@@ -436,8 +436,7 @@
             "display_picture_number": 0,
             "interlaced_frame": 0,
             "top_field_first": 0,
-            "repeat_pict": 0,
-            "reference": 0
+            "repeat_pict": 0
         },
         {
             "type": "packet",
@@ -473,8 +472,7 @@
             "display_picture_number": 0,
             "interlaced_frame": 0,
             "top_field_first": 0,
-            "repeat_pict": 0,
-            "reference": 0
+            "repeat_pict": 0
         }
     ],
     "streams": [

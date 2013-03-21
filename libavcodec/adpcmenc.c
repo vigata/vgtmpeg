@@ -19,7 +19,6 @@
  */
 
 #include "avcodec.h"
-#include "get_bits.h"
 #include "put_bits.h"
 #include "bytestream.h"
 #include "adpcm.h"
@@ -145,11 +144,6 @@ static av_cold int adpcm_encode_init(AVCodecContext *avctx)
         goto error;
     }
 
-#if FF_API_OLD_ENCODE_AUDIO
-    if (!(avctx->coded_frame = avcodec_alloc_frame()))
-        goto error;
-#endif
-
     return 0;
 error:
     adpcm_encode_close(avctx);
@@ -159,9 +153,6 @@ error:
 static av_cold int adpcm_encode_close(AVCodecContext *avctx)
 {
     ADPCMEncodeContext *s = avctx->priv_data;
-#if FF_API_OLD_ENCODE_AUDIO
-    av_freep(&avctx->coded_frame);
-#endif
     av_freep(&s->paths);
     av_freep(&s->node_buf);
     av_freep(&s->nodep_buf);
@@ -495,7 +486,7 @@ static int adpcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         pkt_size = (2 + avctx->channels * (22 + 4 * (frame->nb_samples - 1)) + 7) / 8;
     else
         pkt_size = avctx->block_align;
-    if ((ret = ff_alloc_packet2(avctx, avpkt, pkt_size)))
+    if ((ret = ff_alloc_packet2(avctx, avpkt, pkt_size)) < 0)
         return ret;
     dst = avpkt->data;
 

@@ -22,16 +22,14 @@
 #ifndef AVCODEC_X86_DSPUTIL_MMX_H
 #define AVCODEC_X86_DSPUTIL_MMX_H
 
+#include <stddef.h>
 #include <stdint.h>
+
 #include "libavcodec/dsputil.h"
 #include "libavutil/x86/asm.h"
 
-typedef struct xmm_reg { uint64_t a, b; } xmm_reg;
-
 extern const uint64_t ff_bone;
 extern const uint64_t ff_wtwo;
-
-extern const uint64_t ff_pdw_80000000[2];
 
 extern const xmm_reg  ff_pw_3;
 extern const xmm_reg  ff_pw_4;
@@ -41,12 +39,9 @@ extern const uint64_t ff_pw_15;
 extern const xmm_reg  ff_pw_16;
 extern const xmm_reg  ff_pw_18;
 extern const uint64_t ff_pw_20;
-extern const xmm_reg  ff_pw_27;
-extern const xmm_reg  ff_pw_28;
 extern const xmm_reg  ff_pw_32;
 extern const uint64_t ff_pw_42;
 extern const uint64_t ff_pw_53;
-extern const xmm_reg  ff_pw_63;
 extern const xmm_reg  ff_pw_64;
 extern const uint64_t ff_pw_96;
 extern const uint64_t ff_pw_128;
@@ -54,14 +49,9 @@ extern const uint64_t ff_pw_255;
 
 extern const xmm_reg  ff_pb_1;
 extern const xmm_reg  ff_pb_3;
-extern const uint64_t ff_pb_7;
-extern const uint64_t ff_pb_1F;
 extern const uint64_t ff_pb_3F;
-extern const uint64_t ff_pb_81;
-extern const xmm_reg  ff_pb_A1;
 extern const xmm_reg  ff_pb_F8;
 extern const uint64_t ff_pb_FC;
-extern const xmm_reg  ff_pb_FE;
 
 extern const double ff_pd_1[2];
 extern const double ff_pd_2[2];
@@ -85,25 +75,27 @@ extern const double ff_pd_2[2];
 void ff_dsputilenc_init_mmx(DSPContext* c, AVCodecContext *avctx);
 void ff_dsputil_init_pix_mmx(DSPContext* c, AVCodecContext *avctx);
 
-void ff_add_pixels_clamped_mmx(const DCTELEM *block, uint8_t *pixels, int line_size);
-void ff_put_pixels_clamped_mmx(const DCTELEM *block, uint8_t *pixels, int line_size);
-void ff_put_signed_pixels_clamped_mmx(const DCTELEM *block, uint8_t *pixels, int line_size);
+void ff_add_pixels_clamped_mmx(const int16_t *block, uint8_t *pixels, int line_size);
+void ff_put_pixels_clamped_mmx(const int16_t *block, uint8_t *pixels, int line_size);
+void ff_put_signed_pixels_clamped_mmx(const int16_t *block, uint8_t *pixels, int line_size);
 
-void ff_put_cavs_qpel8_mc00_mmxext(uint8_t *dst, uint8_t *src, int stride);
-void ff_avg_cavs_qpel8_mc00_mmxext(uint8_t *dst, uint8_t *src, int stride);
-void ff_put_cavs_qpel16_mc00_mmxext(uint8_t *dst, uint8_t *src, int stride);
-void ff_avg_cavs_qpel16_mc00_mmxext(uint8_t *dst, uint8_t *src, int stride);
+void ff_avg_pixels8_mmxext(uint8_t *block, const uint8_t *pixels,
+                           ptrdiff_t line_size, int h);
 
-void ff_put_vc1_mspel_mc00_mmx(uint8_t *dst, const uint8_t *src, int stride, int rnd);
-void ff_avg_vc1_mspel_mc00_mmxext(uint8_t *dst, const uint8_t *src, int stride, int rnd);
+void ff_put_cavs_qpel8_mc00_mmxext(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
+void ff_avg_cavs_qpel8_mc00_mmxext(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
+void ff_put_cavs_qpel16_mc00_mmxext(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
+void ff_avg_cavs_qpel16_mc00_mmxext(uint8_t *dst, uint8_t *src, ptrdiff_t stride);
 
-void ff_put_rv40_qpel8_mc33_mmx(uint8_t *block, uint8_t *pixels, int line_size);
-void ff_put_rv40_qpel16_mc33_mmx(uint8_t *block, uint8_t *pixels, int line_size);
-void ff_avg_rv40_qpel8_mc33_mmx(uint8_t *block, uint8_t *pixels, int line_size);
-void ff_avg_rv40_qpel16_mc33_mmx(uint8_t *block, uint8_t *pixels, int line_size);
+void ff_put_vc1_mspel_mc00_mmx(uint8_t *dst, const uint8_t *src, ptrdiff_t stride, int rnd);
 
-void ff_mmx_idct(DCTELEM *block);
-void ff_mmxext_idct(DCTELEM *block);
+void ff_put_rv40_qpel8_mc33_mmx(uint8_t *block, uint8_t *pixels, ptrdiff_t stride);
+void ff_put_rv40_qpel16_mc33_mmx(uint8_t *block, uint8_t *pixels, ptrdiff_t stride);
+void ff_avg_rv40_qpel8_mc33_mmx(uint8_t *block, uint8_t *pixels, ptrdiff_t stride);
+void ff_avg_rv40_qpel16_mc33_mmx(uint8_t *block, uint8_t *pixels, ptrdiff_t stride);
+
+void ff_mmx_idct(int16_t *block);
+void ff_mmxext_idct(int16_t *block);
 
 
 void ff_deinterlace_line_mmx(uint8_t *dst,

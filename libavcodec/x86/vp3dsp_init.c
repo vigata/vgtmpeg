@@ -25,17 +25,18 @@
 #include "libavutil/x86/cpu.h"
 #include "libavutil/x86/asm.h"
 #include "libavcodec/avcodec.h"
+#include "libavcodec/dsputil.h"
 #include "libavcodec/vp3dsp.h"
 #include "config.h"
 
-void ff_vp3_idct_put_mmx(uint8_t *dest, int line_size, DCTELEM *block);
-void ff_vp3_idct_add_mmx(uint8_t *dest, int line_size, DCTELEM *block);
+void ff_vp3_idct_put_mmx(uint8_t *dest, int line_size, int16_t *block);
+void ff_vp3_idct_add_mmx(uint8_t *dest, int line_size, int16_t *block);
 
-void ff_vp3_idct_put_sse2(uint8_t *dest, int line_size, DCTELEM *block);
-void ff_vp3_idct_add_sse2(uint8_t *dest, int line_size, DCTELEM *block);
+void ff_vp3_idct_put_sse2(uint8_t *dest, int line_size, int16_t *block);
+void ff_vp3_idct_add_sse2(uint8_t *dest, int line_size, int16_t *block);
 
 void ff_vp3_idct_dc_add_mmxext(uint8_t *dest, int line_size,
-                               DCTELEM *block);
+                               int16_t *block);
 
 void ff_vp3_v_loop_filter_mmxext(uint8_t *src, int stride,
                                  int *bounding_values);
@@ -63,7 +64,7 @@ void ff_vp3_h_loop_filter_mmxext(uint8_t *src, int stride,
     "paddb "#regb", "#regr"             \n\t"                    \
     "paddb "#regd", "#regp"             \n\t"
 
-static void put_vp_no_rnd_pixels8_l2_mmx(uint8_t *dst, const uint8_t *a, const uint8_t *b, int stride, int h)
+static void put_vp_no_rnd_pixels8_l2_mmx(uint8_t *dst, const uint8_t *a, const uint8_t *b, ptrdiff_t stride, int h)
 {
 //    START_TIMER
     MOVQ_BFE(mm6);
@@ -108,7 +109,6 @@ av_cold void ff_vp3dsp_init_x86(VP3DSPContext *c, int flags)
     if (EXTERNAL_MMX(cpuflags)) {
         c->idct_put  = ff_vp3_idct_put_mmx;
         c->idct_add  = ff_vp3_idct_add_mmx;
-        c->idct_perm = FF_PARTTRANS_IDCT_PERM;
     }
 #endif
 
@@ -124,6 +124,5 @@ av_cold void ff_vp3dsp_init_x86(VP3DSPContext *c, int flags)
     if (EXTERNAL_SSE2(cpuflags)) {
         c->idct_put  = ff_vp3_idct_put_sse2;
         c->idct_add  = ff_vp3_idct_add_sse2;
-        c->idct_perm = FF_TRANSPOSE_IDCT_PERM;
     }
 }

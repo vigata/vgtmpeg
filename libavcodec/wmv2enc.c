@@ -19,7 +19,6 @@
  */
 
 #include "avcodec.h"
-#include "dsputil.h"
 #include "mpegvideo.h"
 #include "msmpeg4.h"
 #include "msmpeg4data.h"
@@ -54,10 +53,6 @@ static int encode_ext_header(Wmv2Context *w){
 
 static av_cold int wmv2_encode_init(AVCodecContext *avctx){
     Wmv2Context * const w= avctx->priv_data;
-
-    if(avctx->idct_algo==FF_IDCT_AUTO){
-        avctx->idct_algo=FF_IDCT_WMV2;
-    }
 
     if(ff_MPV_encode_init(avctx) < 0)
         return -1;
@@ -152,7 +147,7 @@ int ff_wmv2_encode_picture_header(MpegEncContext * s, int picture_number)
  * useless M$ crap features. It is duplicated here in case someone wants
  * to add support for these crap features. */
 void ff_wmv2_encode_mb(MpegEncContext * s,
-                       DCTELEM block[6][64],
+                       int16_t block[6][64],
                        int motion_x, int motion_y)
 {
     Wmv2Context * const w= (Wmv2Context*)s;

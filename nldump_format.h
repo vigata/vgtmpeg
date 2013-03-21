@@ -24,6 +24,7 @@
 #ifndef __NLDUMP_FORMAT_H
 #define __NLDUMP_FORMAT_H
 
+#include "libavcodec/avcodec.h"
 #include "libavutil/avstring.h"
 #include "libavutil/dict.h"
 #include "libavutil/pixdesc.h"
@@ -72,39 +73,29 @@ static void nl_dump_metadata(AVDictionary *m)
 
 static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int encode) {
     const char *codec_name;
+    const char *profile = NULL;
     AVCodec *p;
-    char buf1[32];
+    char tag_buf[32];
     int bitrate;
     AVRational display_aspect_ratio;
 
-    if (encode)
-        p = avcodec_find_encoder(enc->codec_id);
-    else
-        p = avcodec_find_decoder(enc->codec_id);
 
-    if (p) {
-        codec_name = p->name;
-    } else if (enc->codec_id == CODEC_ID_MPEG2TS) {
-        /* fake mpeg2 transport stream codec (currently not
-           registered) */
-        codec_name = "mpeg2ts";
-    } else if (enc->codec_name[0] != '\0') {
-        codec_name = enc->codec_name;
-    } else {
-        /* output avi tags */
-        if(   isprint(enc->codec_tag&0xFF) && isprint((enc->codec_tag>>8)&0xFF)
-           && isprint((enc->codec_tag>>16)&0xFF) && isprint((enc->codec_tag>>24)&0xFF)){
-            snprintf(buf1, sizeof(buf1), "%c%c%c%c / 0x%04X",
-                     enc->codec_tag & 0xff,
-                     (enc->codec_tag >> 8) & 0xff,
-                     (enc->codec_tag >> 16) & 0xff,
-                     (enc->codec_tag >> 24) & 0xff,
-                      enc->codec_tag);
-        } else {
-            snprintf(buf1, sizeof(buf1), "0x%04x", enc->codec_tag);
-        }
-        codec_name = buf1;
+    codec_name = avcodec_get_name( enc->codec_id );
+    if (enc->profile != FF_PROFILE_UNKNOWN) {
+        if (enc->codec)
+            p = enc->codec;
+        else
+            p = encode ? avcodec_find_encoder(enc->codec_id) :
+                        avcodec_find_decoder(enc->codec_id);
+        if (p)
+            profile = av_get_profile_name(p, enc->profile);
     }
+
+    if (enc->codec_tag) {        
+        av_get_codec_tag_string(tag_buf, sizeof(tag_buf), enc->codec_tag);
+        codec_name = tag_buf;
+    }
+
 
     switch(enc->codec_type) {
     case AVMEDIA_TYPE_VIDEO:

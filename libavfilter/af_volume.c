@@ -24,7 +24,7 @@
  * audio volume filter
  */
 
-#include "libavutil/audioconvert.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/eval.h"
 #include "libavutil/float_dsp.h"
@@ -59,14 +59,6 @@ AVFILTER_DEFINE_CLASS(volume);
 static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     VolumeContext *vol = ctx->priv;
-    static const char *shorthand[] = { "volume", "precision", NULL };
-    int ret;
-
-    vol->class = &volume_class;
-    av_opt_set_defaults(vol);
-
-    if ((ret = av_opt_set_from_string(vol, args, shorthand, "=", ":")) < 0)
-        return ret;
 
     if (vol->precision == PRECISION_FIXED) {
         vol->volume_i = (int)(vol->volume * 256 + 0.5);
@@ -79,8 +71,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
                precision_str[vol->precision]);
     }
 
-    av_opt_free(vol);
-    return ret;
+    return 0;
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -226,21 +217,21 @@ static int config_output(AVFilterLink *outlink)
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *buf)
+static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
 {
     VolumeContext *vol    = inlink->dst->priv;
     AVFilterLink *outlink = inlink->dst->outputs[0];
-    int nb_samples        = buf->audio->nb_samples;
-    AVFilterBufferRef *out_buf;
+    int nb_samples        = buf->nb_samples;
+    AVFrame *out_buf;
 
     if (vol->volume == 1.0 || vol->volume_i == 256)
         return ff_filter_frame(outlink, buf);
 
     /* do volume scaling in-place if input buffer is writable */
-    if (buf->perms & AV_PERM_WRITE) {
+    if (av_frame_is_writable(buf)) {
         out_buf = buf;
     } else {
-        out_buf = ff_get_audio_buffer(inlink, AV_PERM_WRITE, nb_samples);
+        out_buf = ff_get_audio_buffer(inlink, nb_samples);
         if (!out_buf)
             return AVERROR(ENOMEM);
         out_buf->pts = buf->pts;
@@ -276,7 +267,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *buf)
     }
 
     if (buf != out_buf)
-        avfilter_unref_buffer(buf);
+        av_frame_free(&buf);
 
     return ff_filter_frame(outlink, out_buf);
 }
@@ -299,6 +290,8 @@ static const AVFilterPad avfilter_af_volume_outputs[] = {
     { NULL }
 };
 
+static const char *const shorthand[] = { "volume", "precision", NULL };
+
 AVFilter avfilter_af_volume = {
     .name           = "volume",
     .description    = NULL_IF_CONFIG_SMALL("Change input volume."),
@@ -308,4 +301,5 @@ AVFilter avfilter_af_volume = {
     .inputs         = avfilter_af_volume_inputs,
     .outputs        = avfilter_af_volume_outputs,
     .priv_class     = &volume_class,
+    .shorthand      = shorthand,
 };

@@ -11,9 +11,11 @@ FATE_LAVFI = fate-lavfi-alphaextract_rgb                                \
              fate-lavfi-fade                                            \
              fate-lavfi-field                                           \
              fate-lavfi-idet                                            \
-             fate-lavfi-life                                            \
+             fate-lavfi-il                                              \
              fate-lavfi-null                                            \
-             fate-lavfi-overlay                                         \
+             fate-lavfi-overlay_rgb                                     \
+             fate-lavfi-overlay_yuv420                                  \
+             fate-lavfi-overlay_yuv444                                  \
              fate-lavfi-pad                                             \
              fate-lavfi-pixfmts_copy                                    \
              fate-lavfi-pixfmts_crop                                    \
@@ -25,11 +27,9 @@ FATE_LAVFI = fate-lavfi-alphaextract_rgb                                \
              fate-lavfi-pixfmts_vflip                                   \
              fate-lavfi-scale200                                        \
              fate-lavfi-scale500                                        \
-             fate-lavfi-scalenorm                                       \
              fate-lavfi-select                                          \
              fate-lavfi-setdar                                          \
              fate-lavfi-setsar                                          \
-             fate-lavfi-testsrc                                         \
              fate-lavfi-thumbnail                                       \
              fate-lavfi-tile                                            \
              fate-lavfi-transpose                                       \
@@ -37,6 +37,10 @@ FATE_LAVFI = fate-lavfi-alphaextract_rgb                                \
              fate-lavfi-vflip                                           \
              fate-lavfi-vflip_crop                                      \
              fate-lavfi-vflip_vflip                                     \
+
+FATE_LAVFI-$(CONFIG_AVDEVICE) += fate-lavfi-life                        \
+                                 fate-lavfi-scalenorm                   \
+                                 fate-lavfi-testsrc                     \
 
 FATE_LAVFI-$(CONFIG_GPL) += fate-lavfi-colormatrix1                     \
                             fate-lavfi-colormatrix2                     \

@@ -2,6 +2,19 @@ Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
 version <next>:
+- curves filter
+- reference-counting for AVFrame and AVPacket data
+- ffmpeg now fails when input options are used for output file
+  or vice versa
+- support for Monkey's Audio versions from 3.93
+- perms and aperms filters
+- audio filtering support in ffplay
+- 10% faster aac encoding on x86 and MIPS
+- sine audio filter source
+
+
+version 1.2:
+
 - VDPAU hardware acceleration through normal hwaccel
 - SRTP support
 - Error diffusion dither in Swscale
@@ -9,6 +22,20 @@ version <next>:
 - Theora Midstream reconfiguration support
 - EVRC decoder
 - audio fade filter
+- filtering audio with unknown channel layout
+- allpass, bass, bandpass, bandreject, biquad, equalizer, highpass, lowpass
+  and treble audio filter
+- improved showspectrum filter, with multichannel support and sox-like colors
+- histogram filter
+- tee muxer
+- il filter ported from libmpcodecs
+- support ID3v2 tags in ASF files
+- encrypted TTA stream decoding support
+- RF64 support in WAV muxer
+- noise filter ported from libmpcodecs
+- Subtitles character encoding conversion
+- blend filter
+- stereo3d filter ported from libmpcodecs
 
 
 version 1.1:

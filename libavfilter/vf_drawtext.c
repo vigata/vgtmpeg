@@ -188,7 +188,7 @@ static const AVOption drawtext_options[]= {
 {"basetime", "set base time",        OFFSET(basetime),           AV_OPT_TYPE_INT64,  {.i64=AV_NOPTS_VALUE}, INT64_MIN, INT64_MAX , FLAGS},
 {"draw",     "if false do not draw", OFFSET(draw_expr),          AV_OPT_TYPE_STRING, {.str="1"},   CHAR_MIN, CHAR_MAX, FLAGS},
 
-{"expansion","set the expansion mode", OFFSET(exp_mode),         AV_OPT_TYPE_INT,    {.i64=EXP_STRFTIME}, 0,        2, FLAGS, "expansion"},
+{"expansion","set the expansion mode", OFFSET(exp_mode),         AV_OPT_TYPE_INT,    {.i64=EXP_NORMAL},   0,        2, FLAGS, "expansion"},
 {"none",     "set no expansion",     OFFSET(exp_mode),           AV_OPT_TYPE_CONST,  {.i64=EXP_NONE},     0,        0, FLAGS, "expansion"},
 {"normal",   "set normal expansion", OFFSET(exp_mode),           AV_OPT_TYPE_CONST,  {.i64=EXP_NORMAL},   0,        0, FLAGS, "expansion"},
 {"strftime", "set strftime expansion (deprecated)", OFFSET(exp_mode), AV_OPT_TYPE_CONST, {.i64=EXP_STRFTIME}, 0,    0, FLAGS, "expansion"},
@@ -784,7 +784,7 @@ static int expand_text(AVFilterContext *ctx)
     return 0;
 }
 
-static int draw_glyphs(DrawTextContext *dtext, AVFilterBufferRef *picref,
+static int draw_glyphs(DrawTextContext *dtext, AVFrame *frame,
                        int width, int height, const uint8_t rgbcolor[4], FFDrawColor *color, int x, int y)
 {
     char *text = dtext->expanded_text.str;
@@ -812,7 +812,7 @@ static int draw_glyphs(DrawTextContext *dtext, AVFilterBufferRef *picref,
         y1 = dtext->positions[i].y+dtext->y+y;
 
         ff_blend_mask(&dtext->dc, color,
-                      picref->data, picref->linesize, width, height,
+                      frame->data, frame->linesize, width, height,
                       glyph->bitmap.buffer, glyph->bitmap.pitch,
                       glyph->bitmap.width, glyph->bitmap.rows,
                       glyph->bitmap.pixel_mode == FT_PIXEL_MODE_MONO ? 0 : 3,
@@ -822,7 +822,7 @@ static int draw_glyphs(DrawTextContext *dtext, AVFilterBufferRef *picref,
     return 0;
 }
 
-static int draw_text(AVFilterContext *ctx, AVFilterBufferRef *picref,
+static int draw_text(AVFilterContext *ctx, AVFrame *frame,
                      int width, int height)
 {
     DrawTextContext *dtext = ctx->priv;
@@ -845,7 +845,7 @@ static int draw_text(AVFilterContext *ctx, AVFilterBufferRef *picref,
     av_bprint_clear(bp);
 
     if(dtext->basetime != AV_NOPTS_VALUE)
-        now= picref->pts*av_q2d(ctx->inputs[0]->time_base) + dtext->basetime/1000000;
+        now= frame->pts*av_q2d(ctx->inputs[0]->time_base) + dtext->basetime/1000000;
 
     switch (dtext->exp_mode) {
     case EXP_NONE:
@@ -962,23 +962,23 @@ static int draw_text(AVFilterContext *ctx, AVFilterBufferRef *picref,
     /* draw box */
     if (dtext->draw_box)
         ff_blend_rectangle(&dtext->dc, &dtext->boxcolor,
-                           picref->data, picref->linesize, width, height,
+                           frame->data, frame->linesize, width, height,
                            dtext->x, dtext->y, box_w, box_h);
 
     if (dtext->shadowx || dtext->shadowy) {
-        if ((ret = draw_glyphs(dtext, picref, width, height, dtext->shadowcolor.rgba,
+        if ((ret = draw_glyphs(dtext, frame, width, height, dtext->shadowcolor.rgba,
                                &dtext->shadowcolor, dtext->shadowx, dtext->shadowy)) < 0)
             return ret;
     }
 
-    if ((ret = draw_glyphs(dtext, picref, width, height, dtext->fontcolor.rgba,
+    if ((ret = draw_glyphs(dtext, frame, width, height, dtext->fontcolor.rgba,
                            &dtext->fontcolor, 0, 0)) < 0)
         return ret;
 
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
+static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
     AVFilterLink *outlink = ctx->outputs[0];
@@ -992,7 +992,7 @@ static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
     dtext->var_values[VAR_T] = frame->pts == AV_NOPTS_VALUE ?
         NAN : frame->pts * av_q2d(inlink->time_base);
 
-    draw_text(ctx, frame, frame->video->w, frame->video->h);
+    draw_text(ctx, frame, frame->width, frame->height);
 
     av_log(ctx, AV_LOG_DEBUG, "n:%d t:%f text_w:%d text_h:%d x:%d y:%d\n",
            (int)dtext->var_values[VAR_N], dtext->var_values[VAR_T],
@@ -1011,8 +1011,7 @@ static const AVFilterPad avfilter_vf_drawtext_inputs[] = {
         .get_video_buffer = ff_null_get_video_buffer,
         .filter_frame     = filter_frame,
         .config_props     = config_input,
-        .min_perms        = AV_PERM_WRITE |
-                            AV_PERM_READ,
+        .needs_writable   = 1,
     },
     { NULL }
 };

@@ -26,7 +26,6 @@
  */
 
 #include "libavutil/avassert.h"
-#include "dsputil.h"
 #include "avcodec.h"
 #include "mpegvideo.h"
 #include "h263.h"
@@ -48,7 +47,7 @@ static VLC h261_mtype_vlc;
 static VLC h261_mv_vlc;
 static VLC h261_cbp_vlc;
 
-static int h261_decode_block(H261Context * h, DCTELEM * block, int n, int coded);
+static int h261_decode_block(H261Context * h, int16_t * block, int n, int coded);
 
 static av_cold void h261_decode_init_vlc(H261Context *h){
     static int done = 0;
@@ -216,7 +215,7 @@ static int h261_decode_mb_skipped(H261Context *h, int mba1, int mba2 )
 
         s->mv_dir = MV_DIR_FORWARD;
         s->mv_type = MV_TYPE_16X16;
-        s->current_picture.f.mb_type[xy] = MB_TYPE_SKIP | MB_TYPE_16x16 | MB_TYPE_L0;
+        s->current_picture.mb_type[xy] = MB_TYPE_SKIP | MB_TYPE_16x16 | MB_TYPE_L0;
         s->mv[0][0][0] = 0;
         s->mv[0][0][1] = 0;
         s->mb_skipped = 1;
@@ -331,14 +330,14 @@ static int h261_decode_mb(H261Context *h){
     }
 
     if(s->mb_intra){
-        s->current_picture.f.mb_type[xy] = MB_TYPE_INTRA;
+        s->current_picture.mb_type[xy] = MB_TYPE_INTRA;
         goto intra;
     }
 
     //set motion vectors
     s->mv_dir = MV_DIR_FORWARD;
     s->mv_type = MV_TYPE_16X16;
-    s->current_picture.f.mb_type[xy] = MB_TYPE_16x16 | MB_TYPE_L0;
+    s->current_picture.mb_type[xy] = MB_TYPE_16x16 | MB_TYPE_L0;
     s->mv[0][0][0] = h->current_mv_x * 2;//gets divided by 2 in motion compensation
     s->mv[0][0][1] = h->current_mv_y * 2;
 
@@ -366,7 +365,7 @@ intra:
  * Decode a macroblock.
  * @return <0 if an error occurred
  */
-static int h261_decode_block(H261Context * h, DCTELEM * block,
+static int h261_decode_block(H261Context * h, int16_t * block,
                              int n, int coded)
 {
     MpegEncContext * const s = &h->s;
@@ -617,7 +616,7 @@ retry:
     if(ff_MPV_frame_start(s, avctx) < 0)
         return -1;
 
-    ff_er_frame_start(s);
+    ff_mpeg_er_frame_start(s);
 
     /* decode each macroblock */
     s->mb_x=0;
@@ -633,8 +632,9 @@ retry:
     av_assert0(s->current_picture.f.pict_type == s->current_picture_ptr->f.pict_type);
     av_assert0(s->current_picture.f.pict_type == s->pict_type);
 
-    *pict = s->current_picture_ptr->f;
-    ff_print_debug_info(s, pict);
+    if ((ret = av_frame_ref(pict, &s->current_picture_ptr->f)) < 0)
+        return ret;
+    ff_print_debug_info(s, s->current_picture_ptr, pict);
 
     *got_frame = 1;
 

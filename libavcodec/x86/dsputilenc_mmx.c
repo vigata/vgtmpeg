@@ -22,17 +22,19 @@
  * MMX optimization by Nick Kurshev <nickols_k@mail.ru>
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
+#include "libavcodec/dct.h"
 #include "libavcodec/dsputil.h"
 #include "libavcodec/mpegvideo.h"
 #include "libavcodec/mathops.h"
 #include "dsputil_mmx.h"
 
-void ff_get_pixels_mmx(DCTELEM *block, const uint8_t *pixels, int line_size);
-void ff_get_pixels_sse2(DCTELEM *block, const uint8_t *pixels, int line_size);
-void ff_diff_pixels_mmx(DCTELEM *block, const uint8_t *s1, const uint8_t *s2, int stride);
+void ff_get_pixels_mmx(int16_t *block, const uint8_t *pixels, int line_size);
+void ff_get_pixels_sse2(int16_t *block, const uint8_t *pixels, int line_size);
+void ff_diff_pixels_mmx(int16_t *block, const uint8_t *s1, const uint8_t *s2, int stride);
 int ff_pix_sum16_mmx(uint8_t * pix, int line_size);
 int ff_pix_norm1_mmx(uint8_t *pix, int line_size);
 
@@ -798,7 +800,7 @@ static void sub_hfyu_median_prediction_mmxext(uint8_t *dst, const uint8_t *src1,
     HSUM(%%xmm0, %%xmm1, %0)
 
 #define DCT_SAD_FUNC(cpu) \
-static int sum_abs_dctelem_##cpu(DCTELEM *block){\
+static int sum_abs_dctelem_##cpu(int16_t *block){\
     int sum;\
     __asm__ volatile(\
         DCT_SAD\
@@ -942,7 +944,7 @@ hadamard_func(mmxext)
 hadamard_func(sse2)
 hadamard_func(ssse3)
 
-void ff_dsputilenc_init_mmx(DSPContext* c, AVCodecContext *avctx)
+av_cold void ff_dsputilenc_init_mmx(DSPContext *c, AVCodecContext *avctx)
 {
     int mm_flags = av_get_cpu_flags();
     int bit_depth = avctx->bits_per_raw_sample;

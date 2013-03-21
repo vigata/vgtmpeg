@@ -30,7 +30,6 @@
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
 #include "get_bits.h"
-#include "dsputil.h"
 #include "ivi_dsp.h"
 #include "ivi_common.h"
 #include "indeo4data.h"
@@ -332,12 +331,12 @@ static int decode_band_hdr(IVI45DecContext *ctx, IVIBandDesc *band,
             transform_id = get_bits(&ctx->gb, 5);
             if (transform_id >= FF_ARRAY_ELEMS(transforms) ||
                 !transforms[transform_id].inv_trans) {
-                av_log_ask_for_sample(avctx, "Unimplemented transform: %d!\n", transform_id);
+                avpriv_request_sample(avctx, "Transform %d", transform_id);
                 return AVERROR_PATCHWELCOME;
             }
             if ((transform_id >= 7 && transform_id <= 9) ||
                  transform_id == 17) {
-                av_log_ask_for_sample(avctx, "DCT transform not supported yet!\n");
+                avpriv_request_sample(avctx, "DCT transform");
                 return AVERROR_PATCHWELCOME;
             }
 
@@ -385,6 +384,10 @@ static int decode_band_hdr(IVI45DecContext *ctx, IVIBandDesc *band,
         }
         if (band->scan_size != band->blk_size) {
             av_log(avctx, AV_LOG_ERROR, "mismatching scan table!\n");
+            return AVERROR_INVALIDDATA;
+        }
+        if (band->transform_size == 8 && band->blk_size < 8) {
+            av_log(avctx, AV_LOG_ERROR, "mismatching transform_size!\n");
             return AVERROR_INVALIDDATA;
         }
 

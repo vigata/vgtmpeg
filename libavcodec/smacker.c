@@ -381,12 +381,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (avpkt->size <= 769)
         return AVERROR_INVALIDDATA;
 
-    smk->pic.reference = 3;
-    smk->pic.buffer_hints = FF_BUFFER_HINTS_VALID | FF_BUFFER_HINTS_PRESERVE | FF_BUFFER_HINTS_REUSABLE;
-    if((ret = avctx->reget_buffer(avctx, &smk->pic)) < 0){
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if ((ret = ff_reget_buffer(avctx, &smk->pic)) < 0)
         return ret;
-    }
 
     /* make the palette available on the way out */
     pal = (uint32_t*)smk->pic.data[1];
@@ -513,8 +509,10 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     }
 
+    if ((ret = av_frame_ref(data, &smk->pic)) < 0)
+        return ret;
+
     *got_frame = 1;
-    *(AVFrame*)data = smk->pic;
 
     /* always report that the buffer was completely consumed */
     return avpkt->size;
@@ -534,7 +532,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
     c->avctx = avctx;
 
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
-
     avcodec_get_frame_defaults(&c->pic);
 
     /* decode huffman trees from extradata */
@@ -565,30 +562,20 @@ static av_cold int decode_end(AVCodecContext *avctx)
     av_freep(&smk->full_tbl);
     av_freep(&smk->type_tbl);
 
-    if (smk->pic.data[0])
-        avctx->release_buffer(avctx, &smk->pic);
+    av_frame_unref(&smk->pic);
 
     return 0;
 }
 
 
-typedef struct SmackerAudioContext {
-    AVFrame frame;
-} SmackerAudioContext;
-
 static av_cold int smka_decode_init(AVCodecContext *avctx)
 {
-    SmackerAudioContext *s = avctx->priv_data;
-
     if (avctx->channels < 1 || avctx->channels > 2) {
         av_log(avctx, AV_LOG_ERROR, "invalid number of channels\n");
         return AVERROR(EINVAL);
     }
     avctx->channel_layout = (avctx->channels==2) ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO;
     avctx->sample_fmt = avctx->bits_per_coded_sample == 8 ? AV_SAMPLE_FMT_U8 : AV_SAMPLE_FMT_S16;
-
-    avcodec_get_frame_defaults(&s->frame);
-    avctx->coded_frame = &s->frame;
 
     return 0;
 }
@@ -599,7 +586,7 @@ static av_cold int smka_decode_init(AVCodecContext *avctx)
 static int smka_decode_frame(AVCodecContext *avctx, void *data,
                              int *got_frame_ptr, AVPacket *avpkt)
 {
-    SmackerAudioContext *s = avctx->priv_data;
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     GetBitContext gb;
@@ -644,13 +631,11 @@ static int smka_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     /* get output buffer */
-    s->frame.nb_samples = unp_size / (avctx->channels * (bits + 1));
-    if ((ret = ff_get_buffer(avctx, &s->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    frame->nb_samples = unp_size / (avctx->channels * (bits + 1));
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
-    samples  = (int16_t *)s->frame.data[0];
-    samples8 =            s->frame.data[0];
+    samples  = (int16_t *)frame->data[0];
+    samples8 =            frame->data[0];
 
     // Initialize
     for(i = 0; i < (1 << (bits + stereo)); i++) {
@@ -769,8 +754,7 @@ static int smka_decode_frame(AVCodecContext *avctx, void *data,
         av_free(h[i].values);
     }
 
-    *got_frame_ptr   = 1;
-    *(AVFrame *)data = s->frame;
+    *got_frame_ptr = 1;
 
     return buf_size;
 }
@@ -791,7 +775,6 @@ AVCodec ff_smackaud_decoder = {
     .name           = "smackaud",
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_SMACKAUDIO,
-    .priv_data_size = sizeof(SmackerAudioContext),
     .init           = smka_decode_init,
     .decode         = smka_decode_frame,
     .capabilities   = CODEC_CAP_DR1,

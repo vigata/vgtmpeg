@@ -59,7 +59,6 @@
 typedef struct VmdVideoContext {
 
     AVCodecContext *avctx;
-    AVFrame frame;
     AVFrame prev_frame;
 
     const unsigned char *buf;
@@ -202,7 +201,7 @@ static int rle_unpack(const unsigned char *src, int src_len, int src_count,
     return ps - src;
 }
 
-static void vmd_decode(VmdVideoContext *s)
+static void vmd_decode(VmdVideoContext *s, AVFrame *frame)
 {
     int i;
     unsigned int *palette32;
@@ -253,8 +252,8 @@ static void vmd_decode(VmdVideoContext *s)
         (frame_x || frame_y || (frame_width != s->avctx->width) ||
         (frame_height != s->avctx->height))) {
 
-        memcpy(s->frame.data[0], s->prev_frame.data[0],
-            s->avctx->height * s->frame.linesize[0]);
+        memcpy(frame->data[0], s->prev_frame.data[0],
+            s->avctx->height * frame->linesize[0]);
     }
 
     /* check if there is a new palette */
@@ -283,7 +282,7 @@ static void vmd_decode(VmdVideoContext *s)
             pb_end = s->unpack_buffer + s->unpack_buffer_size;
         }
 
-        dp = &s->frame.data[0][frame_y * s->frame.linesize[0] + frame_x];
+        dp = &frame->data[0][frame_y * frame->linesize[0] + frame_x];
         pp = &s->prev_frame.data[0][frame_y * s->prev_frame.linesize[0] + frame_x];
         switch (meth) {
         case 1:
@@ -313,7 +312,7 @@ static void vmd_decode(VmdVideoContext *s)
                         ofs, frame_width);
                     break;
                 }
-                dp += s->frame.linesize[0];
+                dp += frame->linesize[0];
                 pp += s->prev_frame.linesize[0];
             }
             break;
@@ -324,7 +323,7 @@ static void vmd_decode(VmdVideoContext *s)
                     return;
                 memcpy(dp, pb, frame_width);
                 pb += frame_width;
-                dp += s->frame.linesize[0];
+                dp += frame->linesize[0];
                 pp += s->prev_frame.linesize[0];
             }
             break;
@@ -361,7 +360,7 @@ static void vmd_decode(VmdVideoContext *s)
                     av_log(s->avctx, AV_LOG_ERROR, "offset > width (%d > %d)\n",
                         ofs, frame_width);
                 }
-                dp += s->frame.linesize[0];
+                dp += frame->linesize[0];
                 pp += s->prev_frame.linesize[0];
             }
             break;
@@ -405,7 +404,6 @@ static av_cold int vmdvideo_decode_init(AVCodecContext *avctx)
         palette32[i] = (r << 16) | (g << 8) | (b);
     }
 
-    avcodec_get_frame_defaults(&s->frame);
     avcodec_get_frame_defaults(&s->prev_frame);
 
     return 0;
@@ -418,6 +416,8 @@ static int vmdvideo_decode_frame(AVCodecContext *avctx,
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     VmdVideoContext *s = avctx->priv_data;
+    AVFrame *frame = data;
+    int ret;
 
     s->buf = buf;
     s->size = buf_size;
@@ -425,24 +425,20 @@ static int vmdvideo_decode_frame(AVCodecContext *avctx,
     if (buf_size < 16)
         return buf_size;
 
-    s->frame.reference = 3;
-    if (ff_get_buffer(avctx, &s->frame)) {
-        av_log(s->avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-        return -1;
-    }
+    if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
+        return ret;
 
-    vmd_decode(s);
+    vmd_decode(s, frame);
 
     /* make the palette available on the way out */
-    memcpy(s->frame.data[1], s->palette, PALETTE_COUNT * 4);
+    memcpy(frame->data[1], s->palette, PALETTE_COUNT * 4);
 
     /* shuffle frames */
-    FFSWAP(AVFrame, s->frame, s->prev_frame);
-    if (s->frame.data[0])
-        avctx->release_buffer(avctx, &s->frame);
+    av_frame_unref(&s->prev_frame);
+    if ((ret = av_frame_ref(&s->prev_frame, frame)) < 0)
+        return ret;
 
     *got_frame      = 1;
-    *(AVFrame*)data = s->prev_frame;
 
     /* report that the buffer was completely consumed */
     return buf_size;
@@ -452,8 +448,7 @@ static av_cold int vmdvideo_decode_end(AVCodecContext *avctx)
 {
     VmdVideoContext *s = avctx->priv_data;
 
-    if (s->prev_frame.data[0])
-        avctx->release_buffer(avctx, &s->prev_frame);
+    av_frame_unref(&s->prev_frame);
     av_free(s->unpack_buffer);
 
     return 0;
@@ -469,7 +464,6 @@ static av_cold int vmdvideo_decode_end(AVCodecContext *avctx)
 #define BLOCK_TYPE_SILENCE  3
 
 typedef struct VmdAudioContext {
-    AVFrame frame;
     int out_bps;
     int chunk_size;
 } VmdAudioContext;
@@ -514,9 +508,6 @@ static av_cold int vmdaudio_decode_init(AVCodecContext *avctx)
 
     s->chunk_size = avctx->block_align + avctx->channels * (s->out_bps == 2);
 
-    avcodec_get_frame_defaults(&s->frame);
-    avctx->coded_frame = &s->frame;
-
     av_log(avctx, AV_LOG_DEBUG, "%d channels, %d bits/sample, "
            "block align = %d, sample rate = %d\n",
            avctx->channels, avctx->bits_per_coded_sample, avctx->block_align,
@@ -557,6 +548,7 @@ static void decode_audio_s16(int16_t *out, const uint8_t *buf, int buf_size,
 static int vmdaudio_decode_frame(AVCodecContext *avctx, void *data,
                                  int *got_frame_ptr, AVPacket *avpkt)
 {
+    AVFrame *frame     = data;
     const uint8_t *buf = avpkt->data;
     const uint8_t *buf_end;
     int buf_size = avpkt->size;
@@ -601,13 +593,12 @@ static int vmdaudio_decode_frame(AVCodecContext *avctx, void *data,
     audio_chunks = buf_size / s->chunk_size;
 
     /* get output buffer */
-    s->frame.nb_samples = ((silent_chunks + audio_chunks) * avctx->block_align) / avctx->channels;
-    if ((ret = ff_get_buffer(avctx, &s->frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    frame->nb_samples = ((silent_chunks + audio_chunks) * avctx->block_align) /
+                        avctx->channels;
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
-    }
-    output_samples_u8  = s->frame.data[0];
-    output_samples_s16 = (int16_t *)s->frame.data[0];
+    output_samples_u8  =            frame->data[0];
+    output_samples_s16 = (int16_t *)frame->data[0];
 
     /* decode silent chunks */
     if (silent_chunks > 0) {
@@ -624,7 +615,7 @@ static int vmdaudio_decode_frame(AVCodecContext *avctx, void *data,
     /* decode audio chunks */
     if (audio_chunks > 0) {
         buf_end = buf + buf_size;
-        while ( buf_end - buf >= s->chunk_size) {
+        while (buf_end - buf >= s->chunk_size) {
             if (s->out_bps == 2) {
                 decode_audio_s16(output_samples_s16, buf, s->chunk_size,
                                  avctx->channels);
@@ -637,8 +628,7 @@ static int vmdaudio_decode_frame(AVCodecContext *avctx, void *data,
         }
     }
 
-    *got_frame_ptr   = 1;
-    *(AVFrame *)data = s->frame;
+    *got_frame_ptr = 1;
 
     return avpkt->size;
 }

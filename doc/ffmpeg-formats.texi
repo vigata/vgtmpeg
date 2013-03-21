@@ -140,8 +140,17 @@ Consider things that a sane encoder should not do as an error.
 Use wallclock as timestamps.
 
 @item avoid_negative_ts @var{integer} (@emph{output})
-Shift timestamps to make them positive. 1 enables, 0 disables, default
-of -1 enables when required by target format.
+Shift timestamps to make them positive. A value of 1 enables shifting,
+a value of 0 disables it, the default value of -1 enables shifting
+when required by the target format.
+
+When shifting is enabled, all output timestamps are shifted by the
+same amount. Audio, video, and subtitles desynching and relative
+timestamp differences are preserved compared to how they would have
+been without shifting.
+
+Also note that this affects only leading negative timestamps, and not
+non-monotonic negative timestamps.
 @end table
 
 @c man end FORMAT OPTIONS

@@ -28,7 +28,7 @@
 #include "libavutil/lzo.h"
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
-#include "dsputil.h"
+#include "internal.h"
 #include "rtjpeg.h"
 
 typedef struct {
@@ -156,7 +156,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     int orig_size      = buf_size;
     int keyframe;
     int size_change = 0;
-    int result;
+    int result, init_frame = !avctx->frame_number;
     enum {
         NUV_UNCOMPRESSED  = '0',
         NUV_RTJPEG        = '1',
@@ -241,15 +241,17 @@ retry:
         buf_size -= RTJPEG_HEADER_SIZE;
     }
 
-    if ((size_change || keyframe) && c->pic.data[0])
-        avctx->release_buffer(avctx, &c->pic);
-    c->pic.reference    = 3;
-    c->pic.buffer_hints = FF_BUFFER_HINTS_VALID    | FF_BUFFER_HINTS_READABLE |
-                          FF_BUFFER_HINTS_PRESERVE | FF_BUFFER_HINTS_REUSABLE;
-    result = avctx->reget_buffer(avctx, &c->pic);
-    if (result < 0) {
-        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
+    if (size_change || keyframe) {
+        av_frame_unref(&c->pic);
+        init_frame = 1;
+    }
+
+    if ((result = ff_reget_buffer(avctx, &c->pic)) < 0)
         return result;
+    if (init_frame) {
+        memset(c->pic.data[0], 0,    avctx->height * c->pic.linesize[0]);
+        memset(c->pic.data[1], 0x80, avctx->height * c->pic.linesize[1] / 2);
+        memset(c->pic.data[2], 0x80, avctx->height * c->pic.linesize[2] / 2);
     }
 
     c->pic.pict_type = keyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_P;
@@ -284,7 +286,9 @@ retry:
         return AVERROR_INVALIDDATA;
     }
 
-    *picture   = c->pic;
+    if ((result = av_frame_ref(picture, &c->pic)) < 0)
+        return result;
+
     *got_frame = 1;
     return orig_size;
 }
@@ -319,8 +323,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
     NuvContext *c = avctx->priv_data;
 
     av_freep(&c->decomp_buf);
-    if (c->pic.data[0])
-        avctx->release_buffer(avctx, &c->pic);
+    av_frame_unref(&c->pic);
 
     return 0;
 }
