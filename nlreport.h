@@ -254,7 +254,8 @@ static char *tmpstrcptr;
 #define JSON_STRING_C(cstring)  { JSON_LOG("\"%s\"", tmpstrcptr=c_strescape(cstring) ); c_strfree(tmpstrcptr); }
 //#define JSON_STRING_C(cstring)  { JSON_LOG("\"%s\"", cstring) ;  }
 #define JSON_INT_C(val)  JSON_LOG("%d", (val));
-#define JSON_DOUBLE_C(val) JSON_LOG("%f", (double)(val));
+/* if double is NaN set to zero on output. Checking NaN as compiler is supposed to return true on NaN!=NaN */
+#define JSON_DOUBLE_C(val) JSON_LOG("%f", ((double)(val)!=(double)(val)) ? 0.0 : (double)(val));
 #define JSON_BOOLEAN_C(val)     JSON_LOG("%s", (val) ? "true" : "false");
 
 

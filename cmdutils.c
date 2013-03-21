@@ -1031,6 +1031,13 @@ void show_banner(int argc, char **argv, const OptionDef *options)
     if (idx)
         return;
 
+    /* -- vgtmpeg */
+    /* don't show banner if output json dump info */
+    if( locate_option(argc, argv, options, "codecs_json") ) return;
+    if( locate_option(argc, argv, options, "formats_json") ) return;
+    if( locate_option(argc, argv, options, "options_json") ) return;
+    /* -- vgtmpeg */
+
     print_program_info (INDENT|SHOW_COPYRIGHT, AV_LOG_INFO);
     print_all_libs_info(INDENT|SHOW_CONFIG,  AV_LOG_INFO);
     print_all_libs_info(INDENT|SHOW_VERSION, AV_LOG_INFO);
