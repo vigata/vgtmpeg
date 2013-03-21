@@ -223,13 +223,14 @@ static int rle_uncompress(const uint8_t *src, int ssize, uint8_t *dst, int dsize
 
 static int decode_frame(AVCodecContext *avctx,
                         void *data,
-                        int *data_size,
+                        int *got_frame,
                         AVPacket *avpkt)
 {
     const uint8_t *buf      = avpkt->data;
     unsigned int   buf_size = avpkt->size;
     const uint8_t *buf_end  = buf + buf_size;
 
+    const AVPixFmtDescriptor *desc;
     EXRContext *const s = avctx->priv_data;
     AVFrame *picture  = data;
     AVFrame *const p = &s->picture;
@@ -452,9 +453,9 @@ static int decode_frame(AVCodecContext *avctx,
     case 2: // 32-bit
     case 1: // 16-bit
         if (s->channel_offsets[3] >= 0)
-            avctx->pix_fmt = PIX_FMT_RGBA64;
+            avctx->pix_fmt = AV_PIX_FMT_RGBA64;
         else
-            avctx->pix_fmt = PIX_FMT_RGB48;
+            avctx->pix_fmt = AV_PIX_FMT_RGB48;
         break;
     // 8-bit
     case 0:
@@ -494,9 +495,10 @@ static int decode_frame(AVCodecContext *avctx,
         avcodec_set_dimensions(avctx, w, h);
     }
 
-    bxmin = xmin * 2 * av_pix_fmt_descriptors[avctx->pix_fmt].nb_components;
-    axmax = (avctx->width - (xmax + 1)) * 2 * av_pix_fmt_descriptors[avctx->pix_fmt].nb_components;
-    out_line_size = avctx->width * 2 * av_pix_fmt_descriptors[avctx->pix_fmt].nb_components;
+    desc = av_pix_fmt_desc_get(avctx->pix_fmt);
+    bxmin = xmin * 2 * desc->nb_components;
+    axmax = (avctx->width - (xmax + 1)) * 2 * desc->nb_components;
+    out_line_size = avctx->width * 2 * desc->nb_components;
     scan_line_size = xdelta * current_channel_offset;
     uncompressed_size = scan_line_size * scan_lines_per_block;
 
@@ -543,6 +545,8 @@ static int decode_frame(AVCodecContext *avctx,
             } else {
                 const uint8_t *red_channel_buffer, *green_channel_buffer, *blue_channel_buffer, *alpha_channel_buffer = 0;
 
+                if (scan_lines_per_block > 1)
+                    uncompressed_size = scan_line_size * FFMIN(scan_lines_per_block, ymax - y + 1);
                 if ((s->compr == EXR_ZIP1 || s->compr == EXR_ZIP16) && data_size < uncompressed_size) {
                     unsigned long dest_len = uncompressed_size;
 
@@ -588,7 +592,7 @@ static int decode_frame(AVCodecContext *avctx,
 
                     // Zero out the start if xmin is not 0
                     memset(ptr_x, 0, bxmin);
-                    ptr_x += xmin * av_pix_fmt_descriptors[avctx->pix_fmt].nb_components;
+                    ptr_x += xmin * desc->nb_components;
                     if (s->bits_per_color_id == 2) {
                         // 32-bit
                         for (x = 0; x < xdelta; x++) {
@@ -629,7 +633,7 @@ static int decode_frame(AVCodecContext *avctx,
     }
 
     *picture   = s->picture;
-    *data_size = sizeof(AVPicture);
+    *got_frame = 1;
 
     return buf_size;
 }

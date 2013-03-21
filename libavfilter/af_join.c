@@ -25,8 +25,9 @@
  * a single output
  */
 
-#include "libavutil/audioconvert.h"
 #include "libavutil/avassert.h"
+#include "libavutil/channel_layout.h"
+#include "libavutil/common.h"
 #include "libavutil/opt.h"
 
 #include "audio.h"
@@ -75,13 +76,14 @@ typedef struct JoinBufferPriv {
 
 #define OFFSET(x) offsetof(JoinContext, x)
 #define A AV_OPT_FLAG_AUDIO_PARAM
+#define F AV_OPT_FLAG_FILTERING_PARAM
 static const AVOption join_options[] = {
-    { "inputs",         "Number of input streams.", OFFSET(inputs),             AV_OPT_TYPE_INT,    { 2 }, 1, INT_MAX,       A },
+    { "inputs",         "Number of input streams.", OFFSET(inputs),             AV_OPT_TYPE_INT,    { .i64 = 2 }, 1, INT_MAX,       A|F },
     { "channel_layout", "Channel layout of the "
-                        "output stream.",           OFFSET(channel_layout_str), AV_OPT_TYPE_STRING, {.str = "stereo"}, 0, 0, A },
+                        "output stream.",           OFFSET(channel_layout_str), AV_OPT_TYPE_STRING, {.str = "stereo"}, 0, 0, A|F },
     { "map",            "A comma-separated list of channels maps in the format "
                         "'input_stream.input_channel-output_channel.",
-                                                    OFFSET(map),                AV_OPT_TYPE_STRING,                 .flags = A },
+                                                    OFFSET(map),                AV_OPT_TYPE_STRING,                 .flags = A|F },
     { NULL },
 };
 
@@ -92,7 +94,7 @@ static const AVClass join_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static int filter_samples(AVFilterLink *link, AVFilterBufferRef *buf)
+static int filter_frame(AVFilterLink *link, AVFilterBufferRef *buf)
 {
     AVFilterContext *ctx = link->dst;
     JoinContext       *s = ctx->priv;
@@ -227,7 +229,7 @@ static int join_init(AVFilterContext *ctx, const char *args)
         snprintf(name, sizeof(name), "input%d", i);
         pad.type           = AVMEDIA_TYPE_AUDIO;
         pad.name           = av_strdup(name);
-        pad.filter_samples = filter_samples;
+        pad.filter_frame   = filter_frame;
 
         pad.needs_fifo = 1;
 
@@ -468,7 +470,7 @@ static int join_request_frame(AVFilterLink *outlink)
     priv->nb_in_buffers = ctx->nb_inputs;
     buf->buf->priv      = priv;
 
-    ret = ff_filter_samples(outlink, buf);
+    ret = ff_filter_frame(outlink, buf);
 
     memset(s->input_frames, 0, sizeof(*s->input_frames) * ctx->nb_inputs);
 
@@ -482,6 +484,16 @@ fail:
     return AVERROR(ENOMEM);
 }
 
+static const AVFilterPad avfilter_af_join_outputs[] = {
+    {
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_AUDIO,
+        .config_props  = join_config_output,
+        .request_frame = join_request_frame,
+    },
+    { NULL }
+};
+
 AVFilter avfilter_af_join = {
     .name           = "join",
     .description    = NULL_IF_CONFIG_SMALL("Join multiple audio streams into "
@@ -492,10 +504,7 @@ AVFilter avfilter_af_join = {
     .uninit         = join_uninit,
     .query_formats  = join_query_formats,
 
-    .inputs  = (const AVFilterPad[]){{ NULL }},
-    .outputs = (const AVFilterPad[]){{ .name          = "default",
-                                       .type          = AVMEDIA_TYPE_AUDIO,
-                                       .config_props  = join_config_output,
-                                       .request_frame = join_request_frame, },
-                                     { NULL }},
+    .inputs  = NULL,
+    .outputs = avfilter_af_join_outputs,
+    .priv_class = &join_class,
 };

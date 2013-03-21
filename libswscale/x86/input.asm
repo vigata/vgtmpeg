@@ -21,8 +21,7 @@
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
-%include "x86inc.asm"
-%include "x86util.asm"
+%include "libavutil/x86/x86util.asm"
 
 SECTION_RODATA
 
@@ -99,7 +98,7 @@ cglobal %2 %+ 24ToY, 6, 6, %1, dst, src, u1, u2, w, u3
 %define coeff2 [%2_Ycoeff_3x56]
 %endif ; x86-32/64 && mmsize == 8/16
 %if (ARCH_X86_64 || mmsize == 8) && %0 == 3
-    jmp mangle(program_name %+ _ %+ %3 %+ 24ToY %+ SUFFIX).body
+    jmp mangle(private_prefix %+ _ %+ %3 %+ 24ToY %+ SUFFIX).body
 %else ; (ARCH_X86_64 && %0 == 3) || mmsize == 8
 .body:
 %if cpuflag(ssse3)
@@ -189,7 +188,7 @@ cglobal %2 %+ 24ToUV, 7, 7, %1, dstU, dstV, u1, src, u2, w, u3
 %define coeffV2 [%2_Vcoeff_3x56]
 %endif ; x86-32/64
 %if ARCH_X86_64 && %0 == 3
-    jmp mangle(program_name %+ _ %+ %3 %+ 24ToUV %+ SUFFIX).body
+    jmp mangle(private_prefix %+ _ %+ %3 %+ 24ToUV %+ SUFFIX).body
 %else ; ARCH_X86_64 && %0 == 3
 .body:
 %if cpuflag(ssse3)
@@ -304,7 +303,7 @@ RGB24_FUNCS 10, 12
 INIT_XMM ssse3
 RGB24_FUNCS 11, 13
 
-%if HAVE_AVX
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 RGB24_FUNCS 11, 13
 %endif
@@ -316,7 +315,7 @@ cglobal %2%3%4%5 %+ ToY, 6, 6, %1, dst, src, u1, u2, w, u3
     mova           m5, [rgba_Ycoeff_%2%4]
     mova           m6, [rgba_Ycoeff_%3%5]
 %if %0 == 6
-    jmp mangle(program_name %+ _ %+ %6 %+ ToY %+ SUFFIX).body
+    jmp mangle(private_prefix %+ _ %+ %6 %+ ToY %+ SUFFIX).body
 %else ; %0 == 6
 .body:
 %if ARCH_X86_64
@@ -372,7 +371,7 @@ cglobal %2%3%4%5 %+ ToUV, 7, 7, %1, dstU, dstV, u1, src, u2, w, u3
 %define coeffV2 [rgba_Vcoeff_%3%5]
 %endif ; x86-64/32
 %if ARCH_X86_64 && %0 == 6
-    jmp mangle(program_name %+ _ %+ %6 %+ ToUV %+ SUFFIX).body
+    jmp mangle(private_prefix %+ _ %+ %6 %+ ToUV %+ SUFFIX).body
 %else ; ARCH_X86_64 && %0 == 6
 .body:
 %if ARCH_X86_64
@@ -450,7 +449,7 @@ RGB32_FUNCS 0, 0
 INIT_XMM sse2
 RGB32_FUNCS 8, 12
 
-%if HAVE_AVX
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 RGB32_FUNCS 8, 12
 %endif
@@ -660,7 +659,7 @@ YUYV_TO_UV_FN 3, uyvy
 NVXX_TO_UV_FN 5, nv12
 NVXX_TO_UV_FN 5, nv21
 
-%if HAVE_AVX
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 ; in theory, we could write a yuy2-to-y using vpand (i.e. AVX), but
 ; that's not faster in practice

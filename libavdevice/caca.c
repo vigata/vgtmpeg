@@ -126,7 +126,7 @@ static int caca_write_header(AVFormatContext *s)
         return AVERROR(EINVAL);
     }
 
-    if (encctx->pix_fmt != PIX_FMT_RGB24) {
+    if (encctx->pix_fmt != AV_PIX_FMT_RGB24) {
         av_log(s, AV_LOG_ERROR,
                "Unsupported pixel format '%s', choose rgb24\n",
                av_get_pix_fmt_name(encctx->pix_fmt));
@@ -140,7 +140,7 @@ static int caca_write_header(AVFormatContext *s)
         goto fail;
     }
 
-    bpp = av_get_bits_per_pixel(&av_pix_fmt_descriptors[encctx->pix_fmt]);
+    bpp = av_get_bits_per_pixel(av_pix_fmt_desc_get(encctx->pix_fmt));
     c->dither = caca_create_dither(bpp, encctx->width, encctx->height,
                                    bpp / 8 * encctx->width,
                                    0x0000ff, 0x00ff00, 0xff0000, 0);
@@ -208,9 +208,9 @@ static const AVOption options[] = {
     { "antialias",    "set antialias method",    OFFSET(antialias), AV_OPT_TYPE_STRING, {.str = "default" }, 0, 0, ENC },
     { "charset",      "set charset used to render output", OFFSET(charset), AV_OPT_TYPE_STRING, {.str = "default" }, 0, 0, ENC },
     { "color",        "set color used to render output",   OFFSET(color),   AV_OPT_TYPE_STRING, {.str = "default" }, 0, 0, ENC },
-    { "list_drivers", "list available drivers",  OFFSET(list_drivers), AV_OPT_TYPE_INT, {.dbl=0}, 0, 1, ENC, "list_drivers" },
-    { "true",         NULL, 0, AV_OPT_TYPE_CONST, {.dbl = 1}, 0, 0, ENC, "list_drivers" },
-    { "false",        NULL, 0, AV_OPT_TYPE_CONST, {.dbl = 0}, 0, 0, ENC, "list_drivers" },
+    { "list_drivers", "list available drivers",  OFFSET(list_drivers), AV_OPT_TYPE_INT, {.i64=0}, 0, 1, ENC, "list_drivers" },
+    { "true",         NULL, 0, AV_OPT_TYPE_CONST, {.i64 = 1}, 0, 0, ENC, "list_drivers" },
+    { "false",        NULL, 0, AV_OPT_TYPE_CONST, {.i64 = 0}, 0, 0, ENC, "list_drivers" },
     { "list_dither", "list available dither options", OFFSET(list_dither), AV_OPT_TYPE_STRING, {.dbl=0}, 0, 1, ENC, "list_dither" },
     { "algorithms",   NULL, 0, AV_OPT_TYPE_CONST, {.str = "algorithms"}, 0, 0, ENC, "list_dither" },
     { "antialiases",  NULL, 0, AV_OPT_TYPE_CONST, {.str = "antialiases"},0, 0, ENC, "list_dither" },

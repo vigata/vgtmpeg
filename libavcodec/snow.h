@@ -23,7 +23,7 @@
 #define AVCODEC_SNOW_H
 
 #include "dsputil.h"
-#include "dwt.h"
+#include "snow_dwt.h"
 
 #include "rangecoder.h"
 #include "mathops.h"
@@ -108,7 +108,8 @@ typedef struct SnowContext{
     AVCodecContext *avctx;
     RangeCoder c;
     DSPContext dsp;
-    DWTContext dwt;
+    VideoDSPContext vdsp;
+    SnowDWTContext dwt;
     AVFrame new_picture;
     AVFrame input_picture;              ///< new_picture with the internal linesizes
     AVFrame current_picture;
@@ -582,7 +583,7 @@ static inline int get_symbol2(RangeCoder *c, uint8_t *state, int log2){
 
     av_assert2(log2>=-4);
 
-    while(get_rac(c, state+4+log2)){
+    while(log2<28 && get_rac(c, state+4+log2)){
         v+= r;
         log2++;
         if(log2>0) r+=r;
@@ -664,11 +665,13 @@ static inline void unpack_coeffs(SnowContext *s, SubBand *b, SubBand * parent, i
                     int max_run;
                     run--;
                     v=0;
-
+                    av_assert2(run >= 0);
                     if(y) max_run= FFMIN(run, prev_xc->x - x - 2);
                     else  max_run= FFMIN(run, w-x-1);
                     if(parent_xc)
                         max_run= FFMIN(max_run, 2*parent_xc->x - x - 1);
+                    av_assert2(max_run >= 0 && max_run <= run);
+
                     x+= max_run;
                     run-= max_run;
                 }

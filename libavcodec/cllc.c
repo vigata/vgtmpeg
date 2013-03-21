@@ -24,6 +24,7 @@
 #include "dsputil.h"
 #include "get_bits.h"
 #include "avcodec.h"
+#include "internal.h"
 
 typedef struct CLLCContext {
     DSPContext dsp;
@@ -272,8 +273,8 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
     CLLCContext *ctx = avctx->priv_data;
     AVFrame *pic = avctx->coded_frame;
     uint8_t *src = avpkt->data;
-    uint8_t *swapped_buf_new;
     uint32_t info_tag, info_offset;
+    int data_size;
     GetBitContext gb;
     int coding_type, ret;
 
@@ -281,15 +282,6 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         avctx->release_buffer(avctx, pic);
 
     pic->reference = 0;
-
-    /* Make sure our bswap16'd buffer is big enough */
-    swapped_buf_new = av_fast_realloc(ctx->swapped_buf,
-                                      &ctx->swapped_buf_size, avpkt->size);
-    if (!swapped_buf_new) {
-        av_log(avctx, AV_LOG_ERROR, "Could not realloc swapped buffer.\n");
-        return AVERROR(ENOMEM);
-    }
-    ctx->swapped_buf = swapped_buf_new;
 
     /* Skip the INFO header if present */
     info_offset = 0;
@@ -309,11 +301,21 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
         av_log(avctx, AV_LOG_DEBUG, "Skipping INFO chunk.\n");
     }
 
+    data_size = (avpkt->size - info_offset) & ~1;
+
+    /* Make sure our bswap16'd buffer is big enough */
+    av_fast_padded_malloc(&ctx->swapped_buf,
+                          &ctx->swapped_buf_size, data_size);
+    if (!ctx->swapped_buf) {
+        av_log(avctx, AV_LOG_ERROR, "Could not allocate swapped buffer.\n");
+        return AVERROR(ENOMEM);
+    }
+
     /* bswap16 the buffer since CLLC's bitreader works in 16-bit words */
     ctx->dsp.bswap16_buf((uint16_t *) ctx->swapped_buf, (uint16_t *) src,
-                         (avpkt->size - info_offset) / 2);
+                         data_size / 2);
 
-    init_get_bits(&gb, ctx->swapped_buf, (avpkt->size - info_offset) * 8);
+    init_get_bits(&gb, ctx->swapped_buf, data_size * 8);
 
     /*
      * Read in coding type. The types are as follows:
@@ -329,10 +331,10 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
     switch (coding_type) {
     case 1:
     case 2:
-        avctx->pix_fmt             = PIX_FMT_RGB24;
+        avctx->pix_fmt             = AV_PIX_FMT_RGB24;
         avctx->bits_per_raw_sample = 8;
 
-        ret = avctx->get_buffer(avctx, pic);
+        ret = ff_get_buffer(avctx, pic);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
             return ret;
@@ -344,10 +346,10 @@ static int cllc_decode_frame(AVCodecContext *avctx, void *data,
 
         break;
     case 3:
-        avctx->pix_fmt             = PIX_FMT_ARGB;
+        avctx->pix_fmt             = AV_PIX_FMT_ARGB;
         avctx->bits_per_raw_sample = 8;
 
-        ret = avctx->get_buffer(avctx, pic);
+        ret = ff_get_buffer(avctx, pic);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "Could not allocate buffer.\n");
             return ret;

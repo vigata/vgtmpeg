@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/intreadwrite.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/dict.h"
 #include "avformat.h"
@@ -27,6 +28,7 @@
 #include "aiff.h"
 #include "isom.h"
 #include "id3v2.h"
+#include "mov_chan.h"
 
 #define AIFF                    0
 #define AIFF_C_VERSION1         0xA2805140
@@ -160,7 +162,7 @@ static unsigned int get_aiff_header(AVFormatContext *s, int size,
     /* Block align needs to be computed in all cases, as the definition
      * is specific to applications -> here we use the WAVE format definition */
     if (!codec->block_align)
-        codec->block_align = (codec->bits_per_coded_sample * codec->channels) >> 3;
+        codec->block_align = (av_get_bits_per_sample(codec->codec_id) * codec->channels) >> 3;
 
     if (aiff->block_duration) {
         codec->bit_rate = codec->sample_rate * (codec->block_align << 3) /
@@ -189,7 +191,7 @@ static int aiff_probe(AVProbeData *p)
 /* aiff input */
 static int aiff_read_header(AVFormatContext *s)
 {
-    int size, filesize;
+    int ret, size, filesize;
     int64_t offset = 0;
     uint32_t tag;
     unsigned version = AIFF_C_VERSION1;
@@ -235,6 +237,11 @@ static int aiff_read_header(AVFormatContext *s)
             break;
         case MKTAG('I', 'D', '3', ' '):
             ff_id3v2_read(s, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
+            if (id3v2_extra_meta)
+                if ((ret = ff_id3v2_parse_apic(s, &id3v2_extra_meta)) < 0) {
+                    ff_id3v2_free_extra_meta(&id3v2_extra_meta);
+                    return ret;
+                }
             ff_id3v2_free_extra_meta(&id3v2_extra_meta);
             break;
         case MKTAG('F', 'V', 'E', 'R'):     /* Version chunk */
@@ -257,7 +264,7 @@ static int aiff_read_header(AVFormatContext *s)
             offset = avio_rb32(pb);      /* Offset of sound data */
             avio_rb32(pb);               /* BlockSize... don't care */
             offset += avio_tell(pb);    /* Compute absolute data offset */
-            if (st->codec->block_align)    /* Assume COMM already parsed */
+            if (st->codec->block_align && !pb->seekable)    /* Assume COMM already parsed */
                 goto got_sound;
             if (!pb->seekable) {
                 av_log(s, AV_LOG_ERROR, "file is not seekable\n");
@@ -273,9 +280,13 @@ static int aiff_read_header(AVFormatContext *s)
                 return AVERROR(ENOMEM);
             st->codec->extradata_size = size;
             avio_read(pb, st->codec->extradata, size);
+            if (st->codec->codec_id == AV_CODEC_ID_QDM2 && size>=12*4 && !st->codec->block_align) {
+                st->codec->block_align = AV_RB32(st->codec->extradata+11*4);
+                aiff->block_duration = AV_RB32(st->codec->extradata+9*4);
+            }
             break;
         case MKTAG('C','H','A','N'):
-            if(ff_mov_read_chan(s, st, size) < 0)
+            if(ff_mov_read_chan(s, pb, st, size) < 0)
                 return AVERROR_INVALIDDATA;
             break;
         default: /* Jump */

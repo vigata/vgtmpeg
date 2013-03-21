@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include "avcodec.h"
 #include "vp56dsp.h"
+#include "libavutil/common.h"
 
 /* Gives very similar result than the vp6 version except in a few cases */
 static int vp5_adjust(int v, int t)
@@ -89,5 +90,5 @@ void ff_vp56dsp_init(VP56DSPContext *s, enum AVCodecID codec)
     }
 
     if (ARCH_ARM) ff_vp56dsp_init_arm(s, codec);
-    if (HAVE_MMX) ff_vp56dsp_init_x86(s, codec);
+    if (ARCH_X86) ff_vp56dsp_init_x86(s, codec);
 }

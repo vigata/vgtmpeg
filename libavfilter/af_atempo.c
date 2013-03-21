@@ -40,9 +40,9 @@
 
 #include <float.h>
 #include "libavcodec/avfft.h"
-#include "libavutil/audioconvert.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/eval.h"
 #include "libavutil/opt.h"
 #include "libavutil/samplefmt.h"
@@ -138,7 +138,7 @@ typedef struct {
     RDFTContext *complex_to_real;
     FFTSample *correlation;
 
-    // for managing AVFilterPad.request_frame and AVFilterPad.filter_samples
+    // for managing AVFilterPad.request_frame and AVFilterPad.filter_frame
     int request_fulfilled;
     AVFilterBufferRef *dst_buffer;
     uint8_t *dst;
@@ -209,14 +209,16 @@ static void yae_release_buffers(ATempoContext *atempo)
     atempo->complex_to_real = NULL;
 }
 
-#define REALLOC_OR_FAIL(field, field_size)                      \
+/* av_realloc is not aligned enough; fortunately, the data does not need to
+ * be preserved */
+#define RE_MALLOC_OR_FAIL(field, field_size)                    \
     do {                                                        \
-        void * new_field = av_realloc(field, (field_size));     \
-        if (!new_field) {                                       \
+        av_freep(&field);                                       \
+        field = av_malloc(field_size);                          \
+        if (!field) {                                           \
             yae_release_buffers(atempo);                        \
             return AVERROR(ENOMEM);                             \
         }                                                       \
-        field = new_field;                                      \
     } while (0)
 
 /**
@@ -251,10 +253,10 @@ static int yae_reset(ATempoContext *atempo,
     }
 
     // initialize audio fragment buffers:
-    REALLOC_OR_FAIL(atempo->frag[0].data, atempo->window * atempo->stride);
-    REALLOC_OR_FAIL(atempo->frag[1].data, atempo->window * atempo->stride);
-    REALLOC_OR_FAIL(atempo->frag[0].xdat, atempo->window * sizeof(FFTComplex));
-    REALLOC_OR_FAIL(atempo->frag[1].xdat, atempo->window * sizeof(FFTComplex));
+    RE_MALLOC_OR_FAIL(atempo->frag[0].data, atempo->window * atempo->stride);
+    RE_MALLOC_OR_FAIL(atempo->frag[1].data, atempo->window * atempo->stride);
+    RE_MALLOC_OR_FAIL(atempo->frag[0].xdat, atempo->window * sizeof(FFTComplex));
+    RE_MALLOC_OR_FAIL(atempo->frag[1].xdat, atempo->window * sizeof(FFTComplex));
 
     // initialize rDFT contexts:
     av_rdft_end(atempo->real_to_complex);
@@ -275,13 +277,13 @@ static int yae_reset(ATempoContext *atempo,
         return AVERROR(ENOMEM);
     }
 
-    REALLOC_OR_FAIL(atempo->correlation, atempo->window * sizeof(FFTComplex));
+    RE_MALLOC_OR_FAIL(atempo->correlation, atempo->window * sizeof(FFTComplex));
 
     atempo->ring = atempo->window * 3;
-    REALLOC_OR_FAIL(atempo->buffer, atempo->ring * atempo->stride);
+    RE_MALLOC_OR_FAIL(atempo->buffer, atempo->ring * atempo->stride);
 
     // initialize the Hann window function:
-    REALLOC_OR_FAIL(atempo->hann, atempo->window * sizeof(float));
+    RE_MALLOC_OR_FAIL(atempo->hann, atempo->window * sizeof(float));
 
     for (i = 0; i < atempo->window; i++) {
         double t = (double)i / (double)(atempo->window - 1);
@@ -976,7 +978,7 @@ static int query_formats(AVFilterContext *ctx)
     // Planar sample formats are too cumbersome to store in a ring buffer,
     // therefore planar sample formats are not supported.
     //
-    enum AVSampleFormat sample_fmts[] = {
+    static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_U8,
         AV_SAMPLE_FMT_S16,
         AV_SAMPLE_FMT_S32,
@@ -1031,7 +1033,7 @@ static void push_samples(ATempoContext *atempo,
                      (AVRational){ 1, outlink->sample_rate },
                      outlink->time_base);
 
-    ff_filter_samples(outlink, atempo->dst_buffer);
+    ff_filter_frame(outlink, atempo->dst_buffer);
     atempo->dst_buffer = NULL;
     atempo->dst        = NULL;
     atempo->dst_end    = NULL;
@@ -1039,7 +1041,7 @@ static void push_samples(ATempoContext *atempo,
     atempo->nsamples_out += n_out;
 }
 
-static int filter_samples(AVFilterLink *inlink,
+static int filter_frame(AVFilterLink *inlink,
                            AVFilterBufferRef *src_buffer)
 {
     AVFilterContext  *ctx = inlink->dst;
@@ -1134,6 +1136,26 @@ static int process_command(AVFilterContext *ctx,
     return !strcmp(cmd, "tempo") ? yae_set_tempo(ctx, arg) : AVERROR(ENOSYS);
 }
 
+static const AVFilterPad atempo_inputs[] = {
+    {
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_AUDIO,
+        .filter_frame = filter_frame,
+        .config_props = config_props,
+        .min_perms    = AV_PERM_READ,
+    },
+    { NULL }
+};
+
+static const AVFilterPad atempo_outputs[] = {
+    {
+        .name          = "default",
+        .request_frame = request_frame,
+        .type          = AVMEDIA_TYPE_AUDIO,
+    },
+    { NULL }
+};
+
 AVFilter avfilter_af_atempo = {
     .name            = "atempo",
     .description     = NULL_IF_CONFIG_SMALL("Adjust audio tempo."),
@@ -1142,20 +1164,6 @@ AVFilter avfilter_af_atempo = {
     .query_formats   = query_formats,
     .process_command = process_command,
     .priv_size       = sizeof(ATempoContext),
-
-    .inputs    = (const AVFilterPad[]) {
-        { .name            = "default",
-          .type            = AVMEDIA_TYPE_AUDIO,
-          .filter_samples  = filter_samples,
-          .config_props    = config_props,
-          .min_perms       = AV_PERM_READ, },
-        { .name = NULL}
-    },
-
-    .outputs   = (const AVFilterPad[]) {
-        { .name            = "default",
-          .request_frame   = request_frame,
-          .type            = AVMEDIA_TYPE_AUDIO, },
-        { .name = NULL}
-    },
+    .inputs          = atempo_inputs,
+    .outputs         = atempo_outputs,
 };

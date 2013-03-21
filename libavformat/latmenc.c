@@ -41,7 +41,7 @@ typedef struct {
 
 static const AVOption options[] = {
     {"smc-interval", "StreamMuxConfig interval.",
-     offsetof(LATMContext, mod), AV_OPT_TYPE_INT, {.dbl = 0x0014}, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM},
+     offsetof(LATMContext, mod), AV_OPT_TYPE_INT, {.i64 = 0x0014}, 0x0001, 0xffff, AV_OPT_FLAG_ENCODING_PARAM},
     {NULL},
 };
 
@@ -156,6 +156,15 @@ static int latm_write_packet(AVFormatContext *s, AVPacket *pkt)
         av_log(s, AV_LOG_ERROR, "ADTS header detected - ADTS will not be incorrectly muxed into LATM\n");
         return AVERROR_INVALIDDATA;
     }
+
+    if (!s->streams[0]->codec->extradata) {
+        if(pkt->size > 2 && pkt->data[0] == 0x56 && (pkt->data[1] >> 4) == 0xe &&
+            (AV_RB16(pkt->data + 1) & 0x1FFF) + 3 == pkt->size)
+            return ff_raw_write_packet(s, pkt);
+        else
+            return AVERROR_INVALIDDATA;
+    }
+
     if (pkt->size > 0x1fff)
         goto too_large;
 

@@ -65,15 +65,25 @@ static int mov_text_decode_frame(AVCodecContext *avctx,
     const char *ptr = avpkt->data;
     const char *end;
 
-    if (!ptr || avpkt->size <= 2)
-        return avpkt->size ? AVERROR_INVALIDDATA : 0;
+    if (!ptr || avpkt->size < 2)
+        return AVERROR_INVALIDDATA;
+
+    /*
+     * A packet of size two with value zero is an empty subtitle
+     * used to mark the end of the previous non-empty subtitle.
+     * We can just drop them here as we have duration information
+     * already. If the value is non-zero, then it's technically a
+     * bad packet.
+     */
+    if (avpkt->size == 2)
+        return AV_RB16(ptr) == 0 ? 0 : AVERROR_INVALIDDATA;
 
     /*
      * The first two bytes of the packet are the length of the text string
      * In complex cases, there are style descriptors appended to the string
      * so we can't just assume the packet size is the string size.
      */
-    end = ptr + FFMAX(2 + AV_RB16(ptr), avpkt->size);
+    end = ptr + FFMIN(2 + AV_RB16(ptr), avpkt->size);
     ptr += 2;
 
     ts_start = av_rescale_q(avpkt->pts,

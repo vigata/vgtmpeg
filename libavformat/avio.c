@@ -85,11 +85,11 @@ const AVClass ffurl_context_class = {
 
 const char *avio_enum_protocols(void **opaque, int output)
 {
-    URLProtocol **p = (URLProtocol **)opaque;
-    *p = ffurl_protocol_next(*p);
-    if (!*p) return NULL;
-    if ((output && (*p)->url_write) || (!output && (*p)->url_read))
-        return (*p)->name;
+    URLProtocol *p;
+    *opaque = ffurl_protocol_next(*opaque);
+    if (!(p = *opaque)) return NULL;
+    if ((output && p->url_write) || (!output && p->url_read))
+        return p->name;
     return avio_enum_protocols(opaque, output);
 }
 
@@ -156,6 +156,7 @@ static int url_alloc_for_protocol (URLContext **puc, struct URLProtocol *up,
                     av_log(uc, AV_LOG_ERROR, "Error parsing options string %s\n", start);
                     av_freep(&uc->priv_data);
                     av_freep(&uc);
+                    err = AVERROR(EINVAL);
                     goto fail;
                 }
                 memmove(start, key+1, strlen(key));
@@ -254,6 +255,7 @@ static inline int retry_transfer_wrapper(URLContext *h, unsigned char *buf, int 
 {
     int ret, len;
     int fast_retries = 5;
+    int64_t wait_since = 0;
 
     len = 0;
     while (len < size_min) {
@@ -264,10 +266,17 @@ static inline int retry_transfer_wrapper(URLContext *h, unsigned char *buf, int 
             return ret;
         if (ret == AVERROR(EAGAIN)) {
             ret = 0;
-            if (fast_retries)
+            if (fast_retries) {
                 fast_retries--;
-            else
+            } else {
+                if (h->rw_timeout) {
+                    if (!wait_since)
+                        wait_since = av_gettime();
+                    else if (av_gettime() > wait_since + h->rw_timeout)
+                        return AVERROR(EIO);
+                }
                 av_usleep(1000);
+            }
         } else if (ret < 1)
             return ret < 0 ? ret : len;
         if (ret)
@@ -380,6 +389,21 @@ int ffurl_get_file_handle(URLContext *h)
     if (!h->prot->url_get_file_handle)
         return -1;
     return h->prot->url_get_file_handle(h);
+}
+
+int ffurl_get_multi_file_handle(URLContext *h, int **handles, int *numhandles)
+{
+    if (!h->prot->url_get_multi_file_handle) {
+        if (!h->prot->url_get_file_handle)
+            return AVERROR(ENOSYS);
+        *handles = av_malloc(sizeof(**handles));
+        if (!*handles)
+            return AVERROR(ENOMEM);
+        *numhandles = 1;
+        *handles[0] = h->prot->url_get_file_handle(h);
+        return 0;
+    }
+    return h->prot->url_get_multi_file_handle(h, handles, numhandles);
 }
 
 int ffurl_shutdown(URLContext *h, int flags)

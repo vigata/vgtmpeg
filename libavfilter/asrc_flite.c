@@ -24,7 +24,7 @@
  */
 
 #include <flite/flite.h>
-#include "libavutil/audioconvert.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/file.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
@@ -48,15 +48,16 @@ typedef struct {
 } FliteContext;
 
 #define OFFSET(x) offsetof(FliteContext, x)
+#define FLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
 
 static const AVOption flite_options[] = {
-    { "list_voices", "list voices and exit",              OFFSET(list_voices), AV_OPT_TYPE_INT, {.dbl=0}, 0, 1 },
-    { "nb_samples",  "set number of samples per frame",   OFFSET(frame_nb_samples), AV_OPT_TYPE_INT, {.dbl=512}, 0, INT_MAX },
-    { "n",           "set number of samples per frame",   OFFSET(frame_nb_samples), AV_OPT_TYPE_INT, {.dbl=512}, 0, INT_MAX },
-    { "text",        "set text to speak",                 OFFSET(text),      AV_OPT_TYPE_STRING, {.str=NULL}, CHAR_MIN, CHAR_MAX },
-    { "textfile",    "set filename of the text to speak", OFFSET(textfile),  AV_OPT_TYPE_STRING, {.str=NULL}, CHAR_MIN, CHAR_MAX },
-    { "v",           "set voice",                         OFFSET(voice_str), AV_OPT_TYPE_STRING, {.str="kal"}, CHAR_MIN, CHAR_MAX },
-    { "voice",       "set voice",                         OFFSET(voice_str), AV_OPT_TYPE_STRING, {.str="kal"}, CHAR_MIN, CHAR_MAX },
+    { "list_voices", "list voices and exit",              OFFSET(list_voices), AV_OPT_TYPE_INT, {.i64=0}, 0, 1, FLAGS },
+    { "nb_samples",  "set number of samples per frame",   OFFSET(frame_nb_samples), AV_OPT_TYPE_INT, {.i64=512}, 0, INT_MAX, FLAGS },
+    { "n",           "set number of samples per frame",   OFFSET(frame_nb_samples), AV_OPT_TYPE_INT, {.i64=512}, 0, INT_MAX, FLAGS },
+    { "text",        "set text to speak",                 OFFSET(text),      AV_OPT_TYPE_STRING, {.str=NULL}, CHAR_MIN, CHAR_MAX, FLAGS },
+    { "textfile",    "set filename of the text to speak", OFFSET(textfile),  AV_OPT_TYPE_STRING, {.str=NULL}, CHAR_MIN, CHAR_MAX, FLAGS },
+    { "v",           "set voice",                         OFFSET(voice_str), AV_OPT_TYPE_STRING, {.str="kal"}, CHAR_MIN, CHAR_MAX, FLAGS },
+    { "voice",       "set voice",                         OFFSET(voice_str), AV_OPT_TYPE_STRING, {.str="kal"}, CHAR_MIN, CHAR_MAX, FLAGS },
     { NULL }
 };
 
@@ -264,8 +265,18 @@ static int request_frame(AVFilterLink *outlink)
     flite->wave_samples += nb_samples * flite->wave->num_channels;
     flite->wave_nb_samples -= nb_samples;
 
-    return ff_filter_samples(outlink, samplesref);
+    return ff_filter_frame(outlink, samplesref);
 }
+
+static const AVFilterPad flite_outputs[] = {
+    {
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_AUDIO,
+        .config_props  = config_props,
+        .request_frame = request_frame,
+    },
+    { NULL }
+};
 
 AVFilter avfilter_asrc_flite = {
     .name        = "flite",
@@ -274,16 +285,7 @@ AVFilter avfilter_asrc_flite = {
     .init        = init,
     .uninit      = uninit,
     .priv_size   = sizeof(FliteContext),
-
-    .inputs = (const AVFilterPad[]) {{ .name = NULL}},
-
-    .outputs = (const AVFilterPad[]) {
-        {
-            .name = "default",
-            .type = AVMEDIA_TYPE_AUDIO,
-            .config_props = config_props,
-            .request_frame = request_frame,
-        },
-        { .name = NULL }
-    },
+    .inputs      = NULL,
+    .outputs     = flite_outputs,
+    .priv_class  = &flite_class,
 };

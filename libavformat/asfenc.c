@@ -579,6 +579,9 @@ static int asf_write_header(AVFormatContext *s)
     ffio_init_context(&asf->pb, asf->packet_buf, s->packet_size, 1,
                   NULL, NULL, NULL, NULL);
 
+    if (s->avoid_negative_ts < 0)
+        s->avoid_negative_ts = 1;
+
     return 0;
 }
 
@@ -893,7 +896,6 @@ static int asf_write_trailer(AVFormatContext *s)
         asf_write_header1(s, file_size, data_size - asf->data_offset);
     }
 
-    avio_flush(s->pb);
     av_free(asf->index_ptr);
     return 0;
 }

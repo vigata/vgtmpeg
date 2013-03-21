@@ -26,8 +26,8 @@
  */
 
 #define BITSTREAM_READER_LE
-#include "libavutil/audioconvert.h"
-#include "libavutil/lzo.h"
+#include "libavutil/channel_layout.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "avcodec.h"
 #include "internal.h"
@@ -36,6 +36,9 @@
 #include "celp_filters.h"
 #include "celp_math.h"
 #include "g723_1_data.h"
+#include "internal.h"
+
+#define CNG_RANDOM_SEED 12345
 
 typedef struct g723_1_context {
     AVClass *class;
@@ -50,6 +53,7 @@ typedef struct g723_1_context {
     int erased_frames;
 
     int16_t prev_lsp[LPC_ORDER];
+    int16_t sid_lsp[LPC_ORDER];
     int16_t prev_excitation[PITCH_MAX];
     int16_t excitation[PITCH_MAX + FRAME_LEN + 4];
     int16_t synth_mem[LPC_ORDER];
@@ -57,6 +61,7 @@ typedef struct g723_1_context {
     int     iir_mem[LPC_ORDER];
 
     int random_seed;
+    int cng_random_seed;
     int interp_index;
     int interp_gain;
     int sid_gain;
@@ -65,7 +70,8 @@ typedef struct g723_1_context {
     int pf_gain;                 ///< formant postfilter
                                  ///< gain scaling unit memory
     int postfilter;
-    int16_t audio[FRAME_LEN + LPC_ORDER + PITCH_MAX];
+
+    int16_t audio[FRAME_LEN + LPC_ORDER + PITCH_MAX + 4];
     int16_t prev_data[HALF_FRAME_LEN];
     int16_t prev_weight_sig[PITCH_MAX];
 
@@ -91,6 +97,10 @@ static av_cold int g723_1_decode_init(AVCodecContext *avctx)
     avctx->coded_frame    = &p->frame;
 
     memcpy(p->prev_lsp, dc_lsp, LPC_ORDER * sizeof(*p->prev_lsp));
+    memcpy(p->sid_lsp,  dc_lsp, LPC_ORDER * sizeof(*p->sid_lsp));
+
+    p->cng_random_seed = CNG_RANDOM_SEED;
+    p->past_frame_type = SID_FRAME;
 
     return 0;
 }
@@ -217,8 +227,10 @@ static int unpack_bitstream(G723_1_Context *p, const uint8_t *buf,
 /**
  * Bitexact implementation of sqrt(val/2).
  */
-static int16_t square_root(int val)
+static int16_t square_root(unsigned val)
 {
+    av_assert2(!(val & 0x80000000));
+
     return (ff_sqrt(val << 1) >> 1) & (~1);
 }
 
@@ -230,17 +242,7 @@ static int16_t square_root(int val)
  */
 static int normalize_bits(int num, int width)
 {
-    int i = 0;
-
-    if (num) {
-        if (num == -1)
-            return width;
-        if (num < 0)
-            num = ~num;
-        i= width - av_log2(num) - 1;
-        i= FFMAX(i, 0);
-    }
-    return i;
+    return width - av_log2(num) - 1;
 }
 
 #define normalize_bits_int16(num) normalize_bits(num, 15)
@@ -358,7 +360,7 @@ static void lsp2lpc(int16_t *lpc)
 
     /* Calculate negative cosine */
     for (j = 0; j < LPC_ORDER; j++) {
-        int index     = lpc[j] >> 7;
+        int index     = (lpc[j] >> 7) & 0x1FF;
         int offset    = lpc[j] & 0x7f;
         int temp1     = cos_tab[index] << 16;
         int temp2     = (cos_tab[index + 1] - cos_tab[index]) *
@@ -712,7 +714,7 @@ static void comp_ppf_coeff(G723_1_Context *p, int offset, int pitch_lag,
 
     scale = normalize_bits(temp1, 31);
     for (i = 0; i < 5; i++)
-        energy[i] = av_clipl_int32(energy[i] << scale) >> 16;
+        energy[i] = (energy[i] << scale) >> 16;
 
     if (fwd_lag && !back_lag) {  /* Case 1 */
         comp_ppf_gains(fwd_lag,  ppf, cur_rate, energy[0], energy[1],
@@ -957,6 +959,201 @@ static void formant_postfilter(G723_1_Context *p, int16_t *lpc,
     }
 }
 
+static int sid_gain_to_lsp_index(int gain)
+{
+    if (gain < 0x10)
+        return gain << 6;
+    else if (gain < 0x20)
+        return gain - 8 << 7;
+    else
+        return gain - 20 << 8;
+}
+
+static inline int cng_rand(int *state, int base)
+{
+    *state = (*state * 521 + 259) & 0xFFFF;
+    return (*state & 0x7FFF) * base >> 15;
+}
+
+static int estimate_sid_gain(G723_1_Context *p)
+{
+    int i, shift, seg, seg2, t, val, val_add, x, y;
+
+    shift = 16 - p->cur_gain * 2;
+    if (shift > 0)
+        t = p->sid_gain << shift;
+    else
+        t = p->sid_gain >> -shift;
+    x = t * cng_filt[0] >> 16;
+
+    if (x >= cng_bseg[2])
+        return 0x3F;
+
+    if (x >= cng_bseg[1]) {
+        shift = 4;
+        seg   = 3;
+    } else {
+        shift = 3;
+        seg   = (x >= cng_bseg[0]);
+    }
+    seg2 = FFMIN(seg, 3);
+
+    val     = 1 << shift;
+    val_add = val >> 1;
+    for (i = 0; i < shift; i++) {
+        t = seg * 32 + (val << seg2);
+        t *= t;
+        if (x >= t)
+            val += val_add;
+        else
+            val -= val_add;
+        val_add >>= 1;
+    }
+
+    t = seg * 32 + (val << seg2);
+    y = t * t - x;
+    if (y <= 0) {
+        t = seg * 32 + (val + 1 << seg2);
+        t = t * t - x;
+        val = (seg2 - 1 << 4) + val;
+        if (t >= y)
+            val++;
+    } else {
+        t = seg * 32 + (val - 1 << seg2);
+        t = t * t - x;
+        val = (seg2 - 1 << 4) + val;
+        if (t >= y)
+            val--;
+    }
+
+    return val;
+}
+
+static void generate_noise(G723_1_Context *p)
+{
+    int i, j, idx, t;
+    int off[SUBFRAMES];
+    int signs[SUBFRAMES / 2 * 11], pos[SUBFRAMES / 2 * 11];
+    int tmp[SUBFRAME_LEN * 2];
+    int16_t *vector_ptr;
+    int64_t sum;
+    int b0, c, delta, x, shift;
+
+    p->pitch_lag[0] = cng_rand(&p->cng_random_seed, 21) + 123;
+    p->pitch_lag[1] = cng_rand(&p->cng_random_seed, 19) + 123;
+
+    for (i = 0; i < SUBFRAMES; i++) {
+        p->subframe[i].ad_cb_gain = cng_rand(&p->cng_random_seed, 50) + 1;
+        p->subframe[i].ad_cb_lag  = cng_adaptive_cb_lag[i];
+    }
+
+    for (i = 0; i < SUBFRAMES / 2; i++) {
+        t = cng_rand(&p->cng_random_seed, 1 << 13);
+        off[i * 2]     =   t       & 1;
+        off[i * 2 + 1] = ((t >> 1) & 1) + SUBFRAME_LEN;
+        t >>= 2;
+        for (j = 0; j < 11; j++) {
+            signs[i * 11 + j] = (t & 1) * 2 - 1 << 14;
+            t >>= 1;
+        }
+    }
+
+    idx = 0;
+    for (i = 0; i < SUBFRAMES; i++) {
+        for (j = 0; j < SUBFRAME_LEN / 2; j++)
+            tmp[j] = j;
+        t = SUBFRAME_LEN / 2;
+        for (j = 0; j < pulses[i]; j++, idx++) {
+            int idx2 = cng_rand(&p->cng_random_seed, t);
+
+            pos[idx]  = tmp[idx2] * 2 + off[i];
+            tmp[idx2] = tmp[--t];
+        }
+    }
+
+    vector_ptr = p->audio + LPC_ORDER;
+    memcpy(vector_ptr, p->prev_excitation,
+           PITCH_MAX * sizeof(*p->excitation));
+    for (i = 0; i < SUBFRAMES; i += 2) {
+        gen_acb_excitation(vector_ptr, vector_ptr,
+                           p->pitch_lag[i >> 1], &p->subframe[i],
+                           p->cur_rate);
+        gen_acb_excitation(vector_ptr + SUBFRAME_LEN,
+                           vector_ptr + SUBFRAME_LEN,
+                           p->pitch_lag[i >> 1], &p->subframe[i + 1],
+                           p->cur_rate);
+
+        t = 0;
+        for (j = 0; j < SUBFRAME_LEN * 2; j++)
+            t |= FFABS(vector_ptr[j]);
+        t = FFMIN(t, 0x7FFF);
+        if (!t) {
+            shift = 0;
+        } else {
+            shift = -10 + av_log2(t);
+            if (shift < -2)
+                shift = -2;
+        }
+        sum = 0;
+        if (shift < 0) {
+           for (j = 0; j < SUBFRAME_LEN * 2; j++) {
+               t      = vector_ptr[j] << -shift;
+               sum   += t * t;
+               tmp[j] = t;
+           }
+        } else {
+           for (j = 0; j < SUBFRAME_LEN * 2; j++) {
+               t      = vector_ptr[j] >> shift;
+               sum   += t * t;
+               tmp[j] = t;
+           }
+        }
+
+        b0 = 0;
+        for (j = 0; j < 11; j++)
+            b0 += tmp[pos[(i / 2) * 11 + j]] * signs[(i / 2) * 11 + j];
+        b0 = b0 * 2 * 2979LL + (1 << 29) >> 30; // approximated division by 11
+
+        c = p->cur_gain * (p->cur_gain * SUBFRAME_LEN >> 5);
+        if (shift * 2 + 3 >= 0)
+            c >>= shift * 2 + 3;
+        else
+            c <<= -(shift * 2 + 3);
+        c = (av_clipl_int32(sum << 1) - c) * 2979LL >> 15;
+
+        delta = b0 * b0 * 2 - c;
+        if (delta <= 0) {
+            x = -b0;
+        } else {
+            delta = square_root(delta);
+            x     = delta - b0;
+            t     = delta + b0;
+            if (FFABS(t) < FFABS(x))
+                x = -t;
+        }
+        shift++;
+        if (shift < 0)
+           x >>= -shift;
+        else
+           x <<= shift;
+        x = av_clip(x, -10000, 10000);
+
+        for (j = 0; j < 11; j++) {
+            idx = (i / 2) * 11 + j;
+            vector_ptr[pos[idx]] = av_clip_int16(vector_ptr[pos[idx]] +
+                                                 (x * signs[idx] >> 15));
+        }
+
+        /* copy decoded data to serve as a history for the next decoded subframes */
+        memcpy(vector_ptr + PITCH_MAX, vector_ptr,
+               sizeof(*vector_ptr) * SUBFRAME_LEN * 2);
+        vector_ptr += SUBFRAME_LEN * 2;
+    }
+    /* Save the excitation for the next frame */
+    memcpy(p->prev_excitation, p->audio + LPC_ORDER + FRAME_LEN,
+           PITCH_MAX * sizeof(*p->excitation));
+}
+
 static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
                                int *got_frame_ptr, AVPacket *avpkt)
 {
@@ -991,7 +1188,7 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     p->frame.nb_samples = FRAME_LEN;
-    if ((ret = avctx->get_buffer(avctx, &p->frame)) < 0) {
+    if ((ret = ff_get_buffer(avctx, &p->frame)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
     }
@@ -1081,14 +1278,23 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
                        PITCH_MAX * sizeof(*p->excitation));
             }
         }
+        p->cng_random_seed = CNG_RANDOM_SEED;
     } else {
-        memset(out, 0, FRAME_LEN * 2);
-        av_log(avctx, AV_LOG_WARNING,
-               "G.723.1: Comfort noise generation not supported yet\n");
+        if (p->cur_frame_type == SID_FRAME) {
+            p->sid_gain = sid_gain_to_lsp_index(p->subframe[0].amp_index);
+            inverse_quant(p->sid_lsp, p->prev_lsp, p->lsp_index, 0);
+        } else if (p->past_frame_type == ACTIVE_FRAME) {
+            p->sid_gain = estimate_sid_gain(p);
+        }
 
-        *got_frame_ptr   = 1;
-        *(AVFrame *)data = p->frame;
-        return frame_size[dec_mode];
+        if (p->past_frame_type == ACTIVE_FRAME)
+            p->cur_gain = p->sid_gain;
+        else
+            p->cur_gain = (p->cur_gain * 7 + p->sid_gain) >> 3;
+        generate_noise(p);
+        lsp_interpolate(lpc, p->sid_lsp, p->prev_lsp);
+        /* Save the lsp_vector for the next frame */
+        memcpy(p->prev_lsp, p->sid_lsp, LPC_ORDER * sizeof(*p->prev_lsp));
     }
 
     p->past_frame_type = p->cur_frame_type;
@@ -1118,7 +1324,7 @@ static int g723_1_decode_frame(AVCodecContext *avctx, void *data,
 
 static const AVOption options[] = {
     { "postfilter", "postfilter on/off", OFFSET(postfilter), AV_OPT_TYPE_INT,
-      { 1 }, 0, 1, AD },
+      { .i64 = 1 }, 0, 1, AD },
     { NULL }
 };
 
@@ -1645,7 +1851,7 @@ static void comp_harmonic_coeff(int16_t *buf, int16_t pitch_lag, HFParam *hf)
  *
  * @param hf filter parameters
  */
-static void harmonic_filter(HFParam *hf, int16_t *src, int16_t *dest)
+static void harmonic_filter(HFParam *hf, const int16_t *src, int16_t *dest)
 {
     int i;
 
@@ -1655,7 +1861,7 @@ static void harmonic_filter(HFParam *hf, int16_t *src, int16_t *dest)
     }
 }
 
-static void harmonic_noise_sub(HFParam *hf, int16_t *src, int16_t *dest)
+static void harmonic_noise_sub(HFParam *hf, const int16_t *src, int16_t *dest)
 {
     int i;
     for (i = 0; i < SUBFRAME_LEN; i++) {
@@ -1677,7 +1883,7 @@ static void harmonic_noise_sub(HFParam *hf, int16_t *src, int16_t *dest)
  */
 static void synth_percept_filter(int16_t *qnt_lpc, int16_t *perf_lpc,
                                  int16_t *perf_fir, int16_t *perf_iir,
-                                 int16_t *src, int16_t *dest, int scale)
+                                 const int16_t *src, int16_t *dest, int scale)
 {
     int i, j;
     int16_t buf_16[SUBFRAME_LEN + LPC_ORDER];
@@ -1718,7 +1924,7 @@ static void synth_percept_filter(int16_t *qnt_lpc, int16_t *perf_lpc,
  * @param index the current subframe index
  */
 static void acb_search(G723_1_Context *p, int16_t *residual,
-                       int16_t *impulse_resp, int16_t *buf,
+                       int16_t *impulse_resp, const int16_t *buf,
                        int index)
 {
 
@@ -1837,7 +2043,7 @@ static void acb_search(G723_1_Context *p, int16_t *residual,
  *
  * @param buf target vector
  */
-static void sub_acb_contrib(int16_t *residual, int16_t *impulse_resp,
+static void sub_acb_contrib(const int16_t *residual, const int16_t *impulse_resp,
                             int16_t *buf)
 {
     int i, j;

@@ -23,8 +23,9 @@
  * format audio filter
  */
 
-#include "libavutil/audioconvert.h"
 #include "libavutil/avstring.h"
+#include "libavutil/channel_layout.h"
+#include "libavutil/common.h"
 #include "libavutil/opt.h"
 
 #include "audio.h"
@@ -46,10 +47,11 @@ typedef struct AFormatContext {
 
 #define OFFSET(x) offsetof(AFormatContext, x)
 #define A AV_OPT_FLAG_AUDIO_PARAM
+#define F AV_OPT_FLAG_FILTERING_PARAM
 static const AVOption aformat_options[] = {
-    { "sample_fmts",     "A comma-separated list of sample formats.",  OFFSET(formats_str),         AV_OPT_TYPE_STRING, .flags = A },
-    { "sample_rates",    "A comma-separated list of sample rates.",    OFFSET(sample_rates_str),    AV_OPT_TYPE_STRING, .flags = A },
-    { "channel_layouts", "A comma-separated list of channel layouts.", OFFSET(channel_layouts_str), AV_OPT_TYPE_STRING, .flags = A },
+    { "sample_fmts",     "A comma-separated list of sample formats.",  OFFSET(formats_str),         AV_OPT_TYPE_STRING, .flags = A|F },
+    { "sample_rates",    "A comma-separated list of sample rates.",    OFFSET(sample_rates_str),    AV_OPT_TYPE_STRING, .flags = A|F },
+    { "channel_layouts", "A comma-separated list of channel layouts.", OFFSET(channel_layouts_str), AV_OPT_TYPE_STRING, .flags = A|F },
     { NULL },
 };
 
@@ -124,6 +126,22 @@ static int query_formats(AVFilterContext *ctx)
     return 0;
 }
 
+static const AVFilterPad avfilter_af_aformat_inputs[] = {
+    {
+        .name = "default",
+        .type = AVMEDIA_TYPE_AUDIO,
+    },
+    { NULL }
+};
+
+static const AVFilterPad avfilter_af_aformat_outputs[] = {
+    {
+        .name = "default",
+        .type = AVMEDIA_TYPE_AUDIO
+    },
+    { NULL }
+};
+
 AVFilter avfilter_af_aformat = {
     .name          = "aformat",
     .description   = NULL_IF_CONFIG_SMALL("Convert the input audio to one of the specified formats."),
@@ -131,10 +149,7 @@ AVFilter avfilter_af_aformat = {
     .query_formats = query_formats,
     .priv_size     = sizeof(AFormatContext),
 
-    .inputs        = (const AVFilterPad[]) {{ .name            = "default",
-                                              .type            = AVMEDIA_TYPE_AUDIO, },
-                                            { .name = NULL}},
-    .outputs       = (const AVFilterPad[]) {{ .name            = "default",
-                                              .type            = AVMEDIA_TYPE_AUDIO},
-                                            { .name = NULL}},
+    .inputs        = avfilter_af_aformat_inputs,
+    .outputs       = avfilter_af_aformat_outputs,
+    .priv_class    = &aformat_class,
 };

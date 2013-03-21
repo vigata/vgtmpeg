@@ -26,8 +26,8 @@
 
 #include <stdint.h>
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/crc.h"
-#include "libavutil/audioconvert.h"
 #include "get_bits.h"
 #include "parser.h"
 #include "mlp_parser.h"
@@ -83,10 +83,10 @@ static const uint64_t thd_layout[13] = {
     AV_CH_BACK_LEFT|AV_CH_BACK_RIGHT,                       // LRrs
     AV_CH_BACK_CENTER,                                      // Cs
     AV_CH_TOP_CENTER,                                       // Ts
-    AV_CH_SIDE_LEFT|AV_CH_SIDE_RIGHT,                       // LRsd - TODO: Surround Direct
+    AV_CH_SURROUND_DIRECT_LEFT|AV_CH_SURROUND_DIRECT_RIGHT, // LRsd
     AV_CH_WIDE_LEFT|AV_CH_WIDE_RIGHT,                       // LRw
     AV_CH_TOP_FRONT_CENTER,                                 // Cvh
-    AV_CH_LOW_FREQUENCY                                     // LFE2
+    AV_CH_LOW_FREQUENCY_2,                                  // LFE2
 };
 
 static int mlp_samplerate(int in)
@@ -239,7 +239,8 @@ static int mlp_parse(AVCodecParserContext *s,
         }
 
         if (!mp->in_sync) {
-            ff_combine_frame(&mp->pc, END_NOT_FOUND, &buf, &buf_size);
+            if (ff_combine_frame(&mp->pc, END_NOT_FOUND, &buf, &buf_size) != -1)
+                av_log(avctx, AV_LOG_WARNING, "ff_combine_frame failed\n");
             return buf_size;
         }
 
@@ -257,7 +258,8 @@ static int mlp_parse(AVCodecParserContext *s,
         }
 
         if (mp->pc.index + buf_size < 2) {
-            ff_combine_frame(&mp->pc, END_NOT_FOUND, &buf, &buf_size);
+            if (ff_combine_frame(&mp->pc, END_NOT_FOUND, &buf, &buf_size) != -1)
+                av_log(avctx, AV_LOG_WARNING, "ff_combine_frame failed\n");
             return buf_size;
         }
 
@@ -317,6 +319,7 @@ static int mlp_parse(AVCodecParserContext *s,
         avctx->sample_rate = mh.group1_samplerate;
         s->duration = mh.access_unit_size;
 
+        if(!avctx->channels || !avctx->channel_layout) {
         if (mh.stream_type == 0xbb) {
             /* MLP stream */
             avctx->channels = mlp_channels[mh.channels_mlp];
@@ -330,6 +333,7 @@ static int mlp_parse(AVCodecParserContext *s,
                 avctx->channels = truehd_channels(mh.channels_thd_stream1);
                 avctx->channel_layout = ff_truehd_layout(mh.channels_thd_stream1);
             }
+        }
         }
 
         if (!mh.is_vbr) /* Stream is CBR */

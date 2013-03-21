@@ -57,12 +57,12 @@
 
 /* select an input stream for an output stream */
 typedef struct StreamMap {
-    int disabled;           /** 1 is this mapping is disabled by a negative map */
+    int disabled;           /* 1 is this mapping is disabled by a negative map */
     int file_index;
     int stream_index;
     int sync_file_index;
     int sync_stream_index;
-    char *linklabel;       /** name of an output link, for mapping lavfi outputs */
+    char *linklabel;       /* name of an output link, for mapping lavfi outputs */
 } StreamMap;
 
 typedef struct {
@@ -71,6 +71,8 @@ typedef struct {
 } AudioChannelMap;
 
 typedef struct OptionsContext {
+    OptionGroup *g;
+
     /* input/output options */
     int64_t start_time;
     const char *format;
@@ -114,6 +116,7 @@ typedef struct OptionsContext {
     uint64_t limit_filesize;
     float mux_preload;
     float mux_max_delay;
+    int shortest;
 
     int video_disable;
     int audio_disable;
@@ -156,8 +159,18 @@ typedef struct OptionsContext {
     int        nb_presets;
     SpecifierOpt *copy_initial_nonkeyframes;
     int        nb_copy_initial_nonkeyframes;
+    SpecifierOpt *copy_prior_start;
+    int        nb_copy_prior_start;
     SpecifierOpt *filters;
     int        nb_filters;
+    SpecifierOpt *reinit_filters;
+    int        nb_reinit_filters;
+    SpecifierOpt *fix_sub_duration;
+    int        nb_fix_sub_duration;
+    SpecifierOpt *pass;
+    int        nb_pass;
+    SpecifierOpt *passlogfiles;
+    int        nb_passlogfiles;
 } OptionsContext;
 
 typedef struct InputFilter {
@@ -206,6 +219,9 @@ typedef struct InputStream {
     int64_t       next_pts;  ///< synthetic pts for the next decode frame (in AV_TIME_BASE units)
     int64_t       pts;       ///< current pts of the decoded frame  (in AV_TIME_BASE units)
     int           wrap_correction_done;
+
+    int64_t filter_in_rescale_delta_last;
+
     double ts_scale;
     int is_start;            /* is 1 at the start and after a discontinuity */
     int saw_first_ts;
@@ -223,8 +239,16 @@ typedef struct InputStream {
     int      resample_channels;
     uint64_t resample_channel_layout;
 
+    int fix_sub_duration;
+    struct { /* previous decoded subtitle and related variables */
+        int got_output;
+        int ret;
+        AVSubtitle subtitle;
+    } prev_sub;
+
     struct sub2video {
         int64_t last_pts;
+        int64_t end_pts;
         AVFilterBufferRef *ref;
         int w, h;
     } sub2video;
@@ -237,6 +261,8 @@ typedef struct InputStream {
      * currently video and audio only */
     InputFilter **filters;
     int        nb_filters;
+
+    int reinit_filters;
 } InputStream;
 
 typedef struct InputFile {
@@ -285,7 +311,6 @@ typedef struct OutputStream {
     int top_field_first;
 
     float frame_aspect_ratio;
-    float last_quality;
 
     /* forced key frames */
     int64_t *forced_kf_pts;
@@ -297,12 +322,14 @@ typedef struct OutputStream {
     int audio_channels_map[SWR_CH_MAX];  /* list of the channels id to pick from the source stream */
     int audio_channels_mapped;           /* number of channels in audio_channels_map */
 
+    char *logfile_prefix;
     FILE *logfile;
 
     OutputFilter *filter;
     char *avfilter;
 
     int64_t sws_flags;
+    int64_t swr_filter_type;
     int64_t swr_dither_method;
     double swr_dither_scale;
     AVDictionary *opts;
@@ -311,6 +338,7 @@ typedef struct OutputStream {
     int stream_copy;
     const char *attachment_filename;
     int copy_initial_nonkeyframes;
+    int copy_prior_start;
 
     int keep_pix_fmt;
 } OutputStream;
@@ -323,9 +351,12 @@ typedef struct OutputFile {
     int64_t start_time;      ///< start time in microseconds == AV_TIME_BASE units
     uint64_t limit_filesize; /* filesize limit expressed in bytes */
     
-	/* --vgtmpeg */
+	/* >> vgtmpeg */
     int wrote_header; /* flag indicated that the header was already written.  --vgtmpeg */
-	/* --vgtmpeg */
+    int wrote_trailer; /* flag indicating that trailer was written */
+	/* << vgtmpeg */
+
+    int shortest;
 } OutputFile;
 
 extern InputStream **input_streams;
@@ -341,7 +372,6 @@ extern int         nb_output_files;
 extern FilterGraph **filtergraphs;
 extern int        nb_filtergraphs;
 
-extern const char *pass_logfilename_prefix;
 extern char *vstats_filename;
 
 extern float audio_drift_threshold;
@@ -359,11 +389,9 @@ extern int do_pkt_dump;
 extern int copy_ts;
 extern int copy_tb;
 extern int debug_ts;
-extern int opt_shortest;
 extern int exit_on_error;
 extern int print_stats;
 extern int qp_hist;
-extern int same_quant;
 extern int stdin_interaction;
 extern int frame_bits_per_raw_sample;
 extern AVIOContext *progress_avio;
@@ -384,12 +412,14 @@ void assert_avoptions(AVDictionary *m);
 
 int guess_input_channel_layout(InputStream *ist);
 
-enum PixelFormat choose_pixel_fmt(AVStream *st, AVCodec *codec, enum PixelFormat target);
+enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodec *codec, enum AVPixelFormat target);
 void choose_sample_fmt(AVStream *st, AVCodec *codec);
 
 int configure_filtergraph(FilterGraph *fg);
 int configure_output_filter(FilterGraph *fg, OutputFilter *ofilter, AVFilterInOut *out);
 int ist_in_filtergraph(FilterGraph *fg, InputStream *ist);
 FilterGraph *init_simple_filtergraph(InputStream *ist, OutputStream *ost);
+
+int ffmpeg_parse_options(int argc, char **argv);
 
 #endif /* FFMPEG_H */

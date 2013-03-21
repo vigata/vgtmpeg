@@ -24,6 +24,8 @@
 #include "libavcodec/paf.h"
 #include "bytestream.h"
 #include "avcodec.h"
+#include "internal.h"
+
 
 static const uint8_t block_sequences[16][8] =
 {
@@ -67,7 +69,7 @@ static av_cold int paf_vid_init(AVCodecContext *avctx)
         return AVERROR_INVALIDDATA;
     }
 
-    avctx->pix_fmt = PIX_FMT_PAL8;
+    avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
     avcodec_get_frame_defaults(&c->pic);
     c->frame_size = FFALIGN(avctx->height, 256) * avctx->width;
@@ -243,7 +245,7 @@ static int decode_0(AVCodecContext *avctx, uint8_t code, uint8_t *pkt)
 }
 
 static int paf_vid_decode(AVCodecContext *avctx, void *data,
-                          int *data_size, AVPacket *pkt)
+                          int *got_frame, AVPacket *pkt)
 {
     PAFVideoDecContext *c = avctx->priv_data;
     uint8_t code, *dst, *src, *end;
@@ -276,9 +278,9 @@ static int paf_vid_decode(AVCodecContext *avctx, void *data,
         index = bytestream2_get_byte(&c->gb);
         count = bytestream2_get_byte(&c->gb) + 1;
 
-        if (index + count > AVPALETTE_SIZE)
+        if (index + count > 256)
             return AVERROR_INVALIDDATA;
-        if (bytestream2_get_bytes_left(&c->gb) < 3 * AVPALETTE_SIZE)
+        if (bytestream2_get_bytes_left(&c->gb) < 3*count)
             return AVERROR_INVALIDDATA;
 
         out += index;
@@ -355,7 +357,7 @@ static int paf_vid_decode(AVCodecContext *avctx, void *data,
 
     c->current_frame = (c->current_frame + 1) & 3;
 
-    *data_size       = sizeof(AVFrame);
+    *got_frame       = 1;
     *(AVFrame *)data = c->pic;
 
     return pkt->size;
@@ -410,7 +412,7 @@ static int paf_aud_decode(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
 
     c->frame.nb_samples = PAF_SOUND_SAMPLES * frames;
-    if ((ret = avctx->get_buffer(avctx, &c->frame)) < 0)
+    if ((ret = ff_get_buffer(avctx, &c->frame)) < 0)
         return ret;
 
     output_samples = (int16_t *)c->frame.data[0];
@@ -418,7 +420,8 @@ static int paf_aud_decode(AVCodecContext *avctx, void *data,
         t = buf + 256 * sizeof(uint16_t);
         for (j = 0; j < PAF_SOUND_SAMPLES; j++) {
             for (k = 0; k < 2; k++) {
-                *output_samples++ = AV_RL16(buf + *t++ * 2);
+                *output_samples++ = AV_RL16(buf + *t * 2);
+                t++;
             }
         }
         buf += PAF_SOUND_FRAME_SIZE;

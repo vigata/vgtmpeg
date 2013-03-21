@@ -23,8 +23,9 @@
  * Audio merging filter
  */
 
-#include "libavutil/audioconvert.h"
+#include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "libswresample/swresample.h" // only for SWR_CH_MAX
 #include "avfilter.h"
@@ -46,10 +47,11 @@ typedef struct {
 } AMergeContext;
 
 #define OFFSET(x) offsetof(AMergeContext, x)
+#define FLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
 
 static const AVOption amerge_options[] = {
     { "inputs", "specify the number of inputs", OFFSET(nb_inputs),
-      AV_OPT_TYPE_INT, { .dbl = 2 }, 2, SWR_CH_MAX },
+      AV_OPT_TYPE_INT, { .i64 = 2 }, 2, SWR_CH_MAX, FLAGS },
     {0}
 };
 
@@ -60,8 +62,10 @@ static av_cold void uninit(AVFilterContext *ctx)
     AMergeContext *am = ctx->priv;
     int i;
 
-    for (i = 0; i < am->nb_inputs; i++)
+    for (i = 0; i < am->nb_inputs; i++) {
         ff_bufqueue_discard_all(&am->in[i].queue);
+        av_freep(&ctx->input_pads[i].name);
+    }
     av_freep(&am->in);
 }
 
@@ -98,7 +102,8 @@ static int query_formats(AVFilterContext *ctx)
     }
     if (overlap) {
         av_log(ctx, AV_LOG_WARNING,
-               "Inputs overlap: output layout will be meaningless\n");
+               "Input channel layouts overlap: "
+               "output layout will be determined by the number of distinct input channels\n");
         for (i = 0; i < nb_ch; i++)
             am->route[i] = i;
         outlayout = av_get_default_channel_layout(nb_ch);
@@ -212,7 +217,7 @@ static inline void copy_samples(int nb_inputs, struct amerge_input in[],
     }
 }
 
-static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
+static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *insamples)
 {
     AVFilterContext *ctx = inlink->dst;
     AMergeContext *am = ctx->priv;
@@ -285,14 +290,13 @@ static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *insamples)
             }
         }
     }
-    return ff_filter_samples(ctx->outputs[0], outbuf);
+    return ff_filter_frame(ctx->outputs[0], outbuf);
 }
 
 static av_cold int init(AVFilterContext *ctx, const char *args)
 {
     AMergeContext *am = ctx->priv;
     int ret, i;
-    char name[16];
 
     am->class = &amerge_class;
     av_opt_set_defaults(am);
@@ -305,17 +309,29 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
     if (!am->in)
         return AVERROR(ENOMEM);
     for (i = 0; i < am->nb_inputs; i++) {
+        char *name = av_asprintf("in%d", i);
         AVFilterPad pad = {
             .name             = name,
             .type             = AVMEDIA_TYPE_AUDIO,
-            .filter_samples   = filter_samples,
+            .filter_frame     = filter_frame,
             .min_perms        = AV_PERM_READ | AV_PERM_PRESERVE,
         };
-        snprintf(name, sizeof(name), "in%d", i);
+        if (!name)
+            return AVERROR(ENOMEM);
         ff_insert_inpad(ctx, i, &pad);
     }
     return 0;
 }
+
+static const AVFilterPad amerge_outputs[] = {
+    {
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_AUDIO,
+        .config_props  = config_output,
+        .request_frame = request_frame,
+    },
+    { NULL }
+};
 
 AVFilter avfilter_af_amerge = {
     .name          = "amerge",
@@ -325,13 +341,7 @@ AVFilter avfilter_af_amerge = {
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-
-    .inputs    = (const AVFilterPad[]) { { .name = NULL } },
-    .outputs   = (const AVFilterPad[]) {
-        { .name             = "default",
-          .type             = AVMEDIA_TYPE_AUDIO,
-          .config_props     = config_output,
-          .request_frame    = request_frame, },
-        { .name = NULL }
-    },
+    .inputs        = NULL,
+    .outputs       = amerge_outputs,
+    .priv_class    = &amerge_class,
 };

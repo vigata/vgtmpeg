@@ -128,7 +128,7 @@ static int sdp_get_address(char *dest_addr, int size, int *ttl, const char *url)
 
     *ttl = 0;
 
-    if (strcmp(proto, "rtp")) {
+    if (strcmp(proto, "rtp") && strcmp(proto, "srtp")) {
         /* The url isn't for the actual rtp sessions,
          * don't parse out anything else than the destination.
          */
@@ -154,9 +154,11 @@ static char *extradata2psets(AVCodecContext *c)
 {
     char *psets, *p;
     const uint8_t *r;
-    const char *pset_string = "; sprop-parameter-sets=";
+    static const char pset_string[] = "; sprop-parameter-sets=";
+    static const char profile_string[] = "; profile-level-id=";
     uint8_t *orig_extradata = NULL;
     int orig_extradata_size = 0;
+    const uint8_t *sps = NULL, *sps_end;
 
     if (c->extradata_size > MAX_EXTRADATA_SIZE) {
         av_log(c, AV_LOG_ERROR, "Too much extradata!\n");
@@ -210,6 +212,10 @@ static char *extradata2psets(AVCodecContext *c)
             *p = ',';
             p++;
         }
+        if (!sps) {
+            sps = r;
+            sps_end = r1;
+        }
         if (av_base64_encode(p, MAX_PSET_SIZE - (p - psets), r, r1 - r) == NULL) {
             av_log(c, AV_LOG_ERROR, "Cannot Base64-encode %td %td!\n", MAX_PSET_SIZE - (p - psets), r1 - r);
             av_free(psets);
@@ -218,6 +224,12 @@ static char *extradata2psets(AVCodecContext *c)
         }
         p += strlen(p);
         r = r1;
+    }
+    if (sps && sps_end - sps >= 4) {
+        memcpy(p, profile_string, strlen(profile_string));
+        p += strlen(p);
+        ff_data_to_hex(p, sps + 1, 3, 0);
+        p[6] = '\0';
     }
     if (orig_extradata) {
         av_free(c->extradata);
@@ -509,13 +521,13 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
                 return NULL;
 
             switch (c->pix_fmt) {
-            case PIX_FMT_YUV420P:
+            case AV_PIX_FMT_YUV420P:
                 pix_fmt = "YCbCr-4:2:0";
                 break;
-            case PIX_FMT_YUV422P:
+            case AV_PIX_FMT_YUV422P:
                 pix_fmt = "YCbCr-4:2:2";
                 break;
-            case PIX_FMT_YUV444P:
+            case AV_PIX_FMT_YUV444P:
                 pix_fmt = "YCbCr-4:4:4";
                 break;
             default:
@@ -534,6 +546,11 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
         case AV_CODEC_ID_VP8:
             av_strlcatf(buff, size, "a=rtpmap:%d VP8/90000\r\n",
                                      payload_type);
+            break;
+        case AV_CODEC_ID_MJPEG:
+            if (payload_type >= RTP_PT_PRIVATE)
+                av_strlcatf(buff, size, "a=rtpmap:%d JPEG/90000\r\n",
+                                         payload_type);
             break;
         case AV_CODEC_ID_ADPCM_G722:
             if (payload_type >= RTP_PT_PRIVATE)
@@ -555,6 +572,28 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
                                      payload_type, c->sample_rate,
                                      payload_type, c->block_align == 38 ? 20 : 30);
             break;
+        case AV_CODEC_ID_SPEEX:
+            av_strlcatf(buff, size, "a=rtpmap:%d speex/%d\r\n",
+                                     payload_type, c->sample_rate);
+            if (c->codec) {
+                const char *mode;
+                uint64_t vad_option;
+
+                if (c->flags & CODEC_FLAG_QSCALE)
+                      mode = "on";
+                else if (!av_opt_get_int(c, "vad", AV_OPT_FLAG_ENCODING_PARAM, &vad_option) && vad_option)
+                      mode = "vad";
+                else
+                      mode = "off";
+
+                av_strlcatf(buff, size, "a=fmtp:%d vbr=%s\r\n",
+                                        payload_type, mode);
+            }
+            break;
+        case AV_CODEC_ID_OPUS:
+            av_strlcatf(buff, size, "a=rtpmap:%d opus/48000\r\n",
+                                     payload_type);
+            break;
         default:
             /* Nothing special to do here... */
             break;
@@ -565,12 +604,15 @@ static char *sdp_write_media_attributes(char *buff, int size, AVCodecContext *c,
     return buff;
 }
 
-void ff_sdp_write_media(char *buff, int size, AVCodecContext *c, const char *dest_addr, const char *dest_type, int port, int ttl, AVFormatContext *fmt)
+void ff_sdp_write_media(char *buff, int size, AVStream *st, int idx,
+                        const char *dest_addr, const char *dest_type,
+                        int port, int ttl, AVFormatContext *fmt)
 {
+    AVCodecContext *c = st->codec;
     const char *type;
     int payload_type;
 
-    payload_type = ff_rtp_get_payload_type(fmt, c);
+    payload_type = ff_rtp_get_payload_type(fmt, c, idx);
 
     switch (c->codec_type) {
         case AVMEDIA_TYPE_VIDEO   : type = "video"      ; break;
@@ -592,7 +634,7 @@ int av_sdp_create(AVFormatContext *ac[], int n_files, char *buf, int size)
 {
     AVDictionaryEntry *title = av_dict_get(ac[0]->metadata, "title", NULL, 0);
     struct sdp_session_level s = { 0 };
-    int i, j, port, ttl, is_multicast;
+    int i, j, port, ttl, is_multicast, index = 0;
     char dst[32], dst_type[5];
 
     memset(buf, 0, size);
@@ -631,13 +673,26 @@ int av_sdp_create(AVFormatContext *ac[], int n_files, char *buf, int size)
                 ttl = 0;
         }
         for (j = 0; j < ac[i]->nb_streams; j++) {
-            ff_sdp_write_media(buf, size,
-                                  ac[i]->streams[j]->codec, dst[0] ? dst : NULL,
-                                  dst_type, (port > 0) ? port + j * 2 : 0, ttl,
-                                  ac[i]);
+            ff_sdp_write_media(buf, size, ac[i]->streams[j], index++,
+                               dst[0] ? dst : NULL, dst_type,
+                               (port > 0) ? port + j * 2 : 0,
+                               ttl, ac[i]);
             if (port <= 0) {
                 av_strlcatf(buf, size,
                                    "a=control:streamid=%d\r\n", i + j);
+            }
+            if (ac[i]->pb && ac[i]->pb->av_class) {
+                uint8_t *crypto_suite = NULL, *crypto_params = NULL;
+                av_opt_get(ac[i]->pb, "srtp_out_suite",  AV_OPT_SEARCH_CHILDREN,
+                           &crypto_suite);
+                av_opt_get(ac[i]->pb, "srtp_out_params", AV_OPT_SEARCH_CHILDREN,
+                           &crypto_params);
+                if (crypto_suite && crypto_suite[0])
+                    av_strlcatf(buf, size,
+                                "a=crypto:1 %s inline:%s\r\n",
+                                crypto_suite, crypto_params);
+                av_free(crypto_suite);
+                av_free(crypto_params);
             }
         }
     }
@@ -650,7 +705,9 @@ int av_sdp_create(AVFormatContext *ac[], int n_files, char *buf, int size)
     return AVERROR(ENOSYS);
 }
 
-void ff_sdp_write_media(char *buff, int size, AVCodecContext *c, const char *dest_addr, const char *dest_type, int port, int ttl, AVFormatContext *fmt)
+void ff_sdp_write_media(char *buff, int size, AVStream *st, int idx,
+                        const char *dest_addr, const char *dest_type,
+                        int port, int ttl, AVFormatContext *fmt)
 {
 }
 #endif

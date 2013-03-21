@@ -21,8 +21,10 @@
 
 #include <ilbc.h>
 
-#include "avcodec.h"
+#include "libavutil/channel_layout.h"
+#include "libavutil/common.h"
 #include "libavutil/opt.h"
+#include "avcodec.h"
 #include "internal.h"
 
 static int get_mode(AVCodecContext *avctx)
@@ -45,7 +47,7 @@ typedef struct ILBCDecContext {
 } ILBCDecContext;
 
 static const AVOption ilbc_dec_options[] = {
-    { "enhance", "Enhance the decoded audio (adds delay)", offsetof(ILBCDecContext, enhance), AV_OPT_TYPE_INT, { 0 }, 0, 1, AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_DECODING_PARAM },
+    { "enhance", "Enhance the decoded audio (adds delay)", offsetof(ILBCDecContext, enhance), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_DECODING_PARAM },
     { NULL }
 };
 
@@ -70,9 +72,10 @@ static av_cold int ilbc_decode_init(AVCodecContext *avctx)
     avcodec_get_frame_defaults(&s->frame);
     avctx->coded_frame = &s->frame;
 
-    avctx->channels = 1;
-    avctx->sample_rate = 8000;
-    avctx->sample_fmt = AV_SAMPLE_FMT_S16;
+    avctx->channels       = 1;
+    avctx->channel_layout = AV_CH_LAYOUT_MONO;
+    avctx->sample_rate    = 8000;
+    avctx->sample_fmt     = AV_SAMPLE_FMT_S16;
 
     return 0;
 }
@@ -92,7 +95,7 @@ static int ilbc_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     s->frame.nb_samples = s->decoder.blockl;
-    if ((ret = avctx->get_buffer(avctx, &s->frame)) < 0) {
+    if ((ret = ff_get_buffer(avctx, &s->frame)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
     }
@@ -125,7 +128,7 @@ typedef struct ILBCEncContext {
 } ILBCEncContext;
 
 static const AVOption ilbc_enc_options[] = {
-    { "mode", "iLBC mode (20 or 30 ms frames)", offsetof(ILBCEncContext, mode), AV_OPT_TYPE_INT, { 20 }, 20, 30, AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_ENCODING_PARAM },
+    { "mode", "iLBC mode (20 or 30 ms frames)", offsetof(ILBCEncContext, mode), AV_OPT_TYPE_INT, { .i64 = 20 }, 20, 30, AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_ENCODING_PARAM },
     { NULL }
 };
 

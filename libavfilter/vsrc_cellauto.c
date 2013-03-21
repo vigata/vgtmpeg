@@ -57,25 +57,26 @@ typedef struct {
 } CellAutoContext;
 
 #define OFFSET(x) offsetof(CellAutoContext, x)
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption cellauto_options[] = {
-    { "filename", "read initial pattern from file", OFFSET(filename), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0 },
-    { "f",        "read initial pattern from file", OFFSET(filename), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0 },
-    { "pattern",  "set initial pattern", OFFSET(pattern), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0 },
-    { "p",        "set initial pattern", OFFSET(pattern), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0 },
-    { "rate",     "set video rate", OFFSET(rate), AV_OPT_TYPE_STRING, {.str = "25"}, 0, 0 },
-    { "r",        "set video rate", OFFSET(rate), AV_OPT_TYPE_STRING, {.str = "25"}, 0, 0 },
-    { "size",     "set video size", OFFSET(w),    AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL}, 0, 0 },
-    { "s",        "set video size", OFFSET(w),    AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL}, 0, 0 },
-    { "rule",     "set rule",       OFFSET(rule), AV_OPT_TYPE_INT,    {.dbl = 110},  0, 255 },
-    { "random_fill_ratio", "set fill ratio for filling initial grid randomly", OFFSET(random_fill_ratio), AV_OPT_TYPE_DOUBLE, {.dbl = 1/M_PHI}, 0, 1 },
-    { "ratio",             "set fill ratio for filling initial grid randomly", OFFSET(random_fill_ratio), AV_OPT_TYPE_DOUBLE, {.dbl = 1/M_PHI}, 0, 1 },
-    { "random_seed", "set the seed for filling the initial grid randomly", OFFSET(random_seed), AV_OPT_TYPE_INT, {.dbl = -1}, -1, UINT32_MAX },
-    { "seed",        "set the seed for filling the initial grid randomly", OFFSET(random_seed), AV_OPT_TYPE_INT, {.dbl = -1}, -1, UINT32_MAX },
-    { "scroll",      "scroll pattern downward", OFFSET(scroll), AV_OPT_TYPE_INT, {.dbl = 1}, 0, 1 },
-    { "start_full",  "start filling the whole video", OFFSET(start_full), AV_OPT_TYPE_INT, {.dbl = 0}, 0, 1 },
-    { "full",        "start filling the whole video", OFFSET(start_full), AV_OPT_TYPE_INT, {.dbl = 1}, 0, 1 },
-    { "stitch",      "stitch boundaries", OFFSET(stitch), AV_OPT_TYPE_INT,    {.dbl = 1},   0, 1 },
+    { "filename", "read initial pattern from file", OFFSET(filename), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS },
+    { "f",        "read initial pattern from file", OFFSET(filename), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS },
+    { "pattern",  "set initial pattern", OFFSET(pattern), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS },
+    { "p",        "set initial pattern", OFFSET(pattern), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS },
+    { "rate",     "set video rate", OFFSET(rate), AV_OPT_TYPE_STRING, {.str = "25"}, 0, 0, FLAGS },
+    { "r",        "set video rate", OFFSET(rate), AV_OPT_TYPE_STRING, {.str = "25"}, 0, 0, FLAGS },
+    { "size",     "set video size", OFFSET(w),    AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL}, 0, 0, FLAGS },
+    { "s",        "set video size", OFFSET(w),    AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL}, 0, 0, FLAGS },
+    { "rule",     "set rule",       OFFSET(rule), AV_OPT_TYPE_INT,    {.i64 = 110},  0, 255, FLAGS },
+    { "random_fill_ratio", "set fill ratio for filling initial grid randomly", OFFSET(random_fill_ratio), AV_OPT_TYPE_DOUBLE, {.dbl = 1/M_PHI}, 0, 1, FLAGS },
+    { "ratio",             "set fill ratio for filling initial grid randomly", OFFSET(random_fill_ratio), AV_OPT_TYPE_DOUBLE, {.dbl = 1/M_PHI}, 0, 1, FLAGS },
+    { "random_seed", "set the seed for filling the initial grid randomly", OFFSET(random_seed), AV_OPT_TYPE_INT, {.i64 = -1}, -1, UINT32_MAX, FLAGS },
+    { "seed",        "set the seed for filling the initial grid randomly", OFFSET(random_seed), AV_OPT_TYPE_INT, {.i64 = -1}, -1, UINT32_MAX, FLAGS },
+    { "scroll",      "scroll pattern downward", OFFSET(scroll), AV_OPT_TYPE_INT, {.i64 = 1}, 0, 1, FLAGS },
+    { "start_full",  "start filling the whole video", OFFSET(start_full), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, FLAGS },
+    { "full",        "start filling the whole video", OFFSET(start_full), AV_OPT_TYPE_INT, {.i64 = 1}, 0, 1, FLAGS },
+    { "stitch",      "stitch boundaries", OFFSET(stitch), AV_OPT_TYPE_INT,    {.i64 = 1},   0, 1, FLAGS },
     { NULL },
 };
 
@@ -318,21 +319,27 @@ static int request_frame(AVFilterLink *outlink)
 #ifdef DEBUG
     show_cellauto_row(outlink->src);
 #endif
-
-    ff_start_frame(outlink, avfilter_ref_buffer(picref, ~0));
-    ff_draw_slice(outlink, 0, cellauto->h, 1);
-    ff_end_frame(outlink);
-    avfilter_unref_buffer(picref);
+    ff_filter_frame(outlink, picref);
 
     return 0;
 }
 
 static int query_formats(AVFilterContext *ctx)
 {
-    static const enum PixelFormat pix_fmts[] = { PIX_FMT_MONOBLACK, PIX_FMT_NONE };
+    static const enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_MONOBLACK, AV_PIX_FMT_NONE };
     ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
     return 0;
 }
+
+static const AVFilterPad cellauto_outputs[] = {
+    {
+        .name            = "default",
+        .type            = AVMEDIA_TYPE_VIDEO,
+        .request_frame   = request_frame,
+        .config_props    = config_props,
+    },
+    { NULL }
+};
 
 AVFilter avfilter_vsrc_cellauto = {
     .name        = "cellauto",
@@ -341,15 +348,7 @@ AVFilter avfilter_vsrc_cellauto = {
     .init      = init,
     .uninit    = uninit,
     .query_formats = query_formats,
-
-    .inputs    = (const AVFilterPad[]) {
-        { .name = NULL}
-    },
-    .outputs   = (const AVFilterPad[]) {
-        { .name            = "default",
-          .type            = AVMEDIA_TYPE_VIDEO,
-          .request_frame   = request_frame,
-          .config_props    = config_props },
-        { .name = NULL}
-    },
+    .inputs        = NULL,
+    .outputs       = cellauto_outputs,
+    .priv_class    = &cellauto_class,
 };

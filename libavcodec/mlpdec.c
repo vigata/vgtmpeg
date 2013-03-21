@@ -27,12 +27,13 @@
 #include <stdint.h>
 
 #include "avcodec.h"
-#include "dsputil.h"
 #include "libavutil/intreadwrite.h"
 #include "get_bits.h"
+#include "internal.h"
 #include "libavutil/crc.h"
 #include "parser.h"
 #include "mlp_parser.h"
+#include "mlpdsp.h"
 #include "mlp.h"
 
 /** number of bits used for VLC lookup - longest Huffman code is 9 */
@@ -145,7 +146,7 @@ typedef struct MLPDecodeContext {
     int8_t      bypassed_lsbs[MAX_BLOCKSIZE][MAX_CHANNELS];
     int32_t     sample_buffer[MAX_BLOCKSIZE][MAX_CHANNELS];
 
-    DSPContext  dsp;
+    MLPDSPContext dsp;
 } MLPDecodeContext;
 
 static VLC huff_vlc[3];
@@ -235,7 +236,7 @@ static av_cold int mlp_decode_init(AVCodecContext *avctx)
     m->avctx = avctx;
     for (substr = 0; substr < MAX_SUBSTREAMS; substr++)
         m->substream[substr].lossless_check_data = 0xffffffff;
-    ff_dsputil_init(&m->dsp, avctx);
+    ff_mlpdsp_init(&m->dsp);
 
     avcodec_get_frame_defaults(&m->frame);
     avctx->coded_frame = &m->frame;
@@ -336,6 +337,12 @@ static int read_major_sync(MLPDecodeContext *m, GetBitContext *gb)
             m->avctx->channel_layout = ff_truehd_layout(mh.channels_thd_stream2);
         } else {
             m->avctx->channel_layout = ff_truehd_layout(mh.channels_thd_stream1);
+        }
+        if (m->avctx->channels<=2 && m->avctx->channel_layout == AV_CH_LAYOUT_MONO && m->max_decoded_substream == 1) {
+            av_log(m->avctx, AV_LOG_DEBUG, "Mono stream with 2 substreams, ignoring 2nd\n");
+            m->max_decoded_substream = 0;
+            if (m->avctx->channels==2)
+                m->avctx->channel_layout = AV_CH_LAYOUT_STEREO;
         }
         if (m->avctx->channels &&
             !m->avctx->request_channels && !m->avctx->request_channel_layout &&
@@ -517,8 +524,11 @@ static int read_restart_header(MLPDecodeContext *m, GetBitContext *gbp,
         cp->huff_lsbs        = 24;
     }
 
-    if (substr == m->max_decoded_substream)
+    if (substr == m->max_decoded_substream &&
+        m->avctx->channels != s->max_matrix_channel + 1) {
         m->avctx->channels = s->max_matrix_channel + 1;
+        m->avctx->channel_layout = 0;
+    }
 
     return 0;
 }
@@ -710,6 +720,7 @@ static int read_channel_params(MLPDecodeContext *m, unsigned int substr,
 
     if (cp->huff_lsbs > 24) {
         av_log(m->avctx, AV_LOG_ERROR, "Invalid huff_lsbs.\n");
+        cp->huff_lsbs = 0;
         return AVERROR_INVALIDDATA;
     }
 
@@ -736,7 +747,7 @@ static int read_decoding_params(MLPDecodeContext *m, GetBitContext *gbp,
         if (get_bits1(gbp)) {
             s->blocksize = get_bits(gbp, 9);
             if (s->blocksize < 8 || s->blocksize > m->access_unit_size) {
-                av_log(m->avctx, AV_LOG_ERROR, "Invalid blocksize.");
+                av_log(m->avctx, AV_LOG_ERROR, "Invalid blocksize.\n");
                 s->blocksize = 0;
                 return AVERROR_INVALIDDATA;
             }
@@ -975,7 +986,7 @@ static int output_data(MLPDecodeContext *m, unsigned int substr,
 
     /* get output buffer */
     m->frame.nb_samples = s->blockpos;
-    if ((ret = avctx->get_buffer(avctx, &m->frame)) < 0) {
+    if ((ret = ff_get_buffer(avctx, &m->frame)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
     }

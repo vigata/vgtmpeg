@@ -36,8 +36,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #ifdef _WIN32
-#include <io.h>
-#define mkdir(a, b) mkdir(a)
+#include <direct.h>
+#define mkdir(a, b) _mkdir(a)
 #endif
 
 #include "libavformat/avformat.h"
@@ -251,7 +251,10 @@ static int get_video_private_data(struct VideoFile *vf, AVCodecContext *codec)
     if (codec->codec_id == AV_CODEC_ID_VC1)
         return get_private_data(vf, codec);
 
-    avio_open_dyn_buf(&io);
+    if (avio_open_dyn_buf(&io) < 0)  {
+        err = AVERROR(ENOMEM);
+        goto fail;
+    }
     if (codec->extradata_size < 11 || codec->extradata[0] != 1)
         goto fail;
     sps_size = AV_RB16(&codec->extradata[6]);

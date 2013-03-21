@@ -28,6 +28,7 @@
 #include "dsputil.h"
 #include "rv34dsp.h"
 #include "libavutil/avassert.h"
+#include "libavutil/common.h"
 
 #define RV40_LOWPASS(OPNAME, OP) \
 static av_unused void OPNAME ## rv40_qpel8_h_lowpass(uint8_t *dst, uint8_t *src, int dstStride, int srcStride,\
@@ -603,8 +604,8 @@ av_cold void ff_rv40dsp_init(RV34DSPContext *c, DSPContext* dsp) {
     c->rv40_loop_filter_strength[0] = rv40_h_loop_filter_strength;
     c->rv40_loop_filter_strength[1] = rv40_v_loop_filter_strength;
 
-    if (HAVE_MMX)
+    if (ARCH_X86)
         ff_rv40dsp_init_x86(c, dsp);
-    if (HAVE_NEON)
-        ff_rv40dsp_init_neon(c, dsp);
+    if (ARCH_ARM)
+        ff_rv40dsp_init_arm(c, dsp);
 }

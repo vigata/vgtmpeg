@@ -25,6 +25,7 @@
  */
 
 #include "libavutil/avstring.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/dict.h"
 #include "libavutil/opt.h"
 #include "libavutil/intfloat.h"
@@ -126,8 +127,6 @@ static int flv_same_audio_codec(AVCodecContext *acodec, int flags)
     default:
         return acodec->codec_tag == (flv_codecid >> FLV_AUDIO_CODECID_OFFSET);
     }
-
-    return 0;
 }
 
 static void flv_set_audio_codec(AVFormatContext *s, AVStream *astream, AVCodecContext *acodec, int flv_codecid) {
@@ -198,8 +197,6 @@ static int flv_same_video_codec(AVCodecContext *vcodec, int flags)
         default:
             return vcodec->codec_tag == flv_codecid;
     }
-
-    return 0;
 }
 
 static int flv_set_video_codec(AVFormatContext *s, AVStream *vstream, int flv_codecid) {
@@ -507,7 +504,8 @@ static int flv_read_header(AVFormatContext *s)
         flags = FLV_HEADER_FLAG_HASVIDEO | FLV_HEADER_FLAG_HASAUDIO;
         av_log(s, AV_LOG_WARNING, "Broken FLV file, which says no streams present, this might fail\n");
     }
-        s->ctx_flags |= AVFMTCTX_NOHEADER;
+
+    s->ctx_flags |= AVFMTCTX_NOHEADER;
 
     if(flags & FLV_HEADER_FLAG_HASVIDEO){
         if(!create_stream(s, AVMEDIA_TYPE_VIDEO))
@@ -713,23 +711,29 @@ static int flv_read_packet(AVFormatContext *s, AVPacket *pkt)
     /* now find stream */
     for(i=0;i<s->nb_streams;i++) {
         st = s->streams[i];
-        if (stream_type == FLV_STREAM_TYPE_AUDIO && st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
-            if (flv_same_audio_codec(st->codec, flags)) {
+        if (stream_type == FLV_STREAM_TYPE_AUDIO) {
+            if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO &&
+                flv_same_audio_codec(st->codec, flags)) {
                 break;
             }
         } else
-        if (stream_type == FLV_STREAM_TYPE_VIDEO && st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
-            if (flv_same_video_codec(st->codec, flags)) {
+        if (stream_type == FLV_STREAM_TYPE_VIDEO) {
+            if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+                flv_same_video_codec(st->codec, flags)) {
                 break;
             }
-        } else if (st->id == stream_type) {
-            break;
+        } else if (stream_type == FLV_STREAM_TYPE_DATA) {
+            if (st->codec->codec_type == AVMEDIA_TYPE_DATA)
+                break;
         }
     }
     if(i == s->nb_streams){
         av_log(s, AV_LOG_WARNING, "Stream discovered after head already parsed\n");
         st = create_stream(s,
              (int[]){AVMEDIA_TYPE_VIDEO, AVMEDIA_TYPE_AUDIO, AVMEDIA_TYPE_DATA}[stream_type]);
+        if (!st)
+            return AVERROR(ENOMEM);
+
     }
     av_dlog(s, "%d %X %d \n", stream_type, flags, st->discard);
     if(  (st->discard >= AVDISCARD_NONKEY && !((flags & FLV_VIDEO_FRAMETYPE_MASK) == FLV_FRAME_KEY || (stream_type == FLV_STREAM_TYPE_AUDIO)))
@@ -775,6 +779,8 @@ retry_duration:
         bits_per_coded_sample = (flags & FLV_AUDIO_SAMPLESIZE_MASK) ? 16 : 8;
         if(!st->codec->channels || !st->codec->sample_rate || !st->codec->bits_per_coded_sample) {
             st->codec->channels              = channels;
+            st->codec->channel_layout        = channels == 1 ? AV_CH_LAYOUT_MONO :
+                                                               AV_CH_LAYOUT_STEREO;
             st->codec->sample_rate           = sample_rate;
             st->codec->bits_per_coded_sample = bits_per_coded_sample;
         }
@@ -816,11 +822,12 @@ retry_duration:
             }
             if ((ret = flv_get_extradata(s, st, size)) < 0)
                 return ret;
-            if (st->codec->codec_id == AV_CODEC_ID_AAC) {
+            if (st->codec->codec_id == AV_CODEC_ID_AAC && 0) {
                 MPEG4AudioConfig cfg;
                 if (avpriv_mpeg4audio_get_config(&cfg, st->codec->extradata,
                                              st->codec->extradata_size * 8, 1) >= 0) {
                 st->codec->channels = cfg.channels;
+                st->codec->channel_layout = 0;
                 if (cfg.ext_sample_rate)
                     st->codec->sample_rate = cfg.ext_sample_rate;
                 else
@@ -885,7 +892,7 @@ static int flv_read_seek(AVFormatContext *s, int stream_index,
 #define OFFSET(x) offsetof(FLVContext, x)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
-    { "flv_metadata", "Allocate streams according the onMetaData array",      OFFSET(trust_metadata), AV_OPT_TYPE_INT,    { 0 }, 0, 1, VD},
+    { "flv_metadata", "Allocate streams according the onMetaData array",      OFFSET(trust_metadata), AV_OPT_TYPE_INT,    { .i64 = 0 }, 0, 1, VD},
     { NULL }
 };
 

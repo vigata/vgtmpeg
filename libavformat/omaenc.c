@@ -61,7 +61,7 @@ static av_cold int oma_write_header(AVFormatContext *s)
     switch(format->codec_tag) {
     case OMA_CODECID_ATRAC3:
         if (format->channels != 2) {
-            av_log(s, AV_LOG_ERROR, "ATRAC3 in OMA is only supported with 2 channels");
+            av_log(s, AV_LOG_ERROR, "ATRAC3 in OMA is only supported with 2 channels\n");
             return AVERROR(EINVAL);
         }
         if (format->extradata_size == 14) /* WAV format extradata */
@@ -84,8 +84,9 @@ static av_cold int oma_write_header(AVFormatContext *s)
                          (format->block_align/8 - 1));
         break;
     default:
-        av_log(s, AV_LOG_ERROR, "OMA: unsupported codec tag %d for write\n",
+        av_log(s, AV_LOG_ERROR, "unsupported codec tag %d for write\n",
                format->codec_tag);
+        return AVERROR(EINVAL);
     }
     for (i = 0; i < (EA3_HEADER_SIZE - 36)/4; i++)
         avio_wl32(s->pb, 0);        /* Padding */

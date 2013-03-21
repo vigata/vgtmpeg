@@ -24,7 +24,7 @@
  * The simplest mpeg audio layer 2 encoder.
  */
 
-#include "libavutil/audioconvert.h"
+#include "libavutil/channel_layout.h"
 
 #include "avcodec.h"
 #include "internal.h"
@@ -34,6 +34,7 @@
 #define WFRAC_BITS  14   /* fractional bits for window */
 
 #include "mpegaudio.h"
+#include "mpegaudiodsp.h"
 
 /* currently, cannot change these constants (need to modify
    quantization stage) */
@@ -147,16 +148,16 @@ static av_cold int MPA_encode_init(AVCodecContext *avctx)
     }
 
     for(i=0;i<64;i++) {
-        v = (int)(pow(2.0, (3 - i) / 3.0) * (1 << 20));
+        v = (int)(exp2((3 - i) / 3.0) * (1 << 20));
         if (v <= 0)
             v = 1;
         scale_factor_table[i] = v;
 #ifdef USE_FLOATS
-        scale_factor_inv_table[i] = pow(2.0, -(3 - i) / 3.0) / (float)(1 << 20);
+        scale_factor_inv_table[i] = exp2(-(3 - i) / 3.0) / (float)(1 << 20);
 #else
 #define P 15
         scale_factor_shift[i] = 21 - P - (i / 3);
-        scale_factor_mult[i] = (1 << P) * pow(2.0, (i % 3) / 3.0);
+        scale_factor_mult[i] = (1 << P) * exp2((i % 3) / 3.0);
 #endif
     }
     for(i=0;i<128;i++) {

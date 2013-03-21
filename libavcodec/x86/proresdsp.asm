@@ -22,8 +22,7 @@
 ;* 51, Inc., Foundation Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
-%include "x86inc.asm"
-%include "x86util.asm"
+%include "libavutil/x86/x86util.asm"
 
 %define W1sh2 22725 ; W1 = 90901 = 22725<<2 + 1
 %define W2sh2 21407 ; W2 = 85627 = 21407<<2 - 1
@@ -319,7 +318,7 @@ INIT_XMM sse2
 idct_put_fn 16
 INIT_XMM sse4
 idct_put_fn 16
-%if HAVE_AVX
+%if HAVE_AVX_EXTERNAL
 INIT_XMM avx
 idct_put_fn 16
 %endif

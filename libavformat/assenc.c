@@ -72,8 +72,6 @@ static int write_trailer(AVFormatContext *s)
     avio_write(s->pb, avctx->extradata      + ass->extra_index,
                       avctx->extradata_size - ass->extra_index);
 
-    avio_flush(s->pb);
-
     return 0;
 }
 
@@ -87,5 +85,5 @@ AVOutputFormat ff_ass_muxer = {
     .write_header   = write_header,
     .write_packet   = write_packet,
     .write_trailer  = write_trailer,
-    .flags          = AVFMT_GLOBALHEADER | AVFMT_NOTIMESTAMPS,
+    .flags          = AVFMT_GLOBALHEADER | AVFMT_NOTIMESTAMPS | AVFMT_TS_NONSTRICT,
 };

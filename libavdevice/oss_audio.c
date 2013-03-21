@@ -76,8 +76,11 @@ static int audio_open(AVFormatContext *s1, int is_output, const char *audio_devi
     }
 
     /* non blocking mode */
-    if (!is_output)
-        fcntl(audio_fd, F_SETFL, O_NONBLOCK);
+    if (!is_output) {
+        if (fcntl(audio_fd, F_SETFL, O_NONBLOCK) < 0) {
+            av_log(s1, AV_LOG_WARNING, "%s: Could not enable non block mode (%s)\n", audio_device, strerror(errno));
+        }
+    }
 
     s->frame_size = AUDIO_BLOCK_SIZE;
 
@@ -282,8 +285,8 @@ static int audio_read_close(AVFormatContext *s1)
 
 #if CONFIG_OSS_INDEV
 static const AVOption options[] = {
-    { "sample_rate", "", offsetof(AudioData, sample_rate), AV_OPT_TYPE_INT, {.dbl = 48000}, 1, INT_MAX, AV_OPT_FLAG_DECODING_PARAM },
-    { "channels",    "", offsetof(AudioData, channels),    AV_OPT_TYPE_INT, {.dbl = 2},     1, INT_MAX, AV_OPT_FLAG_DECODING_PARAM },
+    { "sample_rate", "", offsetof(AudioData, sample_rate), AV_OPT_TYPE_INT, {.i64 = 48000}, 1, INT_MAX, AV_OPT_FLAG_DECODING_PARAM },
+    { "channels",    "", offsetof(AudioData, channels),    AV_OPT_TYPE_INT, {.i64 = 2},     1, INT_MAX, AV_OPT_FLAG_DECODING_PARAM },
     { NULL },
 };
 

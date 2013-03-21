@@ -19,16 +19,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <string.h>
+
 #include "avcodec.h"
 #include "ass.h"
 #include "ass_split.h"
+#include "libavutil/internal.h"
+#include "libavutil/mem.h"
 
 static av_cold int ass_decode_init(AVCodecContext *avctx)
 {
-    avctx->subtitle_header = av_malloc(avctx->extradata_size);
+    avctx->subtitle_header = av_malloc(avctx->extradata_size + 1);
     if (!avctx->subtitle_header)
         return AVERROR(ENOMEM);
     memcpy(avctx->subtitle_header, avctx->extradata, avctx->extradata_size);
+    avctx->subtitle_header[avctx->extradata_size] = 0;
     avctx->subtitle_header_size = avctx->extradata_size;
     avctx->priv_data = ff_ass_split(avctx->extradata);
     if(!avctx->priv_data)

@@ -25,7 +25,7 @@
 
 #include <stdint.h>
 
-#include "libavutil/audioconvert.h"
+#include "libavutil/channel_layout.h"
 #include "libavcodec/avcodec.h"
 #include "mov_chan.h"
 
@@ -543,9 +543,9 @@ uint32_t ff_mov_get_channel_layout_tag(enum AVCodecID codec_id,
     return tag;
 }
 
-int ff_mov_read_chan(AVFormatContext *s, AVStream *st, int64_t size)
+int ff_mov_read_chan(AVFormatContext *s, AVIOContext *pb, AVStream *st,
+                     int64_t size)
 {
-    AVIOContext *pb = s->pb;
     uint32_t layout_tag, bitmap, num_descr, label_mask;
     int i;
 
@@ -580,9 +580,10 @@ int ff_mov_read_chan(AVFormatContext *s, AVStream *st, int64_t size)
             label_mask |= mask_incr;
         }
     }
-    if (layout_tag == 0)
+    if (layout_tag == 0) {
+        if (label_mask)
             st->codec->channel_layout = label_mask;
-    else
+    } else
         st->codec->channel_layout = ff_mov_get_channel_layout(layout_tag, bitmap);
     avio_skip(pb, size - 12);
 

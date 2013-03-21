@@ -66,6 +66,10 @@ static void decode_mb(MpegEncContext *s, int ref)
             av_log(s->avctx, AV_LOG_DEBUG, "Reference not available for error concealing\n");
             ref = 0;
         }
+        if ((h->ref_list[0][ref].f.reference&3) != 3) {
+            av_log(s->avctx, AV_LOG_DEBUG, "Reference invalid\n");
+            return;
+        }
         fill_rectangle(&s->current_picture.f.ref_index[0][4 * h->mb_xy],
                        2, 2, 2, ref, 1);
         fill_rectangle(&h->ref_cache[0][scan8[0]], 4, 4, 8, ref, 1);
@@ -183,6 +187,11 @@ static void guess_dc(MpegEncContext *s, int16_t *dc, int w,
     int16_t  (*col )[4] = av_malloc(stride*h*sizeof( int16_t)*4);
     uint32_t (*dist)[4] = av_malloc(stride*h*sizeof(uint32_t)*4);
 
+    if(!col || !dist) {
+        av_log(s->avctx, AV_LOG_ERROR, "guess_dc() is out of memory\n");
+        goto fail;
+    }
+
     for(b_y=0; b_y<h; b_y++){
         int color= 1024;
         int distance= -1;
@@ -263,6 +272,8 @@ static void guess_dc(MpegEncContext *s, int16_t *dc, int w,
             dc[b_x + b_y * stride] = guess;
         }
     }
+
+fail:
     av_freep(&col);
     av_freep(&dist);
 }
@@ -717,8 +728,6 @@ skip_last_mv:
                         fixed[mb_xy] = MV_UNCHANGED;
                 }
             }
-
-            // printf(".%d/%d", changed, score_sum); fflush(stdout);
         }
 
         if (none_left)
@@ -729,7 +738,6 @@ skip_last_mv:
             if (fixed[mb_xy])
                 fixed[mb_xy] = MV_FROZEN;
         }
-        // printf(":"); fflush(stdout);
     }
 }
 
@@ -915,6 +923,12 @@ void ff_er_frame_end(MpegEncContext *s)
                           (s->avctx->skip_top + s->avctx->skip_bottom)) {
         return;
     };
+
+    if (   s->picture_structure == PICT_FRAME
+        && s->current_picture.f.linesize[0] != s->current_picture_ptr->f.linesize[0]) {
+        av_log(s->avctx, AV_LOG_ERROR, "Error concealment not possible, frame not fully initialized\n");
+        return;
+    }
 
     if (s->current_picture.f.motion_val[0] == NULL) {
         av_log(s->avctx, AV_LOG_ERROR, "Warning MVs not available\n");

@@ -113,92 +113,13 @@ static void FUNCC(draw_edges)(uint8_t *p_buf, int p_wrap, int width, int height,
             memcpy(last_line + (i + 1) * wrap, last_line, (width + w + w) * sizeof(pixel)); // bottom
 }
 
-/**
- * Copy a rectangular area of samples to a temporary buffer and replicate the border samples.
- * @param buf destination buffer
- * @param src source buffer
- * @param linesize number of bytes between 2 vertically adjacent samples in both the source and destination buffers
- * @param block_w width of block
- * @param block_h height of block
- * @param src_x x coordinate of the top left sample of the block in the source buffer
- * @param src_y y coordinate of the top left sample of the block in the source buffer
- * @param w width of the source buffer
- * @param h height of the source buffer
- */
-void FUNC(ff_emulated_edge_mc)(uint8_t *buf, const uint8_t *src, int linesize, int block_w, int block_h,
-                                    int src_x, int src_y, int w, int h){
-    int x, y;
-    int start_y, start_x, end_y, end_x;
-
-    if(src_y>= h){
-        src+= (h-1-src_y)*linesize;
-        src_y=h-1;
-    }else if(src_y<=-block_h){
-        src+= (1-block_h-src_y)*linesize;
-        src_y=1-block_h;
-    }
-    if(src_x>= w){
-        src+= (w-1-src_x)*sizeof(pixel);
-        src_x=w-1;
-    }else if(src_x<=-block_w){
-        src+= (1-block_w-src_x)*sizeof(pixel);
-        src_x=1-block_w;
-    }
-
-    start_y= FFMAX(0, -src_y);
-    start_x= FFMAX(0, -src_x);
-    end_y= FFMIN(block_h, h-src_y);
-    end_x= FFMIN(block_w, w-src_x);
-    av_assert2(start_y < end_y && block_h);
-    av_assert2(start_x < end_x && block_w);
-
-    w    = end_x - start_x;
-    src += start_y*linesize + start_x*sizeof(pixel);
-    buf += start_x*sizeof(pixel);
-
-    //top
-    for(y=0; y<start_y; y++){
-        memcpy(buf, src, w*sizeof(pixel));
-        buf += linesize;
-    }
-
-    // copy existing part
-    for(; y<end_y; y++){
-        memcpy(buf, src, w*sizeof(pixel));
-        src += linesize;
-        buf += linesize;
-    }
-
-    //bottom
-    src -= linesize;
-    for(; y<block_h; y++){
-        memcpy(buf, src, w*sizeof(pixel));
-        buf += linesize;
-    }
-
-    buf -= block_h * linesize + start_x*sizeof(pixel);
-    while (block_h--){
-        pixel *bufp = (pixel*)buf;
-       //left
-        for(x=0; x<start_x; x++){
-            bufp[x] = bufp[start_x];
-        }
-
-       //right
-        for(x=end_x; x<block_w; x++){
-            bufp[x] = bufp[end_x - 1];
-        }
-        buf += linesize;
-    }
-}
-
 #define DCTELEM_FUNCS(dctcoef, suffix)                                  \
-static void FUNCC(get_pixels ## suffix)(DCTELEM *restrict _block,       \
+static void FUNCC(get_pixels ## suffix)(DCTELEM *av_restrict _block,    \
                                         const uint8_t *_pixels,         \
                                         int line_size)                  \
 {                                                                       \
     const pixel *pixels = (const pixel *) _pixels;                      \
-    dctcoef *restrict block = (dctcoef *) _block;                       \
+    dctcoef *av_restrict block = (dctcoef *) _block;                    \
     int i;                                                              \
                                                                         \
     /* read the pixels */                                               \
@@ -216,12 +137,12 @@ static void FUNCC(get_pixels ## suffix)(DCTELEM *restrict _block,       \
     }                                                                   \
 }                                                                       \
                                                                         \
-static void FUNCC(add_pixels8 ## suffix)(uint8_t *restrict _pixels,     \
+static void FUNCC(add_pixels8 ## suffix)(uint8_t *av_restrict _pixels,  \
                                          DCTELEM *_block,               \
                                          int line_size)                 \
 {                                                                       \
     int i;                                                              \
-    pixel *restrict pixels = (pixel *restrict)_pixels;                  \
+    pixel *av_restrict pixels = (pixel *av_restrict)_pixels;            \
     dctcoef *block = (dctcoef*)_block;                                  \
     line_size /= sizeof(pixel);                                         \
                                                                         \
@@ -239,12 +160,12 @@ static void FUNCC(add_pixels8 ## suffix)(uint8_t *restrict _pixels,     \
     }                                                                   \
 }                                                                       \
                                                                         \
-static void FUNCC(add_pixels4 ## suffix)(uint8_t *restrict _pixels,     \
+static void FUNCC(add_pixels4 ## suffix)(uint8_t *av_restrict _pixels,  \
                                          DCTELEM *_block,               \
                                          int line_size)                 \
 {                                                                       \
     int i;                                                              \
-    pixel *restrict pixels = (pixel *restrict)_pixels;                  \
+    pixel *av_restrict pixels = (pixel *av_restrict)_pixels;            \
     dctcoef *block = (dctcoef*)_block;                                  \
     line_size /= sizeof(pixel);                                         \
                                                                         \
@@ -661,14 +582,6 @@ PIXOP2(put, op_put)
 #define put_no_rnd_pixels8_c  put_pixels8_c
 #define put_no_rnd_pixels16_c put_pixels16_c
 
-static void FUNCC(put_no_rnd_pixels16_l2)(uint8_t *dst, const uint8_t *a, const uint8_t *b, int stride, int h){
-    FUNC(put_no_rnd_pixels16_l2)(dst, a, b, stride, stride, stride, h);
-}
-
-static void FUNCC(put_no_rnd_pixels8_l2)(uint8_t *dst, const uint8_t *a, const uint8_t *b, int stride, int h){
-    FUNC(put_no_rnd_pixels8_l2)(dst, a, b, stride, stride, stride, h);
-}
-
 #define H264_CHROMA_MC(OPNAME, OP)\
 static void FUNCC(OPNAME ## h264_chroma_mc2)(uint8_t *p_dst/*align 8*/, uint8_t *p_src/*align 1*/, int stride, int h, int x, int y){\
     pixel *dst = (pixel*)p_dst;\
@@ -680,7 +593,7 @@ static void FUNCC(OPNAME ## h264_chroma_mc2)(uint8_t *p_dst/*align 8*/, uint8_t 
     int i;\
     stride >>= sizeof(pixel)-1;\
     \
-    assert(x<8 && y<8 && x>=0 && y>=0);\
+    av_assert2(x<8 && y<8 && x>=0 && y>=0);\
 \
     if(D){\
         for(i=0; i<h; i++){\

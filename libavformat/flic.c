@@ -31,8 +31,8 @@
  * special FLIs from the PC games "Magic Carpet" and "X-COM: Terror from the Deep".
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/audioconvert.h"
 #include "avformat.h"
 #include "internal.h"
 
@@ -187,7 +187,7 @@ static int flic_read_header(AVFormatContext *s)
                (magic_number == FLIC_FILE_MAGIC_3)) {
         avpriv_set_pts_info(st, 64, speed, 1000);
     } else {
-        av_log(s, AV_LOG_INFO, "Invalid or unsupported magic chunk in file\n");
+        av_log(s, AV_LOG_ERROR, "Invalid or unsupported magic chunk in file\n");
         return AVERROR_INVALIDDATA;
     }
 

@@ -23,8 +23,9 @@
  * concat audio-video filter
  */
 
-#include "libavutil/audioconvert.h"
 #include "libavutil/avassert.h"
+#include "libavutil/avstring.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
 #define FF_BUFQUEUE_SIZE 256
@@ -42,6 +43,7 @@ typedef struct {
     unsigned cur_idx; /**< index of the first input of current segment */
     int64_t delta_ts; /**< timestamp to add to produce output timestamps */
     unsigned nb_in_active; /**< number of active inputs in current segment */
+    unsigned unsafe;
     struct concat_in {
         int64_t pts;
         int64_t nb_frames;
@@ -51,16 +53,22 @@ typedef struct {
 } ConcatContext;
 
 #define OFFSET(x) offsetof(ConcatContext, x)
+#define A AV_OPT_FLAG_AUDIO_PARAM
+#define F AV_OPT_FLAG_FILTERING_PARAM
+#define V AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption concat_options[] = {
     { "n", "specify the number of segments", OFFSET(nb_segments),
-      AV_OPT_TYPE_INT, { .dbl = 2 }, 2, INT_MAX },
+      AV_OPT_TYPE_INT, { .i64 = 2 }, 2, INT_MAX, V|A|F},
     { "v", "specify the number of video streams",
       OFFSET(nb_streams[AVMEDIA_TYPE_VIDEO]),
-      AV_OPT_TYPE_INT, { .dbl = 1 }, 0, INT_MAX },
+      AV_OPT_TYPE_INT, { .i64 = 1 }, 0, INT_MAX, V|F },
     { "a", "specify the number of audio streams",
       OFFSET(nb_streams[AVMEDIA_TYPE_AUDIO]),
-      AV_OPT_TYPE_INT, { .dbl = 0 }, 0, INT_MAX },
+      AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, A|F},
+    { "unsafe", "enable unsafe mode",
+      OFFSET(unsafe),
+      AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, A|A|F},
     { 0 }
 };
 
@@ -70,8 +78,8 @@ static int query_formats(AVFilterContext *ctx)
 {
     ConcatContext *cat = ctx->priv;
     unsigned type, nb_str, idx0 = 0, idx, str, seg;
-    AVFilterFormats *formats, *rates;
-    AVFilterChannelLayouts *layouts;
+    AVFilterFormats *formats, *rates = NULL;
+    AVFilterChannelLayouts *layouts = NULL;
 
     for (type = 0; type < TYPE_ALL; type++) {
         nb_str = cat->nb_streams[type];
@@ -140,7 +148,8 @@ static int config_output(AVFilterLink *outlink)
                    ctx->input_pads[out_no].name, outlink->w, outlink->h,
                    outlink->sample_aspect_ratio.num,
                    outlink->sample_aspect_ratio.den);
-            return AVERROR(EINVAL);
+            if (!cat->unsafe)
+                return AVERROR(EINVAL);
         }
     }
 
@@ -170,16 +179,7 @@ static void push_frame(AVFilterContext *ctx, unsigned in_no,
         in->pts = av_rescale(in->pts, in->nb_frames, in->nb_frames - 1);
 
     buf->pts += cat->delta_ts;
-    switch (buf->type) {
-    case AVMEDIA_TYPE_VIDEO:
-        ff_start_frame(outlink, buf);
-        ff_draw_slice(outlink, 0, outlink->h, 1);
-        ff_end_frame(outlink);
-        break;
-    case AVMEDIA_TYPE_AUDIO:
-        ff_filter_samples(outlink, buf);
-        break;
-    }
+    ff_filter_frame(outlink, buf);
 }
 
 static void process_frame(AVFilterLink *inlink, AVFilterBufferRef *buf)
@@ -192,7 +192,7 @@ static void process_frame(AVFilterLink *inlink, AVFilterBufferRef *buf)
         av_log(ctx, AV_LOG_ERROR, "Frame after EOF on input %s\n",
                ctx->input_pads[in_no].name);
         avfilter_unref_buffer(buf);
-    } if (in_no >= cat->cur_idx + ctx->nb_outputs) {
+    } else if (in_no >= cat->cur_idx + ctx->nb_outputs) {
         ff_bufqueue_add(ctx, &cat->in[in_no].queue, buf);
     } else {
         push_frame(ctx, in_no, buf);
@@ -219,24 +219,7 @@ static AVFilterBufferRef *get_audio_buffer(AVFilterLink *inlink, int perms,
     return ff_get_audio_buffer(outlink, perms, nb_samples);
 }
 
-static int start_frame(AVFilterLink *inlink, AVFilterBufferRef *buf)
-{
-    return 0;
-}
-
-static int draw_slice(AVFilterLink *inlink, int y, int h, int dir)
-{
-    return 0;
-}
-
-static int end_frame(AVFilterLink *inlink)
-{
-    process_frame(inlink, inlink->cur_buf);
-    inlink->cur_buf = NULL;
-    return 0;
-}
-
-static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *buf)
+static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *buf)
 {
     process_frame(inlink, buf);
     return 0; /* enhancement: handle error return */
@@ -289,7 +272,7 @@ static void send_silence(AVFilterContext *ctx, unsigned in_no, unsigned out_no)
         av_samples_set_silence(buf->extended_data, 0, frame_nb_samples,
                                nb_channels, outlink->format);
         buf->pts = base_pts + av_rescale_q(sent, rate_tb, outlink->time_base);
-        ff_filter_samples(outlink, buf);
+        ff_filter_frame(outlink, buf);
         sent       += frame_nb_samples;
         nb_samples -= frame_nb_samples;
     }
@@ -362,7 +345,6 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
     ConcatContext *cat = ctx->priv;
     int ret;
     unsigned seg, type, str;
-    char name[32];
 
     cat->class = &concat_class;
     av_opt_set_defaults(cat);
@@ -378,20 +360,12 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
             for (str = 0; str < cat->nb_streams[type]; str++) {
                 AVFilterPad pad = {
                     .type             = type,
-                    .min_perms        = AV_PERM_READ,
-                    .rej_perms        = AV_PERM_REUSE2,
+                    .min_perms        = AV_PERM_READ | AV_PERM_PRESERVE,
                     .get_video_buffer = get_video_buffer,
                     .get_audio_buffer = get_audio_buffer,
+                    .filter_frame     = filter_frame,
                 };
-                snprintf(name, sizeof(name), "in%d:%c%d", seg, "va"[type], str);
-                pad.name = av_strdup(name);
-                if (type == AVMEDIA_TYPE_VIDEO) {
-                    pad.start_frame = start_frame;
-                    pad.draw_slice  = draw_slice;
-                    pad.end_frame   = end_frame;
-                } else {
-                    pad.filter_samples = filter_samples;
-                }
+                pad.name = av_asprintf("in%d:%c%d", seg, "va"[type], str);
                 ff_insert_inpad(ctx, ctx->nb_inputs, &pad);
             }
         }
@@ -404,8 +378,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
                 .config_props  = config_output,
                 .request_frame = request_frame,
             };
-            snprintf(name, sizeof(name), "out:%c%d", "va"[type], str);
-            pad.name = av_strdup(name);
+            pad.name = av_asprintf("out:%c%d", "va"[type], str);
             ff_insert_outpad(ctx, ctx->nb_outputs, &pad);
         }
     }
@@ -438,6 +411,7 @@ AVFilter avfilter_avf_concat = {
     .uninit        = uninit,
     .query_formats = query_formats,
     .priv_size     = sizeof(ConcatContext),
-    .inputs        = (const AVFilterPad[]) { { .name = NULL } },
-    .outputs       = (const AVFilterPad[]) { { .name = NULL } },
+    .inputs        = NULL,
+    .outputs       = NULL,
+    .priv_class    = &concat_class,
 };

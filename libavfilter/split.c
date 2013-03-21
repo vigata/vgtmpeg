@@ -23,6 +23,10 @@
  * audio and video splitter
  */
 
+#include <stdio.h>
+
+#include "libavutil/internal.h"
+#include "libavutil/mem.h"
 #include "avfilter.h"
 #include "audio.h"
 #include "internal.h"
@@ -48,6 +52,7 @@ static int split_init(AVFilterContext *ctx, const char *args)
         snprintf(name, sizeof(name), "output%d", i);
         pad.type = ctx->filter->inputs[0].type;
         pad.name = av_strdup(name);
+        pad.rej_perms = AV_PERM_WRITE;
 
         ff_insert_outpad(ctx, i, &pad);
     }
@@ -63,48 +68,39 @@ static void split_uninit(AVFilterContext *ctx)
         av_freep(&ctx->output_pads[i].name);
 }
 
-static int start_frame(AVFilterLink *inlink, AVFilterBufferRef *picref)
+static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *frame)
 {
     AVFilterContext *ctx = inlink->dst;
-    int i, ret = 0;
+    int i, ret = AVERROR_EOF;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        AVFilterBufferRef *buf_out = avfilter_ref_buffer(picref, ~AV_PERM_WRITE);
-        if (!buf_out)
-            return AVERROR(ENOMEM);
+        AVFilterBufferRef *buf_out;
 
-        ret = ff_start_frame(ctx->outputs[i], buf_out);
+        if (ctx->outputs[i]->closed)
+            continue;
+        buf_out = avfilter_ref_buffer(frame, ~AV_PERM_WRITE);
+        if (!buf_out) {
+            ret = AVERROR(ENOMEM);
+            break;
+        }
+
+        ret = ff_filter_frame(ctx->outputs[i], buf_out);
         if (ret < 0)
             break;
     }
+    avfilter_unref_bufferp(&frame);
     return ret;
 }
 
-static int draw_slice(AVFilterLink *inlink, int y, int h, int slice_dir)
-{
-    AVFilterContext *ctx = inlink->dst;
-    int i, ret = 0;
-
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        ret = ff_draw_slice(ctx->outputs[i], y, h, slice_dir);
-        if (ret < 0)
-            break;
-    }
-    return ret;
-}
-
-static int end_frame(AVFilterLink *inlink)
-{
-    AVFilterContext *ctx = inlink->dst;
-    int i, ret = 0;
-
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        ret = ff_end_frame(ctx->outputs[i]);
-        if (ret < 0)
-            break;
-    }
-    return ret;
-}
+static const AVFilterPad avfilter_vf_split_inputs[] = {
+    {
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_VIDEO,
+        .get_video_buffer = ff_null_get_video_buffer,
+        .filter_frame     = filter_frame,
+    },
+    { NULL }
+};
 
 AVFilter avfilter_vf_split = {
     .name      = "split",
@@ -113,36 +109,19 @@ AVFilter avfilter_vf_split = {
     .init   = split_init,
     .uninit = split_uninit,
 
-    .inputs    = (const AVFilterPad[]) {{ .name            = "default",
-                                          .type            = AVMEDIA_TYPE_VIDEO,
-                                          .get_video_buffer= ff_null_get_video_buffer,
-                                          .start_frame     = start_frame,
-                                          .draw_slice      = draw_slice,
-                                          .end_frame       = end_frame, },
-                                        { .name = NULL}},
-    .outputs   = (const AVFilterPad[]) {{ .name = NULL}},
+    .inputs    = avfilter_vf_split_inputs,
+    .outputs   = NULL,
 };
 
-static int filter_samples(AVFilterLink *inlink, AVFilterBufferRef *samplesref)
-{
-    AVFilterContext *ctx = inlink->dst;
-    int i, ret = 0;
-
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        AVFilterBufferRef *buf_out = avfilter_ref_buffer(samplesref,
-                                                         ~AV_PERM_WRITE);
-        if (!buf_out) {
-            ret = AVERROR(ENOMEM);
-            break;
-        }
-
-        ret = ff_filter_samples(inlink->dst->outputs[i], buf_out);
-        if (ret < 0)
-            break;
-    }
-    avfilter_unref_buffer(samplesref);
-    return ret;
-}
+static const AVFilterPad avfilter_af_asplit_inputs[] = {
+    {
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_AUDIO,
+        .get_audio_buffer = ff_null_get_audio_buffer,
+        .filter_frame     = filter_frame,
+    },
+    { NULL }
+};
 
 AVFilter avfilter_af_asplit = {
     .name        = "asplit",
@@ -151,10 +130,6 @@ AVFilter avfilter_af_asplit = {
     .init   = split_init,
     .uninit = split_uninit,
 
-    .inputs  = (const AVFilterPad[]) {{ .name             = "default",
-                                        .type             = AVMEDIA_TYPE_AUDIO,
-                                        .get_audio_buffer = ff_null_get_audio_buffer,
-                                        .filter_samples   = filter_samples },
-                                      { .name = NULL }},
-    .outputs = (const AVFilterPad[]) {{ .name = NULL }},
+    .inputs  = avfilter_af_asplit_inputs,
+    .outputs = NULL,
 };

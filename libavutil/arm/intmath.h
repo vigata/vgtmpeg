@@ -28,23 +28,10 @@
 
 #if HAVE_INLINE_ASM
 
-#if HAVE_ARMV6
-
-#define FASTDIV FASTDIV
-static av_always_inline av_const int FASTDIV(int a, int b)
-{
-    int r;
-    __asm__ ("cmp     %2, #2               \n\t"
-             "ldr     %0, [%3, %2, lsl #2] \n\t"
-             "ite     le                   \n\t"
-             "lsrle   %0, %1, #1           \n\t"
-             "smmulgt %0, %0, %1           \n\t"
-             : "=&r"(r) : "r"(a), "r"(b), "r"(ff_inverse) : "cc");
-    return r;
-}
+#if HAVE_ARMV6_INLINE
 
 #define av_clip_uint8 av_clip_uint8_arm
-static av_always_inline av_const uint8_t av_clip_uint8_arm(int a)
+static av_always_inline av_const unsigned av_clip_uint8_arm(int a)
 {
     unsigned x;
     __asm__ ("usat %0, #8,  %1" : "=r"(x) : "r"(a));
@@ -52,15 +39,15 @@ static av_always_inline av_const uint8_t av_clip_uint8_arm(int a)
 }
 
 #define av_clip_int8 av_clip_int8_arm
-static av_always_inline av_const uint8_t av_clip_int8_arm(int a)
+static av_always_inline av_const int av_clip_int8_arm(int a)
 {
-    unsigned x;
+    int x;
     __asm__ ("ssat %0, #8,  %1" : "=r"(x) : "r"(a));
     return x;
 }
 
 #define av_clip_uint16 av_clip_uint16_arm
-static av_always_inline av_const uint16_t av_clip_uint16_arm(int a)
+static av_always_inline av_const unsigned av_clip_uint16_arm(int a)
 {
     unsigned x;
     __asm__ ("usat %0, #16, %1" : "=r"(x) : "r"(a));
@@ -68,7 +55,7 @@ static av_always_inline av_const uint16_t av_clip_uint16_arm(int a)
 }
 
 #define av_clip_int16 av_clip_int16_arm
-static av_always_inline av_const int16_t av_clip_int16_arm(int a)
+static av_always_inline av_const int av_clip_int16_arm(int a)
 {
     int x;
     __asm__ ("ssat %0, #16, %1" : "=r"(x) : "r"(a));
@@ -99,18 +86,7 @@ static av_always_inline int av_sat_dadd32_arm(int a, int b)
     return r;
 }
 
-#else /* HAVE_ARMV6 */
-
-#define FASTDIV FASTDIV
-static av_always_inline av_const int FASTDIV(int a, int b)
-{
-    int r, t;
-    __asm__ ("umull %1, %0, %2, %3"
-             : "=&r"(r), "=&r"(t) : "r"(a), "r"(ff_inverse[b]));
-    return r;
-}
-
-#endif /* HAVE_ARMV6 */
+#endif /* HAVE_ARMV6_INLINE */
 
 #if HAVE_ASM_MOD_Q
 

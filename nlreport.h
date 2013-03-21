@@ -287,7 +287,7 @@ static void show_codecs_json(void)
                         }
                         if(p2 && strcmp(p->name, p2->name)==0){
                             if(p->decode ) decode=1;
-                            if(p->encode || p->encode2) encode=1;
+                            if(p->encode2) encode=1;
                             cap |= p->capabilities;
                             }
                         }
@@ -573,7 +573,6 @@ static void show_help_options_json_flagdef(void) {
                     JSON_PROPERTY(0, OPT_STRING ,JSON_INT_C(OPT_STRING));
                     JSON_PROPERTY(0, OPT_VIDEO  ,JSON_INT_C(OPT_VIDEO));
                     JSON_PROPERTY(0, OPT_AUDIO  ,JSON_INT_C(OPT_AUDIO));
-                    JSON_PROPERTY(0, OPT_GRAB   ,JSON_INT_C(OPT_GRAB));
                     JSON_PROPERTY(0, OPT_INT    ,JSON_INT_C(OPT_INT));
                     JSON_PROPERTY(0, OPT_FLOAT  ,JSON_INT_C(OPT_FLOAT));
                     JSON_PROPERTY(0, OPT_SUBTITLE ,JSON_INT_C(OPT_SUBTITLE));

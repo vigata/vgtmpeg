@@ -25,6 +25,7 @@
  * Ported from MPlayer libmpcodecs/vf_delogo.c.
  */
 
+#include "libavutil/common.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -79,11 +80,11 @@ static void apply_delogo(uint8_t *dst, int dst_linesize,
     topright = src+logo_y1     * src_linesize+logo_x2-1;
     botleft  = src+(logo_y2-1) * src_linesize+logo_x1;
 
-    dst += (logo_y1+1)*dst_linesize;
-    src += (logo_y1+1)*src_linesize;
-
     if (!direct)
         av_image_copy_plane(dst, dst_linesize, src, src_linesize, w, h);
+
+    dst += (logo_y1+1)*dst_linesize;
+    src += (logo_y1+1)*src_linesize;
 
     for (y = logo_y1+1; y < logo_y2-1; y++) {
         for (x = logo_x1+1,
@@ -139,15 +140,16 @@ typedef struct {
 }  DelogoContext;
 
 #define OFFSET(x) offsetof(DelogoContext, x)
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption delogo_options[]= {
-    {"x",    "set logo x position",       OFFSET(x),    AV_OPT_TYPE_INT, {.dbl=-1}, -1, INT_MAX },
-    {"y",    "set logo y position",       OFFSET(y),    AV_OPT_TYPE_INT, {.dbl=-1}, -1, INT_MAX },
-    {"w",    "set logo width",            OFFSET(w),    AV_OPT_TYPE_INT, {.dbl=-1}, -1, INT_MAX },
-    {"h",    "set logo height",           OFFSET(h),    AV_OPT_TYPE_INT, {.dbl=-1}, -1, INT_MAX },
-    {"band", "set delogo area band size", OFFSET(band), AV_OPT_TYPE_INT, {.dbl= 4}, -1, INT_MAX },
-    {"t",    "set delogo area band size", OFFSET(band), AV_OPT_TYPE_INT, {.dbl= 4}, -1, INT_MAX },
-    {"show", "show delogo area",          OFFSET(show), AV_OPT_TYPE_INT, {.dbl= 0},  0, 1       },
+    {"x",    "set logo x position",       OFFSET(x),    AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, FLAGS},
+    {"y",    "set logo y position",       OFFSET(y),    AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, FLAGS},
+    {"w",    "set logo width",            OFFSET(w),    AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, FLAGS},
+    {"h",    "set logo height",           OFFSET(h),    AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX, FLAGS},
+    {"band", "set delogo area band size", OFFSET(band), AV_OPT_TYPE_INT, {.i64 =  4}, -1, INT_MAX, FLAGS},
+    {"t",    "set delogo area band size", OFFSET(band), AV_OPT_TYPE_INT, {.i64 =  4}, -1, INT_MAX, FLAGS},
+    {"show", "show delogo area",          OFFSET(show), AV_OPT_TYPE_INT, {.i64 =  0},  0,       1, FLAGS},
     {NULL},
 };
 
@@ -155,11 +157,11 @@ AVFILTER_DEFINE_CLASS(delogo);
 
 static int query_formats(AVFilterContext *ctx)
 {
-    enum PixelFormat pix_fmts[] = {
-        PIX_FMT_YUV444P,  PIX_FMT_YUV422P,  PIX_FMT_YUV420P,
-        PIX_FMT_YUV411P,  PIX_FMT_YUV410P,  PIX_FMT_YUV440P,
-        PIX_FMT_YUVA420P, PIX_FMT_GRAY8,
-        PIX_FMT_NONE
+    static const enum AVPixelFormat pix_fmts[] = {
+        AV_PIX_FMT_YUV444P,  AV_PIX_FMT_YUV422P,  AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_YUV411P,  AV_PIX_FMT_YUV410P,  AV_PIX_FMT_YUV440P,
+        AV_PIX_FMT_YUVA420P, AV_PIX_FMT_GRAY8,
+        AV_PIX_FMT_NONE
     };
 
     ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
@@ -207,29 +209,35 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
     return 0;
 }
 
-static int null_draw_slice(AVFilterLink *link, int y, int h, int slice_dir)
-{
-    return 0;
-}
-
-static int end_frame(AVFilterLink *inlink)
+static int filter_frame(AVFilterLink *inlink, AVFilterBufferRef *in)
 {
     DelogoContext *delogo = inlink->dst->priv;
     AVFilterLink *outlink = inlink->dst->outputs[0];
-    AVFilterBufferRef *inpicref  = inlink ->cur_buf;
-    AVFilterBufferRef *outpicref = outlink->out_buf;
-    int direct = inpicref->buf == outpicref->buf;
-    int hsub0 = av_pix_fmt_descriptors[inlink->format].log2_chroma_w;
-    int vsub0 = av_pix_fmt_descriptors[inlink->format].log2_chroma_h;
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
+    AVFilterBufferRef *out;
+    int hsub0 = desc->log2_chroma_w;
+    int vsub0 = desc->log2_chroma_h;
+    int direct = 0;
     int plane;
-    int ret;
 
-    for (plane = 0; plane < 4 && inpicref->data[plane]; plane++) {
+    if (in->perms & AV_PERM_WRITE) {
+        direct = 1;
+        out = in;
+    } else {
+        out = ff_get_video_buffer(outlink, AV_PERM_WRITE, outlink->w, outlink->h);
+        if (!out) {
+            avfilter_unref_bufferp(&in);
+            return AVERROR(ENOMEM);
+        }
+        avfilter_copy_buffer_ref_props(out, in);
+    }
+
+    for (plane = 0; plane < 4 && in->data[plane]; plane++) {
         int hsub = plane == 1 || plane == 2 ? hsub0 : 0;
         int vsub = plane == 1 || plane == 2 ? vsub0 : 0;
 
-        apply_delogo(outpicref->data[plane], outpicref->linesize[plane],
-                     inpicref ->data[plane], inpicref ->linesize[plane],
+        apply_delogo(out->data[plane], out->linesize[plane],
+                     in ->data[plane], in ->linesize[plane],
                      inlink->w>>hsub, inlink->h>>vsub,
                      delogo->x>>hsub, delogo->y>>vsub,
                      delogo->w>>hsub, delogo->h>>vsub,
@@ -237,11 +245,30 @@ static int end_frame(AVFilterLink *inlink)
                      delogo->show, direct);
     }
 
-    if ((ret = ff_draw_slice(outlink, 0, inlink->h, 1)) < 0 ||
-        (ret = ff_end_frame(outlink)) < 0)
-        return ret;
-    return 0;
+    if (!direct)
+        avfilter_unref_bufferp(&in);
+
+    return ff_filter_frame(outlink, out);
 }
+
+static const AVFilterPad avfilter_vf_delogo_inputs[] = {
+    {
+        .name             = "default",
+        .type             = AVMEDIA_TYPE_VIDEO,
+        .get_video_buffer = ff_null_get_video_buffer,
+        .filter_frame     = filter_frame,
+        .min_perms        = AV_PERM_WRITE | AV_PERM_READ,
+    },
+    { NULL }
+};
+
+static const AVFilterPad avfilter_vf_delogo_outputs[] = {
+    {
+        .name = "default",
+        .type = AVMEDIA_TYPE_VIDEO,
+    },
+    { NULL }
+};
 
 AVFilter avfilter_vf_delogo = {
     .name          = "delogo",
@@ -250,16 +277,7 @@ AVFilter avfilter_vf_delogo = {
     .init          = init,
     .query_formats = query_formats,
 
-    .inputs    = (const AVFilterPad[]) {{ .name             = "default",
-                                          .type             = AVMEDIA_TYPE_VIDEO,
-                                          .get_video_buffer = ff_null_get_video_buffer,
-                                          .start_frame      = ff_inplace_start_frame,
-                                          .draw_slice       = null_draw_slice,
-                                          .end_frame        = end_frame,
-                                          .min_perms        = AV_PERM_WRITE | AV_PERM_READ,
-                                          .rej_perms        = AV_PERM_PRESERVE },
-                                        { .name = NULL}},
-    .outputs   = (const AVFilterPad[]) {{ .name             = "default",
-                                          .type             = AVMEDIA_TYPE_VIDEO, },
-                                        { .name = NULL}},
+    .inputs    = avfilter_vf_delogo_inputs,
+    .outputs   = avfilter_vf_delogo_outputs,
+    .priv_class = &delogo_class,
 };
