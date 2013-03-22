@@ -91,10 +91,11 @@ static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int e
             profile = av_get_profile_name(p, enc->profile);
     }
 
+    /*
     if (enc->codec_tag) {        
         av_get_codec_tag_string(tag_buf, sizeof(tag_buf), enc->codec_tag);
         codec_name = tag_buf;
-    }
+    }*/
 
 
     switch(enc->codec_type) {
