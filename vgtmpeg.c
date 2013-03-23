@@ -3345,6 +3345,13 @@ int main(int argc, char **argv)
     if (ret < 0)
         exit(1);
 
+    /* -- vgtmpeg */
+    /* startup the input processing thread */
+    if( server_mode ) 
+        nlinput_prepare();
+    /* --vgtmpeg */
+
+
     if (nb_output_files <= 0 && nb_input_files == 0) {
         show_usage();
         av_log(NULL, AV_LOG_WARNING, "Use -h to get full help or, even better, run 'man %s'\n", program_name);
