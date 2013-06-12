@@ -3347,8 +3347,10 @@ int main(int argc, char **argv)
 
     /* -- vgtmpeg */
     /* startup the input processing thread */
-    if( server_mode ) 
+    if( server_mode ) {
         nlinput_prepare();
+        stdin_interaction = 0; // disable native stdin interaction 
+    }
     /* --vgtmpeg */
 
 
