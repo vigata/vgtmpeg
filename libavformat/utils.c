@@ -2367,48 +2367,60 @@ static void estimate_timings_from_pts(AVFormatContext *ic, int64_t old_offset)
         }
     }
 
-    /* estimate the end time (duration) */
-    /* XXX: may need to support wrapping */
-    filesize = ic->pb ? avio_size(ic->pb) : 0;
-    end_time = AV_NOPTS_VALUE;
-    do{
-        offset = filesize - (DURATION_MAX_READ_SIZE<<retry);
-        if (offset < 0)
-            offset = 0;
+	/* --vgtmpeg */
+	if (!has_duration(ic)) {
+	/* --vgtmpeg */
 
-        avio_seek(ic->pb, offset, SEEK_SET);
-        read_size = 0;
-        for(;;) {
-            if (read_size >= DURATION_MAX_READ_SIZE<<(FFMAX(retry-1,0)))
-                break;
+		/* estimate the end time (duration) */
+		/* XXX: may need to support wrapping */
+		filesize = ic->pb ? avio_size(ic->pb) : 0;
+		end_time = AV_NOPTS_VALUE;
+		do {
+			offset = filesize - (DURATION_MAX_READ_SIZE << retry);
+			if (offset < 0)
+				offset = 0;
 
-            do {
-                ret = ff_read_packet(ic, pkt);
-            } while(ret == AVERROR(EAGAIN));
-            if (ret != 0)
-                break;
-            read_size += pkt->size;
-            st = ic->streams[pkt->stream_index];
-            if (pkt->pts != AV_NOPTS_VALUE &&
-                (st->start_time != AV_NOPTS_VALUE ||
-                 st->first_dts  != AV_NOPTS_VALUE)) {
-                duration = end_time = pkt->pts;
-                if (st->start_time != AV_NOPTS_VALUE)
-                    duration -= st->start_time;
-                else
-                    duration -= st->first_dts;
-                if (duration > 0) {
-                    if (st->duration == AV_NOPTS_VALUE || st->info->last_duration<=0 ||
-                        (st->duration < duration && FFABS(duration - st->info->last_duration) < 60LL*st->time_base.den / st->time_base.num))
-                        st->duration = duration;
-                    st->info->last_duration = duration;
-                }
-            }
-            av_free_packet(pkt);
-        }
-    }while(   end_time==AV_NOPTS_VALUE
-           && filesize > (DURATION_MAX_READ_SIZE<<retry)
-           && ++retry <= DURATION_MAX_RETRY);
+			avio_seek(ic->pb, offset, SEEK_SET);
+			read_size = 0;
+			for (;;) {
+				if (read_size >= DURATION_MAX_READ_SIZE << (FFMAX(retry-1,0)))
+					break;
+
+				do {
+					ret = ff_read_packet(ic, pkt);
+				} while (ret == AVERROR(EAGAIN));
+				if (ret != 0)
+					break;
+				read_size += pkt->size;
+				st = ic->streams[pkt->stream_index];
+				if (pkt->pts != AV_NOPTS_VALUE
+						&& (st->start_time != AV_NOPTS_VALUE
+								|| st->first_dts != AV_NOPTS_VALUE)) {
+					duration = end_time = pkt->pts;
+					if (st->start_time != AV_NOPTS_VALUE)
+						duration -= st->start_time;
+					else
+						duration -= st->first_dts;
+					if (duration > 0) {
+						if (st->duration == AV_NOPTS_VALUE
+								|| st->info->last_duration <= 0
+								|| (st->duration < duration
+										&& FFABS(duration - st->info->last_duration)
+												< 60LL * st->time_base.den
+														/ st->time_base.num))
+							st->duration = duration;
+						st->info->last_duration = duration;
+					}
+				}
+				av_free_packet(pkt);
+			}
+		} while (end_time == AV_NOPTS_VALUE
+				&& filesize > (DURATION_MAX_READ_SIZE << retry)
+				&& ++retry <= DURATION_MAX_RETRY);
+
+	/* --vgtmpeg */
+	}
+	/* --vgtmpeg */
 
     fill_all_stream_timings(ic);
 

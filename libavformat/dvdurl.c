@@ -49,6 +49,10 @@ static int           is_nav_pack( unsigned char *buf );
 
 static int gloglevel = HB_LOG_VERBOSE; 
 
+static void dvdread_logger(const char *log){
+	av_log(NULL, gloglevel,  log );
+	return;
+}
 
 /***********************************************************************
  * Local prototypes
@@ -91,7 +95,7 @@ static char * hb_dvdread_name( char * path )
     unsigned char unused[1024];
     dvd_reader_t * reader;
 
-    reader = DVDOpen( path );
+    reader = DVDOpenEx( path, dvdread_logger, 0 );
     if( !reader )
     {
         return NULL;
@@ -133,6 +137,8 @@ static char *get_root_dvd_path(const char *path) {
     }
 }
 
+
+
 /***********************************************************************
  * hb_dvdread_init
  ***********************************************************************
@@ -162,7 +168,7 @@ hb_dvd_t * hb_dvdread_init( char * path )
     }
 
     /* Open device */
-    if( !( d->reader = DVDOpen( path ) ) )
+    if( !( d->reader = DVDOpenEx( path, dvdread_logger, 0 ) ) )
     {
         /*
          * Not an error, may be a stream - which we'll try in a moment.
