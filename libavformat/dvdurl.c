@@ -902,6 +902,9 @@ static int64_t hb_dvdread_seek_bytes( hb_dvd_t *e, int64_t off, int mode ) {
      * that we are out of sync if we have just done a seek.
      */
     d->in_sync = 2;
+    d->pack_len  = 0;
+    d->cell_overlap = 0;
+    d->in_cell = 0;
 
     return (int64_t)sftell*DVD_BLOCK_SIZE;
 }
