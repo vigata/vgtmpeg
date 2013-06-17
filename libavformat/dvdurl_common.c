@@ -1441,7 +1441,7 @@ static char to_hex(char code) {
 char *url_encode(char *str) {
   char *pstr = str, *buf = av_malloc(strlen(str) * 3 + 1), *pbuf = buf;
   while (*pstr) {
-    if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~')
+    if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~' || *pstr == '/' || *pstr == '#')
       *pbuf++ = *pstr;
     else if (*pstr == ' ')
       *pbuf++ = '+';

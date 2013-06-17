@@ -87,11 +87,11 @@ static void *nlinput_start(void *c) {
 
     while(loop) {
 
-       printf("about to read\n");
+       printf("nlinput: about to read\n");
        if(!nlinput_readbyte(&b)) 
            break;
 
-       printf("read %x\n",b);
+       printf("nlinput: read %x(%c)\n",b,b);
        switch(b) {
            case EXIT:
                printf("nlinput: exiting\n");
@@ -129,7 +129,7 @@ static void nlinput_prepare(void) {
 /* shutdown input thread */
 static void nlinput_cancel(void) {
     void *status;
-    printf("nlinput_cancel\n");
+    printf("nlinput: cancel\n");
 
     pthread_join( nlin_th, &status );
     //pthread_attr_destroy(&nlin_attr);

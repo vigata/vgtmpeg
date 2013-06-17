@@ -2733,6 +2733,7 @@ static void *input_thread(void *arg)
 
     while (!transcoding_finished && ret >= 0) {
         AVPacket pkt;
+
         ret = av_read_frame(f->ctx, &pkt);
 
         if (ret == AVERROR(EAGAIN)) {
@@ -2791,6 +2792,24 @@ static void free_input_threads(void)
     }
 }
 
+/* --vgtmpeg */
+/* figures out if a input file is discarded by stream selection*/
+static int is_discarded(InputFile *f ) {
+	AVFormatContext *ic = f->ctx;
+	int i, j;
+	int is_discarded = 1;
+
+	/* disable all streams first */
+	for (i = 0; i < ic->nb_streams; i++) {
+		is_discarded = is_discarded && (ic->streams[i]->discard == AVDISCARD_ALL);
+	}
+	if(is_discarded)
+		return 1;
+	else
+		return 0;
+}
+/* --vgtmpeg */
+
 static int init_input_threads(void)
 {
     int i, ret;
@@ -2800,6 +2819,16 @@ static int init_input_threads(void)
 
     for (i = 0; i < nb_input_files; i++) {
         InputFile *f = input_files[i];
+
+        /* --vgtmpeg */
+        /* if input file is not use don't bother creating an
+         * input thread for it
+         */
+        if(is_discarded(f)) {
+        	f->joined = 1;
+        	continue;
+        }
+        /* --vgtmpeg */
 
         if (!(f->fifo = av_fifo_alloc(8*sizeof(AVPacket))))
             return AVERROR(ENOMEM);
@@ -3338,7 +3367,6 @@ int main(int argc, char **argv)
 
     show_banner(argc, argv, options);
 
-    term_init();
 
     /* parse options and open all input/output files */
     ret = ffmpeg_parse_options(argc, argv);
@@ -3350,7 +3378,10 @@ int main(int argc, char **argv)
     if( server_mode ) {
         nlinput_prepare();
         stdin_interaction = 0; // disable native stdin interaction 
+        run_as_daemon = 1;
     }
+
+    term_init();
     /* --vgtmpeg */
 
 

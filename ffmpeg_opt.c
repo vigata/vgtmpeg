@@ -1546,6 +1546,34 @@ static int configure_complex_filters(void)
     return 0;
 }
 
+/* disables all programs but the one indicated with the program id */
+static void enable_program(int programid ) {
+
+    for( int k=0; k<nb_input_files; k++) {
+        AVFormatContext *ic = input_files[k]->ctx;
+        int i, j;
+
+        /* disable all streams first */
+        for(i=0; i<ic->nb_streams; i++) {
+            ic->streams[i]->discard = AVDISCARD_ALL;
+        }
+
+        /* enable streams only in the selected program */
+        for(i=0; i<ic->nb_programs; i++){
+            AVProgram *p= ic->programs[i];
+            if(p->id != programid){
+                p->discard = AVDISCARD_ALL;
+            }else{
+                p->discard = AVDISCARD_DEFAULT;
+                for(j=0; j<p->nb_stream_indexes; j++){
+                    ic->streams[p->stream_index[j]]->discard= AVDISCARD_DEFAULT;
+                }
+            }
+        }
+    }
+}
+
+
 static int open_output_file(OptionsContext *o, const char *filename)
 {
     AVFormatContext *oc;
@@ -1624,6 +1652,9 @@ static int open_output_file(OptionsContext *o, const char *filename)
     } else if (!o->nb_stream_maps) {
         char *subtitle_codec_name = NULL;
         /* pick the "best" stream of each type */
+
+        if(default_program_id>0)
+            enable_program(default_program_id);
 
         /* video: highest resolution */
         if (!o->video_disable && oc->oformat->video_codec != AV_CODEC_ID_NONE) {
