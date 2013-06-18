@@ -301,6 +301,15 @@ static void dvd_create_streams(AVFormatContext *s) {
 		}
 
 		/* add subtitle streams */
+		/* add chapters */
+		int64_t start = 0;
+		for( j=0; j<hb_list_count(title->list_chapter); j++ ) {
+			hb_chapter_t *c = hb_list_item(title->list_chapter,j);
+
+			int64_t end = start + c->duration;
+			avpriv_new_chapter(s,j, (AVRational){1,90000}, start, end, NULL );
+			start = end;
+		}
 	}
 }
 
