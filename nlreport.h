@@ -386,6 +386,7 @@ static void show_avoptions_opt_list_enum(void *obj,  const char *unit,
     const AVOption *opt=NULL;
     //const char *class_name = (*(AVClass**)obj)->class_name;
     int first=1;
+    double dblval = 0;
 
 
     while ((opt= av_opt_next(obj, opt))) {
@@ -403,11 +404,37 @@ static void show_avoptions_opt_list_enum(void *obj,  const char *unit,
         else if (unit && opt->type==FF_OPT_TYPE_CONST && strcmp(unit, opt->unit))
             continue;
 
+        /* flatten numeric value to a double */
+        switch(opt->type) {
+        case     AV_OPT_TYPE_CONST:
+        case     AV_OPT_TYPE_INT:
+        case     AV_OPT_TYPE_INT64:
+        	dblval = (double)opt->default_val.i64;
+        	break;
+        case     AV_OPT_TYPE_DOUBLE:
+        case     AV_OPT_TYPE_FLOAT:
+        	dblval = opt->default_val.dbl;
+        	break;
+        case     AV_OPT_TYPE_RATIONAL:
+        	dblval = (double)opt->default_val.q.num / (double)opt->default_val.q.den;
+        	break;
+        case     AV_OPT_TYPE_FLAGS:
+        case     AV_OPT_TYPE_STRING:
+        case     AV_OPT_TYPE_BINARY:
+
+        case     AV_OPT_TYPE_IMAGE_SIZE:
+        case     AV_OPT_TYPE_PIXEL_FMT:
+        case     AV_OPT_TYPE_SAMPLE_FMT:
+        case     AV_OPT_TYPE_VIDEO_RATE:
+        case     AV_OPT_TYPE_DURATION:
+        	break;
+        }
+
 
         JSON_ARRAY_ITEM( first, 
                 JSON_OBJECT( 
                     JSON_PROPERTY( 1, name, JSON_STRING_C(opt->name) );
-                    JSON_PROPERTY( 0, value, JSON_DOUBLE_C(opt->default_val.dbl) );
+                    JSON_PROPERTY( 0, value, JSON_DOUBLE_C(dblval) );
                     if( opt->help ) JSON_PROPERTY( 0, help, JSON_STRING_C(opt->help) );
                     );
                 );
