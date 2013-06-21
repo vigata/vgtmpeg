@@ -36,6 +36,7 @@
 #define FFMSG_START "<nlffmsg>\n"
 #define FFMSG_STOP "</nlffmsg>\n"
 
+
 #define FFMSG_NODE_START(x) "<" #x ">\n"
 #define FFMSG_NODE_STOP(x)   "</" #x ">\n" 
 #define FFMSG_NODE_START_FMT(x) "<" x ">\n"
@@ -48,7 +49,9 @@
 
 #define FFMSG_LOG(...)  av_log ( NULL, AV_LOG_INFO, __VA_ARGS__ )
 
-
+#define FFMSG_PICTURE_START(width,height,format) FFMSG_LOG("<nlpicmsg width=\"%d\" height=\"%d\" format=\"%d\">\n", width, height, format )
+#define FFMSG_PICTURE_DATA(b64data) fputs(b64data,stderr)
+#define FFMSG_PICTURE_STOP()   FFMSG_LOG("</nlpicmsg>\n")
 
 #define FFMSG_START_MSGTYPE( type, mainkey) \
     FFMSG_LOG( FFMSG_START );   \

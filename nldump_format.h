@@ -73,9 +73,9 @@ static void nl_dump_metadata(AVDictionary *m)
 
 static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int encode) {
     const char *codec_name;
-    const char *profile = NULL;
-    AVCodec *p;
-    char tag_buf[32];
+    const char *profile = "";
+    const AVCodec *p;
+    // char tag_buf[32];
     int bitrate;
     AVRational display_aspect_ratio;
 
@@ -102,6 +102,7 @@ static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int e
     case AVMEDIA_TYPE_VIDEO:
         FFMSG_LOG( FFMSG_STRING_FMT(codectype), "video" );
         FFMSG_LOG( FFMSG_STRING_FMT(codecname), codec_name );
+        FFMSG_LOG( FFMSG_STRING_FMT(profile), profile );
 
         if (enc->pix_fmt != PIX_FMT_NONE) {
             FFMSG_LOG( FFMSG_STRING_FMT(picfmt), av_get_pix_fmt_name(enc->pix_fmt) );

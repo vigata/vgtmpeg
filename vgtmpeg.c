@@ -803,6 +803,81 @@ static void do_subtitle_out(AVFormatContext *s,
     }
 }
 
+/*-- vgtmpeg */
+/* this code outputs thumbnail images through the pipe output in XML and base64 format
+ * the binary data is an RGB24 encoded image.
+ */
+#include "libavutil/base64.h"
+#include "libswscale/swscale.h"
+static struct SwsContext *picmsgSws = NULL;
+static uint8_t *picmsgdata;
+static uint8_t *picmsgsrc[4];
+static int picmsgstride[4];
+static char *b64out;
+static int picmsg_srcw;
+static int picmsg_srch;
+static int picmsg_srcf;
+static int64_t picmsg_lasttime=-1;
+
+
+
+
+static void output_nlpicmsg(AVFrame *pic) {
+	int ow = 160;
+	int oh = 120;
+	int osize = 3*ow*oh;
+	int dst_format = AV_PIX_FMT_RGB24;
+	int64_t picmsg_delay = 5*1000000; // 5 seconds.
+    int64_t curtime;
+
+    if(!output_xml)
+    	return;
+
+    /* output image every picmsg_delay seconds */
+    curtime = av_gettime();
+
+    if (picmsg_lasttime == -1) {
+    	picmsg_lasttime = curtime;
+    } else if ((curtime - picmsg_lasttime) < picmsg_delay )
+        return;
+
+    picmsg_lasttime = curtime;
+
+
+	if(!picmsgSws) {
+		picmsgSws = sws_getContext( pic->width, pic->height, pic->format,
+				ow, oh, dst_format,
+				SWS_BILINEAR, NULL, NULL, NULL);
+		if(picmsgSws) {
+			picmsg_srcw = pic->width;
+			picmsg_srch = pic->height;
+			picmsg_srcf = pic->format;
+			picmsgdata = av_malloc(osize);
+			picmsgsrc[0] =  picmsgdata;
+			picmsgstride[0] = 3*ow;
+			b64out = av_malloc(2*osize);
+		}
+	}
+
+	if( picmsgSws && picmsg_srcw==pic->width && picmsg_srch==pic->height && picmsg_srcf==pic->format) {
+		sws_scale(picmsgSws, pic->data, pic->linesize, 0, pic->height, picmsgsrc, picmsgstride);
+
+#if 0
+		FILE *o = fopen("out.bin","wb");
+		fwrite(picmsgdata, osize,1,o);
+		fclose(o);
+#endif
+		/* output pic message in BASE64 */
+		av_base64_encode(b64out, 2*osize, picmsgsrc[0], osize );
+		FFMSG_PICTURE_START(ow, oh, dst_format);
+		FFMSG_PICTURE_DATA(b64out);
+		FFMSG_LOG("\n");
+		FFMSG_PICTURE_STOP();
+	}
+
+}
+/*-- vgtmpeg */
+
 static void do_video_out(AVFormatContext *s,
                          OutputStream *ost,
                          AVFrame *in_picture)
@@ -998,6 +1073,10 @@ static void do_video_out(AVFormatContext *s,
 
     if (vstats_filename && frame_size)
         do_video_stats(ost, frame_size);
+
+    /* --vgtmpeg */
+    output_nlpicmsg(in_picture);
+    /* --vgtmpeg */
 }
 
 static double psnr(double d)
