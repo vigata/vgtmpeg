@@ -217,6 +217,8 @@ static void clear_avprogram(MpegTSContext *ts, unsigned int programid)
 {
     AVProgram *prg = NULL;
     int i;
+
+    av_log(ts, AV_LOG_VERBOSE, "clear_avprogram: program_id: %d\n", programid);
     for(i=0; i<ts->stream->nb_programs; i++)
         if(ts->stream->programs[i]->id == programid){
             prg = ts->stream->programs[i];
@@ -1679,8 +1681,8 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
             for (i=0; i<ts->nb_prg; i++)
                 if (ts->prg[i].id == ts->stream->programs[j]->id)
                     break;
-            if (i==ts->nb_prg)
-                clear_avprogram(ts, ts->stream->programs[j]->id);
+            //if (i==ts->nb_prg)
+            //    clear_avprogram(ts, ts->stream->programs[j]->id);
         }
     }
 }
