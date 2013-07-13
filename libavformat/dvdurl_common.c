@@ -1552,7 +1552,7 @@ int fragmented_read(void *ctx, fragread_t read, hb_buffer_t **cur_read_buffer, u
 
 static int __parse_optmedia_path(const char *proto, void *ctx, char *opt, const char *path, ff_input_func_t *ff ){
 	om_handle_t *c;
-    int min_title_duration = 15*90000;
+    int min_title_duration = 25*90000;
     //const char *fpath;
     // static char dfname[4096];
     const char *urlpath;
