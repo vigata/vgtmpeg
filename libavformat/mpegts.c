@@ -202,6 +202,56 @@ static bdurl_t *get_bdurl_ctx(AVFormatContext *s) {
 	}
 }
 
+static void bdurl_stream_init(MpegTSContext *ts, AVStream *st) {
+	bdurl_t *bdurl = get_bdurl_ctx(ts->stream);
+	if(bdurl && bdurl->selected_title ) {
+		/* add audio streams */
+	    hb_title_t *title = bdurl->selected_title;
+		uint64_t duration = title->duration;
+		int j;
+		for( j=0; j<hb_list_count(title->list_audio); j++ ) {
+			hb_audio_t *as = hb_list_item(title->list_audio,j);
+			//av_log(NULL,AV_LOG_INFO,"bdurl_stream_init: hb_audio_id %X   st_id %X\n", as->id, st->id);
+			// if st->id !=as->id
+			if((((as->id)&0xff00) != 0x1100) || ((as->id)!=(st->id)))
+				continue;
+
+			av_dict_set(&st->metadata, "language", as->config.lang.iso639_2, 0);
+			av_dict_set(&st->metadata, "language-iso639_2", as->config.lang.iso639_2, 0);
+			av_dict_set(&st->metadata, "language-simple", as->config.lang.simple, 0);
+			av_dict_set(&st->metadata, "language-description", as->config.lang.description, 0);
+			st->start_time = 0;
+			st->duration = duration; // the 90khz base was set in dvd_add_stream
+			break;
+		}
+	}
+}
+
+static void bdurl_program_init(MpegTSContext *ts) {
+	bdurl_t *bdurl = get_bdurl_ctx(ts->stream);
+    if(bdurl) {
+        av_dict_set(&ts->stream->metadata, "source_type", "bluray", 0);
+    }
+	if(bdurl && bdurl->selected_title ) {
+	    hb_title_t *title = bdurl->selected_title;
+		uint64_t duration = title->duration;
+		int j=0;
+
+
+
+		/* add chapters */
+		int64_t start = 0;
+		for( j=0; j<hb_list_count(title->list_chapter); j++ ) {
+			hb_chapter_t *c = hb_list_item(title->list_chapter,j);
+
+			int64_t end = start + c->duration;
+			avpriv_new_chapter(ts->stream,j, (AVRational){1,90000}, start, end, NULL );
+			start = end;
+		}
+    }
+
+}
+
 static unsigned int get_ff_program_id_from_sid(MpegTSContext *ts, unsigned int sid )
 {
 	bdurl_t *bdurl = get_bdurl_ctx(ts->stream);
@@ -1593,6 +1643,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         add_pid_to_pmt(ts, h->id, pid);
 
 /* --vgtmpeg */
+        bdurl_stream_init(ts, st);
         ff_program_add_stream_index(ts->stream, get_ff_program_id_from_sid(ts, h->id), st->index);
 /* --vgtmpeg */
 
@@ -1663,6 +1714,7 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         } else {
 /* --vgtmpeg */
             program = av_new_program(ts->stream, get_ff_program_id_from_sid(ts,sid));
+            bdurl_program_init(ts);
 /* --vgtmpeg */
             program->program_num = sid;
             program->pmt_pid = pmt_pid;
