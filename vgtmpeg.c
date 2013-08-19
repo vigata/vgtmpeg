@@ -161,7 +161,7 @@ static int restore_tty;
 #endif
 
 	/* --vgtmpeg */
-#include "vgtmpeg.h"
+#include "vgtmpeg.h" 
 	/* --vgtmpeg */
 
 /* sub2video hack:

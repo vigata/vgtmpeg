@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2012 Alberto Vigata
+ * Copyright (C) 2010-2013 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 

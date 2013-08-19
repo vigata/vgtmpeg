@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2012 Alberto Vigata
+ * Copyright (C) 2010-2013 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -56,13 +56,6 @@
 
 #define CB2INT(x) ( sl24(x[0]) | sl16(x[1]) | sl8(x[2]) | sl0(x[3]) ) 
 
-//static int nlinput_readint(int *val) {
-//    char b4[4];
-//    int read = fread( b4, 1, 4, stdin );
-//    *val = CB2INT(b4);
-//    return read==4;
-//}
-
 static int nlinput_readbyte(char *val) {
     int read = fread( val, 1, 1, stdin );
     return read==1;
@@ -106,15 +99,11 @@ static void *nlinput_start(void *c) {
     }
 
     return 0;
-    
-    // pthread_exit(NULL);
 }
 
 /* static objects to be imported on module */
 static nlinput_t nli;
 static pthread_t nlin_th;
-// static pthread_attr_t nlin_attr;
-//
 
 /* fires up input thread */
 static void nlinput_prepare(void) {
@@ -132,7 +121,6 @@ static void nlinput_cancel(void) {
     printf("nlinput: cancel\n");
 
     pthread_join( nlin_th, &status );
-    //pthread_attr_destroy(&nlin_attr);
 }
 
 

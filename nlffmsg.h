@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2012 Alberto Vigata
+ * Copyright (C) 2010-2013 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -64,7 +64,8 @@
     FFMSG_LOG( FFMSG_NODE_STOP(mainkey) ); \
     FFMSG_LOG( FFMSG_STOP );
 
-/* buffer to use for escaped xml strings. this allows for a maximum of 2048 escaped characters */
+/* buffer to use for escaped xml strings. this allows for a maximum of 2048 escaped characters
+ * FIXME the buffer needs to move into an app context to ensure thread safety  */
 #define MAX_FFGMT_STRING_LEN 2048
 static char xmlesc1[MAX_FFGMT_STRING_LEN*6];
 static char xmlesc2[MAX_FFGMT_STRING_LEN*6];
