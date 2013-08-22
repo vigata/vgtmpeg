@@ -162,6 +162,9 @@ static int restore_tty;
 
 	/* --vgtmpeg */
 #include "vgtmpeg.h" 
+
+//globals for vgtmpeg
+static nlinput_t *nli;
 	/* --vgtmpeg */
 
 /* sub2video hack:
@@ -441,7 +444,7 @@ static void exit_program(void)
         fflush(stderr);
     }
     if( server_mode )
-        nlinput_cancel();
+        nlinput_cancel(nli);
 
     /* write the trailers if not yet written */
     for(i=0;i<nb_output_files;i++) {
@@ -523,11 +526,11 @@ static void exit_program(void)
     avformat_network_deinit();
 
 	/* --vgtmpeg start */
-    if( nli.cancel_transcode ) {
+    if( nli->cancel_transcode ) {
         av_log(NULL, AV_LOG_INFO, "transcode was cancelled.\n");
     }
 
-    if( nli.exit ) {
+    if( nli->exit ) {
         av_log(NULL, AV_LOG_INFO, "Received exit signal from input: terminating.\n");
     }
 	/* --vgtmpeg stop */
@@ -3275,7 +3278,7 @@ static int transcode(void)
 #endif
 
     /* --vgtmpeg start */
-    while (!received_sigterm && !nli.exit && !nli.cancel_transcode ) {
+    while (!received_sigterm && !nli->exit && !nli->cancel_transcode ) {
     /* --vgtmpeg end */
 
         int64_t cur_time= av_gettime();
@@ -3455,7 +3458,7 @@ int main(int argc, char **argv)
     /* -- vgtmpeg */
     /* startup the input processing thread */
     if( server_mode ) {
-        nlinput_prepare();
+        nli = nlinput_prepare();
         stdin_interaction = 0; // disable native stdin interaction 
         run_as_daemon = 1;
     }

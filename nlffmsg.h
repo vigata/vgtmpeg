@@ -64,42 +64,8 @@
     FFMSG_LOG( FFMSG_NODE_STOP(mainkey) ); \
     FFMSG_LOG( FFMSG_STOP );
 
-/* buffer to use for escaped xml strings. this allows for a maximum of 2048 escaped characters
- * FIXME the buffer needs to move into an app context to ensure thread safety  */
-#define MAX_FFGMT_STRING_LEN 2048
-static char xmlesc1[MAX_FFGMT_STRING_LEN*6];
-static char xmlesc2[MAX_FFGMT_STRING_LEN*6];
+char *xescape(char *buf, char *s);
 
-static char *xescape(char *buf, char *s) {
-	int i=MAX_FFGMT_STRING_LEN;
-	char *o = buf;
-	while(i-- && *s ) {
-		switch(*s) {
-		case '<':
-			*o++ = '&'; *o++ = 'l'; *o++ = 't'; *o++ = ';';
-			break;
-		case '>':
-			*o++ = '&'; *o++ = 'g'; *o++ = 't'; *o++ = ';';
-			break;
-		case '"':
-			*o++ = '&'; *o++ = 'q'; *o++ = 'u'; *o++ = 'o'; *o++ = 't'; *o++ = ';';
-			break;
-		case '\'':
-			*o++ = '&'; *o++ = 'a'; *o++ = 'p'; *o++ = 'o'; *o++ = 's'; *o++ = ';';
-			break;
-		case '&':
-			*o++ = '&'; *o++ = 'a'; *o++ = 'm'; *o++ = 'p'; *o++ = ';';
-			break;        
-		default:
-            /* ignore not allowed xml characters */
-            if( ((unsigned char)(*s)) >= 0x20 ) *o++ = *s;
-			break;
-		}
-		s++;
-	}
-	*o=0;
-	return buf;
-}
 
 #define FFMSG_STRING_VALUE(name,value) {FFMSG_LOG("<%s type=\"string\" val=\"%s\"/>\n", xescape(xmlesc1,name), xescape(xmlesc2,value));}
 /* definitions 

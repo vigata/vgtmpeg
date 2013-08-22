@@ -22,10 +22,9 @@ PROGS      := $(PROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 INSTPROGS   = $(PROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 
 OBJS        = cmdutils.o $(EXEOBJS)
-OBJS-ffmpeg = ffmpeg_opt.o ffmpeg_filter.o
-
 # -- vgtmpeg
-OBJS-vgtmpeg = ffmpeg_opt.o ffmpeg_filter.o
+OBJS-ffmpeg = ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
+OBJS-vgtmpeg = ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
 # -- vgtmpeg
 
 TESTTOOLS   = audiogen videogen rotozoom tiny_psnr base64
