@@ -526,11 +526,11 @@ static void exit_program(void)
     avformat_network_deinit();
 
 	/* --vgtmpeg start */
-    if( nli->cancel_transcode ) {
+    if( nli && nli->cancel_transcode ) {
         av_log(NULL, AV_LOG_INFO, "transcode was cancelled.\n");
     }
 
-    if( nli->exit ) {
+    if( nli && nli->exit ) {
         av_log(NULL, AV_LOG_INFO, "Received exit signal from input: terminating.\n");
     }
 	/* --vgtmpeg stop */
@@ -2878,7 +2878,7 @@ static void free_input_threads(void)
 /* figures out if a input file is discarded by stream selection*/
 static int is_discarded(InputFile *f ) {
 	AVFormatContext *ic = f->ctx;
-	int i, j;
+	int i;
 	int is_discarded = 1;
 
 	/* disable all streams first */
@@ -3278,7 +3278,7 @@ static int transcode(void)
 #endif
 
     /* --vgtmpeg start */
-    while (!received_sigterm && !nli->exit && !nli->cancel_transcode ) {
+    while (!received_sigterm && nli && !nli->exit && !nli->cancel_transcode ) {
     /* --vgtmpeg end */
 
         int64_t cur_time= av_gettime();
