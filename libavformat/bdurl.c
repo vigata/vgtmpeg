@@ -95,7 +95,7 @@ hb_bd_t * hb_bd_init( char * path )
     d->read_buffer->size = HB_DVD_READ_BUFFER_SIZE;
     d->read_buffer->data = av_malloc(HB_DVD_READ_BUFFER_SIZE);
 
-    d->path = strdup( path );
+    d->path = av_strdup( path );
 
     return d;
 
