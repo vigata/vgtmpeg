@@ -1,3 +1,12 @@
+1.4.62
+- fixed report duration from DVD parsing. some DVDs were reporting wrong length
+- libdvdread messages are now only seen when set logging to verbose
+- fix important issue with some DVDs where a whole cell would be skipped
+- DVD urls are not reported with / slashes
+- speed improvements when opening DVDs with lots of titles (30+)
+- libvpx bumped up to 1.0.0
+- bluray now much richer with chapters, language on audio tracks
+
 1.4.02
 - Synchronized with ffmpeg/libavformat 0.10. All new filters and formats are supported
 - Updated libvpx to version 1.0. This seems to be the initial release of libvpx supporting faster encoding for vp8.
