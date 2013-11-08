@@ -826,8 +826,8 @@ static int64_t picmsg_lasttime=-1;
 
 
 static void output_nlpicmsg(AVFrame *pic) {
-	int ow = 160;
-	int oh = 120;
+	int ow = 240;
+	int oh = 180;
 	int osize = 3*ow*oh;
 	int dst_format = AV_PIX_FMT_RGB24;
 	int64_t picmsg_delay = 5*1000000; // 5 seconds.
