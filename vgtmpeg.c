@@ -3278,7 +3278,7 @@ static int transcode(void)
 #endif
 
     /* --vgtmpeg start */
-    while (!received_sigterm && nli && !nli->exit && !nli->cancel_transcode ) {
+    while (!received_sigterm && (!nli || (!nli->exit && !nli->cancel_transcode ))) {
     /* --vgtmpeg end */
 
         int64_t cur_time= av_gettime();
