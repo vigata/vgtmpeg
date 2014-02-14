@@ -1,3 +1,6 @@
+1.4.63
+- fixes a bug that would end the transcode quickly if not using server mode (i.e. using command line)
+
 1.4.62
 - fixed report duration from DVD parsing. some DVDs were reporting wrong length
 - libdvdread messages are now only seen when set logging to verbose
