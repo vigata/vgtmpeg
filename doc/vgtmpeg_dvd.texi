@@ -1,7 +1,7 @@
 @chapter DVD support
 @c man begin DVDSUPPORT
 
-vgtmpeg adds support for DVD in its version of libavformat. DVD support is implemented by adding a new ‘dvdurl’ protocol that can parse DVD folders, DVD ISO files, DVD devices and more. All the regular features available in vgtmpeg/ffmpeg are still available when a dvd url is used. From direct stream copy to all sorts of filtering and transcoding possibilities.
+vgtmpeg adds support for DVD in its version of libavformat. DVD support is implemented by adding a new dvdurl protocol that can parse DVD folders, DVD ISO files, DVD devices and more. All the regular features available in vgtmpeg/ffmpeg are still available when a dvd url is used. From direct stream copy to all sorts of filtering and transcoding possibilities.
 
 @section Using DVDs with vgtmpeg
 Strictly one can open a DVD folder, ISO file.. by using a DVD url like this:
@@ -10,7 +10,7 @@ Strictly one can open a DVD folder, ISO file.. by using a DVD url like this:
 > vgtmpeg -i dvd://path_to_dvd  outfile
 @end example
 
-When using the above format vgtmpeg will inspect the ‘path_to_dvd’ location looking for a DVD image in the form of a ISO file, or a DVD folder. ‘path_to_dvd’ can also be any of the individual files inside the VIDEO_TS folder, ‘vgtmpeg’ will figure out the rest.
+When using the above format vgtmpeg will inspect the path_to_dvd location looking for a DVD image in the form of a ISO file, or a DVD folder. path_to_dvd can also be any of the individual files inside the VIDEO_TS folder, vgtmpeg will figure out the rest.
 
 By default, the title with the longest duration is opened when using the above syntax. If you want to rely on this behavior, the use of the dvd:// is not required and just specifying the path will suffice. One can however, ask for specific titles to be used as the input using a url query var:
 
