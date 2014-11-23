@@ -37,9 +37,11 @@
  * Should be removed when a cleaner pixel format system exists. */
 #define isGray(x)                      \
     ((x) == AV_PIX_FMT_GRAY8       ||     \
-     (x) == AV_PIX_FMT_Y400A       ||     \
+     (x) == AV_PIX_FMT_YA8         ||     \
      (x) == AV_PIX_FMT_GRAY16BE    ||     \
-     (x) == AV_PIX_FMT_GRAY16LE)
+     (x) == AV_PIX_FMT_GRAY16LE    ||     \
+     (x) == AV_PIX_FMT_YA16BE      ||     \
+     (x) == AV_PIX_FMT_YA16LE)
 #define hasChroma(x)                   \
     (!(isGray(x)                ||     \
        (x) == AV_PIX_FMT_MONOBLACK ||     \
@@ -305,7 +307,7 @@ static int fileTest(uint8_t *ref[4], int refStride[4], int w, int h, FILE *fp,
 
         ret = sscanf(buf,
                      " %12s %dx%d -> %12s %dx%d flags=%d CRC=%x"
-                     " SSD=%"PRId64 ", %"PRId64 ", %"PRId64 ", %"PRId64 "\n",
+                     " SSD=%"SCNd64 ", %"SCNd64 ", %"SCNd64 ", %"SCNd64 "\n",
                      srcStr, &srcW, &srcH, dstStr, &dstW, &dstH,
                      &flags, &r.crc, &r.ssdY, &r.ssdU, &r.ssdV, &r.ssdA);
         if (ret != 12) {

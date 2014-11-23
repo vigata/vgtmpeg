@@ -81,28 +81,14 @@ static const AVOption il_options[] = {
 
 AVFILTER_DEFINE_CLASS(il);
 
-static av_cold int init(AVFilterContext *ctx, const char *args)
-{
-    IlContext *il = ctx->priv;
-    int ret;
-
-    il->class = &il_class;
-    av_opt_set_defaults(il);
-
-    if ((ret = av_set_options_string(il, args, "=", ":")) < 0)
-        return ret;
-
-    return 0;
-}
-
 static int query_formats(AVFilterContext *ctx)
 {
     AVFilterFormats *formats = NULL;
     int fmt;
 
-    for (fmt = 0; fmt < AV_PIX_FMT_NB; fmt++) {
+    for (fmt = 0; av_pix_fmt_desc_get(fmt); fmt++) {
         const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
-        if (!(desc->flags & PIX_FMT_PAL) && !(desc->flags & PIX_FMT_HWACCEL))
+        if (!(desc->flags & AV_PIX_FMT_FLAG_PAL) && !(desc->flags & AV_PIX_FMT_FLAG_HWACCEL))
             ff_add_format(&formats, fmt);
     }
 
@@ -114,17 +100,15 @@ static int config_input(AVFilterLink *inlink)
 {
     IlContext *il = inlink->dst->priv;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
-    int i, ret;
+    int ret;
 
-    for (i = 0; i < desc->nb_components; i++)
-        il->nb_planes = FFMAX(il->nb_planes, desc->comp[i].plane);
-    il->nb_planes++;
+    il->nb_planes = av_pix_fmt_count_planes(inlink->format);
 
-    il->has_alpha = !!(desc->flags & PIX_FMT_ALPHA);
+    il->has_alpha = !!(desc->flags & AV_PIX_FMT_FLAG_ALPHA);
     if ((ret = av_image_fill_linesizes(il->linesize, inlink->format, inlink->w)) < 0)
         return ret;
 
-    il->chroma_height = inlink->h >> desc->log2_chroma_h;
+    il->chroma_height = FF_CEIL_RSHIFT(inlink->h, desc->log2_chroma_h);
 
     return 0;
 }
@@ -165,7 +149,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *inpicref)
     IlContext *il = inlink->dst->priv;
     AVFilterLink *outlink = inlink->dst->outputs[0];
     AVFrame *out;
-    int ret, comp;
+    int comp;
 
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out) {
@@ -187,44 +171,42 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *inpicref)
     }
 
     if (il->has_alpha) {
-        int comp = il->nb_planes - 1;
+        comp = il->nb_planes - 1;
         interleave(out->data[comp], inpicref->data[comp],
                    il->linesize[comp], inlink->h,
                    out->linesize[comp], inpicref->linesize[comp],
                    il->alpha_mode, il->alpha_swap);
     }
 
-    ret = ff_filter_frame(outlink, out);
     av_frame_free(&inpicref);
-    return ret;
+    return ff_filter_frame(outlink, out);
 }
 
 static const AVFilterPad inputs[] = {
     {
-        .name             = "default",
-        .type             = AVMEDIA_TYPE_VIDEO,
-        .get_video_buffer = ff_null_get_video_buffer,
-        .filter_frame     = filter_frame,
-        .config_props     = config_input,
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_VIDEO,
+        .filter_frame = filter_frame,
+        .config_props = config_input,
     },
     { NULL }
 };
 
 static const AVFilterPad outputs[] = {
     {
-        .name          = "default",
-        .type          = AVMEDIA_TYPE_VIDEO,
+        .name = "default",
+        .type = AVMEDIA_TYPE_VIDEO,
     },
     { NULL }
 };
 
-AVFilter avfilter_vf_il = {
+AVFilter ff_vf_il = {
     .name          = "il",
     .description   = NULL_IF_CONFIG_SMALL("Deinterleave or interleave fields."),
     .priv_size     = sizeof(IlContext),
-    .init          = init,
     .query_formats = query_formats,
     .inputs        = inputs,
     .outputs       = outputs,
     .priv_class    = &il_class,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

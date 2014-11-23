@@ -25,6 +25,7 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
+#include "libavutil/time_internal.h"
 #include "avformat.h"
 #include "internal.h"
 
@@ -905,14 +906,14 @@ static void expand_timestamps(void *log, struct sbg_script *s)
     } else {
         /* Mixed relative/absolute ts: expand */
         time_t now0;
-        struct tm *tm;
+        struct tm *tm, tmpbuf;
 
         av_log(log, AV_LOG_WARNING,
                "Scripts with mixed absolute and relative timestamps can give "
                "unexpected results (pause, seeking, time zone change).\n");
 #undef time
         time(&now0);
-        tm = localtime(&now0);
+        tm = localtime_r(&now0, &tmpbuf);
         now = tm ? tm->tm_hour * 3600 + tm->tm_min * 60 + tm->tm_sec :
                    now0 % DAY;
         av_log(log, AV_LOG_INFO, "Using %02d:%02d:%02d as NOW.\n",
@@ -1333,11 +1334,9 @@ static int encode_intervals(struct sbg_script *s, AVCodecContext *avc,
         if (edata_size < 0)
             return AVERROR(ENOMEM);
     }
-    edata = av_malloc(edata_size);
-    if (!edata)
+    if (ff_alloc_extradata(avc, edata_size))
         return AVERROR(ENOMEM);
-    avc->extradata = edata;
-    avc->extradata_size = edata_size;
+    edata = avc->extradata;
 
 #define ADD_EDATA32(v) do { AV_WL32(edata, (v)); edata += 4; } while(0)
 #define ADD_EDATA64(v) do { AV_WL64(edata, (v)); edata += 8; } while(0)

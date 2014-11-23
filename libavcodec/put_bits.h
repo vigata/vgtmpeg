@@ -27,16 +27,11 @@
 #define AVCODEC_PUT_BITS_H
 
 #include <stdint.h>
-#include <stdlib.h>
+#include <stddef.h>
 #include <assert.h>
 
-#include "libavutil/bswap.h"
-#include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/log.h"
 #include "libavutil/avassert.h"
-#include "mathops.h"
-#include "config.h"
 
 typedef struct PutBitContext {
     uint32_t bit_buf;
@@ -68,11 +63,37 @@ static inline void init_put_bits(PutBitContext *s, uint8_t *buffer,
 }
 
 /**
+ * Rebase the bit writer onto a reallocated buffer.
+ *
+ * @param buffer the buffer where to put bits
+ * @param buffer_size the size in bytes of buffer,
+ *                    must be larger than the previous size
+ */
+static inline void rebase_put_bits(PutBitContext *s, uint8_t *buffer,
+                                   int buffer_size)
+{
+    av_assert0(8*buffer_size > s->size_in_bits);
+
+    s->buf_end = buffer + buffer_size;
+    s->buf_ptr = buffer + (s->buf_ptr - s->buf);
+    s->buf     = buffer;
+    s->size_in_bits = 8 * buffer_size;
+}
+
+/**
  * @return the total number of bits written to the bitstream.
  */
 static inline int put_bits_count(PutBitContext *s)
 {
     return (s->buf_ptr - s->buf) * 8 + 32 - s->bit_left;
+}
+
+/**
+ * @return the number of bits available in the bitstream.
+ */
+static inline int put_bits_left(PutBitContext* s)
+{
+    return (s->buf_end - s->buf_ptr) * 8 - 32 + s->bit_left;
 }
 
 /**

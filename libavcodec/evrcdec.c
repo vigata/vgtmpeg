@@ -276,7 +276,7 @@ static av_cold int evrc_decode_init(AVCodecContext *avctx)
  */
 static int decode_lspf(EVRCContext *e)
 {
-    const float **codebooks = evrc_lspq_codebooks[e->bitrate];
+    const float * const *codebooks = evrc_lspq_codebooks[e->bitrate];
     int i, j, k = 0;
 
     for (i = 0; i < evrc_lspq_nb_codebooks[e->bitrate]; i++) {
@@ -374,7 +374,7 @@ static void bl_intrp(EVRCContext *e, float *ex, float delay)
     int offset, i, coef_idx;
     int16_t t;
 
-    offset = lrintf(fabs(delay));
+    offset = lrintf(delay);
 
     t = (offset - delay + 0.5) * 8.0 + 0.5;
     if (t == 8) {
@@ -640,7 +640,7 @@ static void postfilter(EVRCContext *e, float *in, const float *coeff,
     /* Short term postfilter */
     synthesis_filter(temp, wcoef2, e->postfilter_iir, length, out);
 
-    memcpy(e->postfilter_residual,
+    memmove(e->postfilter_residual,
            e->postfilter_residual + length, ACB_SIZE * sizeof(float));
 }
 
@@ -714,7 +714,7 @@ static void frame_erasure(EVRCContext *e, float *samples)
                 e->pitch[ACB_SIZE + j] = e->energy_vector[i];
         }
 
-        memcpy(e->pitch, e->pitch + subframe_size, ACB_SIZE * sizeof(float));
+        memmove(e->pitch, e->pitch + subframe_size, ACB_SIZE * sizeof(float));
 
         if (e->bitrate != RATE_QUANT && e->avg_acb_gain < 0.4) {
             f = 0.1 * e->avg_fcb_gain;
@@ -814,7 +814,7 @@ static int evrc_decode_frame(AVCodecContext *avctx, void *data,
 
                 interpolate_delay(idelay, delay, e->prev_pitch_delay, i);
                 acb_excitation(e, e->pitch + ACB_SIZE, e->avg_acb_gain, idelay, subframe_size);
-                memcpy(e->pitch, e->pitch + subframe_size, ACB_SIZE * sizeof(float));
+                memmove(e->pitch, e->pitch + subframe_size, ACB_SIZE * sizeof(float));
             }
         }
 
@@ -872,7 +872,7 @@ static int evrc_decode_frame(AVCodecContext *avctx, void *data,
                 e->pitch[ACB_SIZE + j] = e->energy_vector[i];
         }
 
-        memcpy(e->pitch, e->pitch + subframe_size, ACB_SIZE * sizeof(float));
+        memmove(e->pitch, e->pitch + subframe_size, ACB_SIZE * sizeof(float));
 
         synthesis_filter(e->pitch + ACB_SIZE, ilpc,
                          e->synthesis, subframe_size, tmp);
@@ -907,11 +907,11 @@ erasure:
 
 AVCodec ff_evrc_decoder = {
     .name           = "evrc",
+    .long_name      = NULL_IF_CONFIG_SMALL("EVRC (Enhanced Variable Rate Codec)"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_EVRC,
     .init           = evrc_decode_init,
     .decode         = evrc_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
     .priv_data_size = sizeof(EVRCContext),
-    .long_name      = NULL_IF_CONFIG_SMALL("EVRC (Enhanced Variable Rate Codec)"),
 };

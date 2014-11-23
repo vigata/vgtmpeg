@@ -61,7 +61,8 @@ static int ico_check_attributes(AVFormatContext *s, const AVCodecContext *c)
             return AVERROR(EINVAL);
         }
     } else {
-        av_log(s, AV_LOG_ERROR, "Unsupported codec %s\n", c->codec_name);
+        const AVCodecDescriptor *codesc = avcodec_descriptor_get(c->codec_id);
+        av_log(s, AV_LOG_ERROR, "Unsupported codec %s\n", codesc ? codesc->name : "");
         return AVERROR(EINVAL);
     }
 
@@ -101,7 +102,7 @@ static int ico_write_header(AVFormatContext *s)
         avio_skip(pb, 16);
     }
 
-    ico->images = av_mallocz(ico->nb_images * sizeof(IcoMuxContext));
+    ico->images = av_mallocz_array(ico->nb_images, sizeof(IcoMuxContext));
     if (!ico->images)
         return AVERROR(ENOMEM);
 
@@ -150,8 +151,6 @@ static int ico_write_packet(AVFormatContext *s, AVPacket *pkt)
         for (i = 0; i < c->height * (c->width + 7) / 8; ++i)
             avio_w8(pb, 0x00); // Write bitmask (opaque)
     }
-
-    avio_flush(pb);
 
     return 0;
 }

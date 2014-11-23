@@ -116,7 +116,7 @@ int avfilter_copy_buf_props(AVFrame *dst, const AVFilterBufferRef *src)
         planes      = av_sample_fmt_is_planar(src->format) ? nb_channels : 1;
 
         if (planes > FF_ARRAY_ELEMS(dst->data)) {
-            dst->extended_data = av_mallocz(planes * sizeof(*dst->extended_data));
+            dst->extended_data = av_mallocz_array(planes, sizeof(*dst->extended_data));
             if (!dst->extended_data)
                 return AVERROR(ENOMEM);
             memcpy(dst->extended_data, src->extended_data,
@@ -133,25 +133,5 @@ int avfilter_copy_buf_props(AVFrame *dst, const AVFilterBufferRef *src)
     }
 
     return 0;
-}
-#endif
-
-#if FF_API_FILL_FRAME
-int avfilter_fill_frame_from_audio_buffer_ref(AVFrame *frame,
-                                              const AVFilterBufferRef *samplesref)
-{
-    return avfilter_copy_buf_props(frame, samplesref);
-}
-
-int avfilter_fill_frame_from_video_buffer_ref(AVFrame *frame,
-                                              const AVFilterBufferRef *picref)
-{
-    return avfilter_copy_buf_props(frame, picref);
-}
-
-int avfilter_fill_frame_from_buffer_ref(AVFrame *frame,
-                                        const AVFilterBufferRef *ref)
-{
-    return avfilter_copy_buf_props(frame, ref);
 }
 #endif

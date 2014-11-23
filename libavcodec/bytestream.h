@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
 
@@ -131,6 +132,7 @@ static av_always_inline void bytestream2_init(GetByteContext *g,
                                               const uint8_t *buf,
                                               int buf_size)
 {
+    av_assert0(buf_size >= 0);
     g->buffer       = buf;
     g->buffer_start = buf;
     g->buffer_end   = buf + buf_size;
@@ -140,6 +142,7 @@ static av_always_inline void bytestream2_init_writer(PutByteContext *p,
                                                      uint8_t *buf,
                                                      int buf_size)
 {
+    av_assert0(buf_size >= 0);
     p->buffer       = buf;
     p->buffer_start = buf;
     p->buffer_end   = buf + buf_size;
@@ -323,6 +326,32 @@ static av_always_inline void bytestream2_set_bufferu(PutByteContext *p,
 static av_always_inline unsigned int bytestream2_get_eof(PutByteContext *p)
 {
     return p->eof;
+}
+
+static av_always_inline unsigned int bytestream2_copy_bufferu(PutByteContext *p,
+                                                              GetByteContext *g,
+                                                              unsigned int size)
+{
+    memcpy(p->buffer, g->buffer, size);
+    p->buffer += size;
+    g->buffer += size;
+    return size;
+}
+
+static av_always_inline unsigned int bytestream2_copy_buffer(PutByteContext *p,
+                                                             GetByteContext *g,
+                                                             unsigned int size)
+{
+    int size2;
+
+    if (p->eof)
+        return 0;
+    size  = FFMIN(g->buffer_end - g->buffer, size);
+    size2 = FFMIN(p->buffer_end - p->buffer, size);
+    if (size2 != size)
+        p->eof = 1;
+
+    return bytestream2_copy_bufferu(p, g, size2);
 }
 
 static av_always_inline unsigned int bytestream_get_buffer(const uint8_t **b,

@@ -29,6 +29,7 @@
 
 #include "rtpdec_formats.h"
 #include "internal.h"
+#include "libavutil/attributes.h"
 #include "libavutil/avstring.h"
 #include "libavcodec/get_bits.h"
 
@@ -104,10 +105,8 @@ static int parse_fmtp_config(AVCodecContext *codec, char *value)
     /* decode the hexa encoded parameter */
     int len = ff_hex_to_data(NULL, value);
     av_free(codec->extradata);
-    codec->extradata = av_mallocz(len + FF_INPUT_BUFFER_PADDING_SIZE);
-    if (!codec->extradata)
+    if (ff_alloc_extradata(codec, len))
         return AVERROR(ENOMEM);
-    codec->extradata_size = len;
     ff_hex_to_data(codec->extradata, value);
     return 0;
 }
@@ -209,7 +208,8 @@ static int aac_parse_packet(AVFormatContext *ctx, PayloadContext *data,
     return 0;
 }
 
-static int parse_fmtp(AVStream *stream, PayloadContext *data,
+static int parse_fmtp(AVFormatContext *s,
+                      AVStream *stream, PayloadContext *data,
                       char *attr, char *value)
 {
     AVCodecContext *codec = stream->codec;
@@ -247,12 +247,13 @@ static int parse_sdp_line(AVFormatContext *s, int st_index,
         return 0;
 
     if (av_strstart(line, "fmtp:", &p))
-        return ff_parse_fmtp(s->streams[st_index], data, p, parse_fmtp);
+        return ff_parse_fmtp(s, s->streams[st_index], data, p, parse_fmtp);
 
     return 0;
 }
 
-static int init_video(AVFormatContext *s, int st_index, PayloadContext *data)
+static av_cold int init_video(AVFormatContext *s, int st_index,
+                              PayloadContext *data)
 {
     if (st_index < 0)
         return 0;

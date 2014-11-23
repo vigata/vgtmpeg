@@ -82,21 +82,9 @@ static const AVOption smartblur_options[] = {
 
 AVFILTER_DEFINE_CLASS(smartblur);
 
-static av_cold int init(AVFilterContext *ctx, const char *args)
+static av_cold int init(AVFilterContext *ctx)
 {
     SmartblurContext *sblur = ctx->priv;
-    int ret;
-    static const char *shorthand[] = {
-        "luma_radius", "luma_strength", "luma_threshold",
-        "chroma_radius", "chroma_strength", "chroma_threshold",
-        NULL
-    };
-
-    sblur->class = &smartblur_class;
-    av_opt_set_defaults(sblur);
-
-    if ((ret = av_opt_set_from_string(sblur, args, shorthand, "=", ":")) < 0)
-        return ret;
 
     /* make chroma default to luma values, if not explicitly set */
     if (sblur->chroma.radius < RADIUS_MIN)
@@ -111,7 +99,7 @@ static av_cold int init(AVFilterContext *ctx, const char *args)
 
     av_log(ctx, AV_LOG_VERBOSE,
            "luma_radius:%f luma_strength:%f luma_threshold:%d "
-           "chroma_radius:%f chroma_strength:%f chroma_threshold:%d ",
+           "chroma_radius:%f chroma_strength:%f chroma_threshold:%d\n",
            sblur->luma.radius, sblur->luma.strength, sblur->luma.threshold,
            sblur->chroma.radius, sblur->chroma.strength, sblur->chroma.threshold);
 
@@ -124,7 +112,6 @@ static av_cold void uninit(AVFilterContext *ctx)
 
     sws_freeContext(sblur->luma.filter_context);
     sws_freeContext(sblur->chroma.filter_context);
-    av_opt_free(sblur);
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -179,7 +166,8 @@ static int config_props(AVFilterLink *inlink)
 
     alloc_sws_context(&sblur->luma, inlink->w, inlink->h, sblur->sws_flags);
     alloc_sws_context(&sblur->chroma,
-                      inlink->w >> sblur->hsub, inlink->h >> sblur->vsub,
+                      FF_CEIL_RSHIFT(inlink->w, sblur->hsub),
+                      FF_CEIL_RSHIFT(inlink->h, sblur->vsub),
                       sblur->sws_flags);
 
     return 0;
@@ -213,7 +201,7 @@ static void blur(uint8_t       *dst, const int dst_linesize,
                     if (diff > 2 * threshold)
                         dst[x + y * dst_linesize] = orig;
                     else if (diff > threshold)
-                        /* add 'diff' and substract 'threshold' from 'filtered' */
+                        /* add 'diff' and subtract 'threshold' from 'filtered' */
                         dst[x + y * dst_linesize] = orig - threshold;
                 } else {
                     if (-diff > 2 * threshold)
@@ -235,13 +223,13 @@ static void blur(uint8_t       *dst, const int dst_linesize,
                     if (diff <= -threshold)
                         dst[x + y * dst_linesize] = orig;
                     else if (diff <= -2 * threshold)
-                        /* substract 'diff' and 'threshold' from 'orig' */
+                        /* subtract 'diff' and 'threshold' from 'orig' */
                         dst[x + y * dst_linesize] = filtered - threshold;
                 } else {
                     if (diff >= threshold)
                         dst[x + y * dst_linesize] = orig;
                     else if (diff >= 2 * threshold)
-                        /* add 'threshold' and substract 'diff' from 'orig' */
+                        /* add 'threshold' and subtract 'diff' from 'orig' */
                         dst[x + y * dst_linesize] = filtered + threshold;
                 }
             }
@@ -254,8 +242,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *inpic)
     SmartblurContext  *sblur  = inlink->dst->priv;
     AVFilterLink *outlink     = inlink->dst->outputs[0];
     AVFrame *outpic;
-    int cw = inlink->w >> sblur->hsub;
-    int ch = inlink->h >> sblur->vsub;
+    int cw = FF_CEIL_RSHIFT(inlink->w, sblur->hsub);
+    int ch = FF_CEIL_RSHIFT(inlink->h, sblur->vsub);
 
     outpic = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!outpic) {
@@ -302,16 +290,15 @@ static const AVFilterPad smartblur_outputs[] = {
     { NULL }
 };
 
-AVFilter avfilter_vf_smartblur = {
-    .name        = "smartblur",
-    .description = NULL_IF_CONFIG_SMALL("Blur the input video without impacting the outlines."),
-
-    .priv_size = sizeof(SmartblurContext),
-
+AVFilter ff_vf_smartblur = {
+    .name          = "smartblur",
+    .description   = NULL_IF_CONFIG_SMALL("Blur the input video without impacting the outlines."),
+    .priv_size     = sizeof(SmartblurContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
     .inputs        = smartblur_inputs,
     .outputs       = smartblur_outputs,
     .priv_class    = &smartblur_class,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

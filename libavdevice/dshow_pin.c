@@ -328,7 +328,7 @@ libAVMemInputPin_Receive(libAVMemInputPin *this, IMediaSample *sample)
     priv_data = pin->filter->priv_data;
     index = pin->filter->stream_index;
 
-    pin->filter->callback(priv_data, index, buf, buf_size, curtime);
+    pin->filter->callback(priv_data, index, buf, buf_size, curtime, devtype);
 
     return S_OK;
 }
@@ -358,5 +358,5 @@ libAVMemInputPin_Destroy(libAVMemInputPin *this)
 {
     libAVPin *pin = (libAVPin *) ((uint8_t *) this - imemoffset);
     dshowdebug("libAVMemInputPin_Destroy(%p)\n", this);
-    return libAVPin_Destroy(pin);
+    libAVPin_Destroy(pin);
 }

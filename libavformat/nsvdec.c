@@ -2,6 +2,8 @@
  * NSV demuxer
  * Copyright (c) 2004 The FFmpeg Project
  *
+ * first version by Francois Revol <revol@free.fr>
+ *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -26,10 +28,6 @@
 #include "libavutil/dict.h"
 #include "libavutil/intreadwrite.h"
 
-//#define DEBUG_DUMP_INDEX // XXX dumbdriving-271.nsv breaks with it commented!!
-#define CHECK_SUBSEQUENT_NSVS
-//#define DISABLE_AUDIO
-
 /* max bytes to crawl for trying to resync
  * stupid streaming servers don't start at chunk boundaries...
  */
@@ -37,7 +35,6 @@
 #define NSV_MAX_RESYNC_TRIES 300
 
 /*
- * First version by Francois Revol - revol@free.fr
  * References:
  * (1) http://www.multimedia.cx/nsv-format.txt
  * seems someone came to the same conclusions as me, and updated it:
@@ -99,8 +96,8 @@ struct NSVs_header {
     uint32_t chunk_tag; /* 'NSVs' */
     uint32_t v4cc;      /* or 'NONE' */
     uint32_t a4cc;      /* or 'NONE' */
-    uint16_t vwidth;    /* av_assert(vwidth%16==0) */
-    uint16_t vheight;   /* av_assert(vheight%16==0) */
+    uint16_t vwidth;    /* av_assert0(vwidth%16==0) */
+    uint16_t vheight;   /* av_assert0(vheight%16==0) */
     uint8_t framerate;  /* value = (framerate&0x80)?frtable[frameratex0x7f]:framerate */
     uint16_t unknown;
 };
@@ -235,7 +232,7 @@ static int nsv_resync(AVFormatContext *s)
     //nsv->state = NSV_UNSYNC;
 
     for (i = 0; i < NSV_MAX_RESYNC; i++) {
-        if (url_feof(pb)) {
+        if (avio_feof(pb)) {
             av_dlog(s, "NSV EOF\n");
             nsv->state = NSV_UNSYNC;
             return -1;
@@ -302,7 +299,7 @@ static int nsv_parse_NSVf_header(AVFormatContext *s)
     table_entries_used = avio_rl32(pb);
     av_dlog(s, "NSV NSVf info-strings size: %d, table entries: %d, bis %d\n",
             strings_size, table_entries, table_entries_used);
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return -1;
 
     av_dlog(s, "NSV got header; filepos %"PRId64"\n", avio_tell(pb));
@@ -339,7 +336,7 @@ static int nsv_parse_NSVf_header(AVFormatContext *s)
         }
         av_free(strings);
     }
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return -1;
 
     av_dlog(s, "NSV got infos; filepos %"PRId64"\n", avio_tell(pb));
@@ -369,28 +366,9 @@ static int nsv_parse_NSVf_header(AVFormatContext *s)
 
     av_dlog(s, "NSV got index; filepos %"PRId64"\n", avio_tell(pb));
 
-#ifdef DEBUG_DUMP_INDEX
-#define V(v) ((v<0x20 || v > 127)?'.':v)
-    /* dump index */
-    av_dlog(s, "NSV %d INDEX ENTRIES:\n", table_entries);
-    av_dlog(s, "NSV [dataoffset][fileoffset]\n", table_entries);
-    for (i = 0; i < table_entries; i++) {
-        unsigned char b[8];
-        avio_seek(pb, size + nsv->nsvs_file_offset[i], SEEK_SET);
-        avio_read(pb, b, 8);
-        av_dlog(s, "NSV [0x%08lx][0x%08lx]: %02x %02x %02x %02x %02x %02x %02x %02x"
-           "%c%c%c%c%c%c%c%c\n",
-           nsv->nsvs_file_offset[i], size + nsv->nsvs_file_offset[i],
-           b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
-           V(b[0]), V(b[1]), V(b[2]), V(b[3]), V(b[4]), V(b[5]), V(b[6]), V(b[7]) );
-    }
-    //avio_seek(pb, size, SEEK_SET); /* go back to end of header */
-#undef V
-#endif
-
     avio_seek(pb, nsv->base_offset + size, SEEK_SET); /* required for dumbdriving-271.nsv (2 extra bytes) */
 
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return -1;
     nsv->state = NSV_HAS_READ_NSVF;
     return 0;
@@ -478,7 +456,6 @@ static int nsv_parse_NSVs_header(AVFormatContext *s)
             }
         }
         if (atag != T_NONE) {
-#ifndef DISABLE_AUDIO
             st = avformat_new_stream(s, NULL);
             if (!st)
                 goto fail;
@@ -498,15 +475,12 @@ static int nsv_parse_NSVs_header(AVFormatContext *s)
             avpriv_set_pts_info(st, 64, 1, framerate.num*1000);
             st->start_time = 0;
             st->duration = (int64_t)nsv->duration * framerate.num;
-#endif
         }
-#ifdef CHECK_SUBSEQUENT_NSVS
     } else {
         if (nsv->vtag != vtag || nsv->atag != atag || nsv->vwidth != vwidth || nsv->vheight != vwidth) {
             av_dlog(s, "NSV NSVs header values differ from the first one!!!\n");
             //return -1;
         }
-#endif /* CHECK_SUBSEQUENT_NSVS */
     }
 
     nsv->state = NSV_HAS_READ_NSVS;
@@ -572,7 +546,7 @@ static int nsv_read_chunk(AVFormatContext *s, int fill_header)
         return 0; //-1; /* hey! eat what you've in your plate first! */
 
 null_chunk_retry:
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return -1;
 
     for (i = 0; i < NSV_MAX_RESYNC_TRIES && nsv->state < NSV_FOUND_NSVS && !err; i++)
@@ -607,7 +581,7 @@ null_chunk_retry:
         vsize -= auxsize + sizeof(uint16_t) + sizeof(uint32_t); /* that's becoming braindead */
     }
 
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return -1;
     if (!vsize && !asize) {
         nsv->state = NSV_UNSYNC;
@@ -691,7 +665,7 @@ static int nsv_read_packet(AVFormatContext *s, AVPacket *pkt)
     av_dlog(s, "%s()\n", __FUNCTION__);
 
     /* in case we don't already have something to eat ... */
-    if (nsv->ahead[0].data == NULL && nsv->ahead[1].data == NULL)
+    if (!nsv->ahead[0].data && !nsv->ahead[1].data)
         err = nsv_read_chunk(s, 0);
     if (err < 0)
         return err;
@@ -732,7 +706,6 @@ static int nsv_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
 
 static int nsv_read_close(AVFormatContext *s)
 {
-/*     int i; */
     NSVContext *nsv = s->priv_data;
 
     av_freep(&nsv->nsvs_file_offset);
@@ -741,20 +714,6 @@ static int nsv_read_close(AVFormatContext *s)
         av_free_packet(&nsv->ahead[0]);
     if (nsv->ahead[1].data)
         av_free_packet(&nsv->ahead[1]);
-
-#if 0
-
-    for(i=0;i<s->nb_streams;i++) {
-        AVStream *st = s->streams[i];
-        NSVStream *ast = st->priv_data;
-        if(ast){
-            av_free(ast->index_entries);
-            av_free(ast);
-        }
-        av_free(st->codec->palctrl);
-    }
-
-#endif
     return 0;
 }
 
@@ -785,7 +744,7 @@ static int nsv_probe(AVProbeData *p)
     }
     /* so we'll have more luck on extension... */
     if (av_match_ext(p->filename, "nsv"))
-        return AVPROBE_SCORE_MAX/2;
+        return AVPROBE_SCORE_EXTENSION;
     /* FIXME: add mime-type check */
     return score;
 }

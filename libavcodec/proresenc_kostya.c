@@ -6,30 +6,30 @@
  * This encoder appears to be based on Anatoliy Wassermans considering
  * similarities in the bugs.
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/opt.h"
+#include "libavutil/pixdesc.h"
 #include "avcodec.h"
-#include "dsputil.h"
+#include "fdctdsp.h"
 #include "put_bits.h"
 #include "bytestream.h"
 #include "internal.h"
-#include "proresdsp.h"
 #include "proresdata.h"
 
 #define CFACTOR_Y422 2
@@ -37,13 +37,15 @@
 
 #define MAX_MBS_PER_SLICE 8
 
-#define MAX_PLANES 3 // should be increased to 4 when there's AV_PIX_FMT_YUV444AP10
+#define MAX_PLANES 4
 
 enum {
+    PRORES_PROFILE_AUTO  = -1,
     PRORES_PROFILE_PROXY = 0,
     PRORES_PROFILE_LT,
     PRORES_PROFILE_STANDARD,
     PRORES_PROFILE_HQ,
+    PRORES_PROFILE_4444,
 };
 
 enum {
@@ -122,7 +124,7 @@ static const struct prores_profile {
     int         max_quant;
     int         br_tab[NUM_MB_LIMITS];
     int         quant;
-} prores_profile_info[4] = {
+} prores_profile_info[5] = {
     {
         .full_name = "proxy",
         .tag       = MKTAG('a', 'p', 'c', 'o'),
@@ -154,8 +156,15 @@ static const struct prores_profile {
         .max_quant = 6,
         .br_tab    = { 1566, 1216, 1070, 950 },
         .quant     = QUANT_MAT_HQ,
+    },
+    {
+        .full_name = "4444",
+        .tag       = MKTAG('a', 'p', '4', 'h'),
+        .min_quant = 1,
+        .max_quant = 6,
+        .br_tab    = { 2350, 1828, 1600, 1425 },
+        .quant     = QUANT_MAT_HQ,
     }
-// for 4444 profile bitrate numbers are { 2350, 1828, 1600, 1425 }
 };
 
 #define TRELLIS_WIDTH 16
@@ -184,9 +193,11 @@ typedef struct ProresContext {
     int16_t quants[MAX_STORED_Q][64];
     int16_t custom_q[64];
     const uint8_t *quant_mat;
+    const uint8_t *scantable;
 
-    ProresDSPContext dsp;
-    ScanTable  scantable;
+    void (*fdct)(FDCTDSPContext *fdsp, const uint16_t *src,
+                 int linesize, int16_t *block);
+    FDCTDSPContext fdsp;
 
     int mb_width, mb_height;
     int mbs_per_slice;
@@ -198,6 +209,8 @@ typedef struct ProresContext {
     int num_planes;
     int bits_per_mb;
     int force_quant;
+    int alpha_bits;
+    int warn;
 
     char *vendor;
     int quant_sel;
@@ -254,32 +267,60 @@ static void get_slice_data(ProresContext *ctx, const uint16_t *src,
                        mb_width * sizeof(*emu_buf));
         }
         if (!is_chroma) {
-            ctx->dsp.fdct(esrc, elinesize, blocks);
+            ctx->fdct(&ctx->fdsp, esrc, elinesize, blocks);
             blocks += 64;
             if (blocks_per_mb > 2) {
-                ctx->dsp.fdct(esrc + 8, elinesize, blocks);
+                ctx->fdct(&ctx->fdsp, esrc + 8, elinesize, blocks);
                 blocks += 64;
             }
-            ctx->dsp.fdct(esrc + elinesize * 4, elinesize, blocks);
+            ctx->fdct(&ctx->fdsp, esrc + elinesize * 4, elinesize, blocks);
             blocks += 64;
             if (blocks_per_mb > 2) {
-                ctx->dsp.fdct(esrc + elinesize * 4 + 8, elinesize, blocks);
+                ctx->fdct(&ctx->fdsp, esrc + elinesize * 4 + 8, elinesize, blocks);
                 blocks += 64;
             }
         } else {
-            ctx->dsp.fdct(esrc, elinesize, blocks);
+            ctx->fdct(&ctx->fdsp, esrc, elinesize, blocks);
             blocks += 64;
-            ctx->dsp.fdct(esrc + elinesize * 4, elinesize, blocks);
+            ctx->fdct(&ctx->fdsp, esrc + elinesize * 4, elinesize, blocks);
             blocks += 64;
             if (blocks_per_mb > 2) {
-                ctx->dsp.fdct(esrc + 8, elinesize, blocks);
+                ctx->fdct(&ctx->fdsp, esrc + 8, elinesize, blocks);
                 blocks += 64;
-                ctx->dsp.fdct(esrc + elinesize * 4 + 8, elinesize, blocks);
+                ctx->fdct(&ctx->fdsp, esrc + elinesize * 4 + 8, elinesize, blocks);
                 blocks += 64;
             }
         }
 
         x += mb_width;
+    }
+}
+
+static void get_alpha_data(ProresContext *ctx, const uint16_t *src,
+                           int linesize, int x, int y, int w, int h,
+                           int16_t *blocks, int mbs_per_slice, int abits)
+{
+    const int slice_width = 16 * mbs_per_slice;
+    int i, j, copy_w, copy_h;
+
+    copy_w = FFMIN(w - x, slice_width);
+    copy_h = FFMIN(h - y, 16);
+    for (i = 0; i < copy_h; i++) {
+        memcpy(blocks, src, copy_w * sizeof(*src));
+        if (abits == 8)
+            for (j = 0; j < copy_w; j++)
+                blocks[j] >>= 2;
+        else
+            for (j = 0; j < copy_w; j++)
+                blocks[j] = (blocks[j] << 6) | (blocks[j] >> 4);
+        for (j = copy_w; j < slice_width; j++)
+            blocks[j] = blocks[copy_w - 1];
+        blocks += slice_width;
+        src    += linesize >> 1;
+    }
+    for (; i < 16; i++) {
+        memcpy(blocks, blocks - slice_width, slice_width * sizeof(*blocks));
+        blocks += slice_width;
     }
 }
 
@@ -391,9 +432,75 @@ static int encode_slice_plane(ProresContext *ctx, PutBitContext *pb,
 
     encode_dcs(pb, blocks, blocks_per_slice, qmat[0]);
     encode_acs(pb, blocks, blocks_per_slice, plane_size_factor,
-               ctx->scantable.permutated, qmat);
+               ctx->scantable, qmat);
     flush_put_bits(pb);
 
+    return (put_bits_count(pb) - saved_pos) >> 3;
+}
+
+static void put_alpha_diff(PutBitContext *pb, int cur, int prev, int abits)
+{
+    const int mask  = (1 << abits) - 1;
+    const int dbits = (abits == 8) ? 4 : 7;
+    const int dsize = 1 << dbits - 1;
+    int diff = cur - prev;
+
+    diff &= mask;
+    if (diff >= (1 << abits) - dsize)
+        diff -= 1 << abits;
+    if (diff < -dsize || diff > dsize || !diff) {
+        put_bits(pb, 1, 1);
+        put_bits(pb, abits, diff);
+    } else {
+        put_bits(pb, 1, 0);
+        put_bits(pb, dbits - 1, FFABS(diff) - 1);
+        put_bits(pb, 1, diff < 0);
+    }
+}
+
+static void put_alpha_run(PutBitContext *pb, int run)
+{
+    if (run) {
+        put_bits(pb, 1, 0);
+        if (run < 0x10)
+            put_bits(pb, 4, run);
+        else
+            put_bits(pb, 15, run);
+    } else {
+        put_bits(pb, 1, 1);
+    }
+}
+
+// todo alpha quantisation for high quants
+static int encode_alpha_plane(ProresContext *ctx, PutBitContext *pb,
+                              int mbs_per_slice, uint16_t *blocks,
+                              int quant)
+{
+    const int abits = ctx->alpha_bits;
+    const int mask  = (1 << abits) - 1;
+    const int num_coeffs = mbs_per_slice * 256;
+    int saved_pos = put_bits_count(pb);
+    int prev = mask, cur;
+    int idx = 0;
+    int run = 0;
+
+    cur = blocks[idx++];
+    put_alpha_diff(pb, cur, prev, abits);
+    prev = cur;
+    do {
+        cur = blocks[idx++];
+        if (cur != prev) {
+            put_alpha_run (pb, run);
+            put_alpha_diff(pb, cur, prev, abits);
+            prev = cur;
+            run  = 0;
+        } else {
+            run++;
+        }
+    } while (idx < num_coeffs);
+    if (run)
+        put_alpha_run(pb, run);
+    flush_put_bits(pb);
     return (put_bits_count(pb) - saved_pos) >> 3;
 }
 
@@ -447,15 +554,28 @@ static int encode_slice(AVCodecContext *avctx, const AVFrame *pic,
         src = (const uint16_t*)(pic->data[i] + yp * linesize +
                                 line_add * pic->linesize[i]) + xp;
 
-        get_slice_data(ctx, src, linesize, xp, yp,
-                       pwidth, avctx->height / ctx->pictures_per_frame,
-                       ctx->blocks[0], ctx->emu_buf,
-                       mbs_per_slice, num_cblocks, is_chroma);
-        sizes[i] = encode_slice_plane(ctx, pb, src, linesize,
-                                      mbs_per_slice, ctx->blocks[0],
-                                      num_cblocks, plane_factor,
-                                      qmat);
+        if (i < 3) {
+            get_slice_data(ctx, src, linesize, xp, yp,
+                           pwidth, avctx->height / ctx->pictures_per_frame,
+                           ctx->blocks[0], ctx->emu_buf,
+                           mbs_per_slice, num_cblocks, is_chroma);
+            sizes[i] = encode_slice_plane(ctx, pb, src, linesize,
+                                          mbs_per_slice, ctx->blocks[0],
+                                          num_cblocks, plane_factor,
+                                          qmat);
+        } else {
+            get_alpha_data(ctx, src, linesize, xp, yp,
+                           pwidth, avctx->height / ctx->pictures_per_frame,
+                           ctx->blocks[0], mbs_per_slice, ctx->alpha_bits);
+            sizes[i] = encode_alpha_plane(ctx, pb, mbs_per_slice,
+                                          ctx->blocks[0], quant);
+        }
         total_size += sizes[i];
+        if (put_bits_left(pb) < 0) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "Underestimated required buffer size.\n");
+            return AVERROR_BUG;
+        }
     }
     return total_size;
 }
@@ -562,9 +682,69 @@ static int estimate_slice_plane(ProresContext *ctx, int *error, int plane,
 
     bits  = estimate_dcs(error, td->blocks[plane], blocks_per_slice, qmat[0]);
     bits += estimate_acs(error, td->blocks[plane], blocks_per_slice,
-                         plane_size_factor, ctx->scantable.permutated, qmat);
+                         plane_size_factor, ctx->scantable, qmat);
 
     return FFALIGN(bits, 8);
+}
+
+static int est_alpha_diff(int cur, int prev, int abits)
+{
+    const int mask  = (1 << abits) - 1;
+    const int dbits = (abits == 8) ? 4 : 7;
+    const int dsize = 1 << dbits - 1;
+    int diff = cur - prev;
+
+    diff &= mask;
+    if (diff >= (1 << abits) - dsize)
+        diff -= 1 << abits;
+    if (diff < -dsize || diff > dsize || !diff)
+        return abits + 1;
+    else
+        return dbits + 1;
+}
+
+static int estimate_alpha_plane(ProresContext *ctx, int *error,
+                                const uint16_t *src, int linesize,
+                                int mbs_per_slice, int quant,
+                                int16_t *blocks)
+{
+    const int abits = ctx->alpha_bits;
+    const int mask  = (1 << abits) - 1;
+    const int num_coeffs = mbs_per_slice * 256;
+    int prev = mask, cur;
+    int idx = 0;
+    int run = 0;
+    int bits;
+
+    *error = 0;
+    cur = blocks[idx++];
+    bits = est_alpha_diff(cur, prev, abits);
+    prev = cur;
+    do {
+        cur = blocks[idx++];
+        if (cur != prev) {
+            if (!run)
+                bits++;
+            else if (run < 0x10)
+                bits += 4;
+            else
+                bits += 15;
+            bits += est_alpha_diff(cur, prev, abits);
+            prev = cur;
+            run  = 0;
+        } else {
+            run++;
+        }
+    } while (idx < num_coeffs);
+
+    if (run) {
+        if (run < 0x10)
+            bits += 4;
+        else
+            bits += 15;
+    }
+
+    return bits;
 }
 
 static int find_slice_quant(AVCodecContext *avctx, const AVFrame *pic,
@@ -613,10 +793,16 @@ static int find_slice_quant(AVCodecContext *avctx, const AVFrame *pic,
         src = (const uint16_t*)(pic->data[i] + yp * linesize[i] +
                                 line_add * pic->linesize[i]) + xp;
 
-        get_slice_data(ctx, src, linesize[i], xp, yp,
-                       pwidth, avctx->height / ctx->pictures_per_frame,
-                       td->blocks[i], td->emu_buf,
-                       mbs_per_slice, num_cblocks[i], is_chroma[i]);
+        if (i < 3) {
+            get_slice_data(ctx, src, linesize[i], xp, yp,
+                           pwidth, avctx->height / ctx->pictures_per_frame,
+                           td->blocks[i], td->emu_buf,
+                           mbs_per_slice, num_cblocks[i], is_chroma[i]);
+        } else {
+            get_alpha_data(ctx, src, linesize[i], xp, yp,
+                           pwidth, avctx->height / ctx->pictures_per_frame,
+                           td->blocks[i], mbs_per_slice, ctx->alpha_bits);
+        }
     }
 
     for (q = min_quant; q < max_quant + 2; q++) {
@@ -628,13 +814,16 @@ static int find_slice_quant(AVCodecContext *avctx, const AVFrame *pic,
     for (q = min_quant; q <= max_quant; q++) {
         bits  = 0;
         error = 0;
-        for (i = 0; i < ctx->num_planes; i++) {
+        for (i = 0; i < ctx->num_planes - !!ctx->alpha_bits; i++) {
             bits += estimate_slice_plane(ctx, &error, i,
                                          src, linesize[i],
                                          mbs_per_slice,
                                          num_cblocks[i], plane_factor[i],
                                          ctx->quants[q], td);
         }
+        if (ctx->alpha_bits)
+            bits += estimate_alpha_plane(ctx, &error, src, linesize[3],
+                                         mbs_per_slice, q, td->blocks[3]);
         if (bits > 65000 * 8) {
             error = SCORE_LIMIT;
             break;
@@ -657,13 +846,16 @@ static int find_slice_quant(AVCodecContext *avctx, const AVFrame *pic,
                 for (i = 0; i < 64; i++)
                     qmat[i] = ctx->quant_mat[i] * q;
             }
-            for (i = 0; i < ctx->num_planes; i++) {
+            for (i = 0; i < ctx->num_planes - !!ctx->alpha_bits; i++) {
                 bits += estimate_slice_plane(ctx, &error, i,
                                              src, linesize[i],
                                              mbs_per_slice,
                                              num_cblocks[i], plane_factor[i],
                                              qmat, td);
             }
+            if (ctx->alpha_bits)
+                bits += estimate_alpha_plane(ctx, &error, src, linesize[3],
+                                             mbs_per_slice, q, td->blocks[3]);
             if (bits <= ctx->bits_per_mb * mbs_per_slice)
                 break;
         }
@@ -748,15 +940,16 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int slice_hdr_size = 2 + 2 * (ctx->num_planes - 1);
     int frame_size, picture_size, slice_size;
     int pkt_size, ret;
+    int max_slice_size = (ctx->frame_size_upper_bound - 200) / (ctx->pictures_per_frame * ctx->slices_per_picture + 1);
     uint8_t frame_flags;
 
     *avctx->coded_frame           = *pic;
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
     avctx->coded_frame->key_frame = 1;
 
-    pkt_size = ctx->frame_size_upper_bound + FF_MIN_BUFFER_SIZE;
+    pkt_size = ctx->frame_size_upper_bound;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, pkt_size)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, pkt_size + FF_MIN_BUFFER_SIZE)) < 0)
         return ret;
 
     orig_buf = pkt->data;
@@ -783,7 +976,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     bytestream_put_byte  (&buf, avctx->color_primaries);
     bytestream_put_byte  (&buf, avctx->color_trc);
     bytestream_put_byte  (&buf, avctx->colorspace);
-    bytestream_put_byte  (&buf, 0x40);          // source format and alpha information
+    bytestream_put_byte  (&buf, 0x40 | (ctx->alpha_bits >> 3));
     bytestream_put_byte  (&buf, 0);             // reserved
     if (ctx->quant_sel != QUANT_MAT_DEFAULT) {
         bytestream_put_byte  (&buf, 0x03);      // matrix flags - both matrices are present
@@ -832,8 +1025,44 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 bytestream_put_byte(&buf, slice_hdr_size << 3);
                 slice_hdr = buf;
                 buf += slice_hdr_size - 1;
+                if (pkt_size <= buf - orig_buf + 2 * max_slice_size) {
+                    uint8_t *start = pkt->data;
+                    // Recompute new size according to max_slice_size
+                    // and deduce delta
+                    int delta = 200 + (ctx->pictures_per_frame *
+                                ctx->slices_per_picture + 1) *
+                                max_slice_size - pkt_size;
+
+                    delta = FFMAX(delta, 2 * max_slice_size);
+                    ctx->frame_size_upper_bound += delta;
+
+                    if (!ctx->warn) {
+                        avpriv_request_sample(avctx,
+                                              "Packet too small: is %i,"
+                                              " needs %i (slice: %i). "
+                                              "Correct allocation",
+                                              pkt_size, delta, max_slice_size);
+                        ctx->warn = 1;
+                    }
+
+                    ret = av_grow_packet(pkt, delta);
+                    if (ret < 0)
+                        return ret;
+
+                    pkt_size += delta;
+                    // restore pointers
+                    orig_buf         = pkt->data + (orig_buf         - start);
+                    buf              = pkt->data + (buf              - start);
+                    picture_size_pos = pkt->data + (picture_size_pos - start);
+                    slice_sizes      = pkt->data + (slice_sizes      - start);
+                    slice_hdr        = pkt->data + (slice_hdr        - start);
+                    tmp              = pkt->data + (tmp              - start);
+                }
                 init_put_bits(&pb, buf, (pkt_size - (buf - orig_buf)) * 8);
-                encode_slice(avctx, pic, &pb, sizes, x, y, q, mbs_per_slice);
+                ret = encode_slice(avctx, pic, &pb, sizes, x, y, q,
+                                   mbs_per_slice);
+                if (ret < 0)
+                    return ret;
 
                 bytestream_put_byte(&slice_hdr, q);
                 slice_size = slice_hdr_size + sizes[ctx->num_planes - 1];
@@ -843,6 +1072,8 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 }
                 bytestream_put_be16(&slice_sizes, slice_size);
                 buf += slice_size - slice_hdr_size;
+                if (max_slice_size < slice_size)
+                    max_slice_size = slice_size;
             }
         }
 
@@ -870,12 +1101,26 @@ static av_cold int encode_close(AVCodecContext *avctx)
 
     if (ctx->tdata) {
         for (i = 0; i < avctx->thread_count; i++)
-            av_free(ctx->tdata[i].nodes);
+            av_freep(&ctx->tdata[i].nodes);
     }
     av_freep(&ctx->tdata);
     av_freep(&ctx->slice_q);
 
     return 0;
+}
+
+static void prores_fdct(FDCTDSPContext *fdsp, const uint16_t *src,
+                        int linesize, int16_t *block)
+{
+    int x, y;
+    const uint16_t *tsrc = src;
+
+    for (y = 0; y < 8; y++) {
+        for (x = 0; x < 8; x++)
+            block[y * 8 + x] = tsrc[x];
+        tsrc += linesize >> 1;
+    }
+    fdsp->fdct(block);
 }
 
 static av_cold int encode_init(AVCodecContext *avctx)
@@ -887,14 +1132,14 @@ static av_cold int encode_init(AVCodecContext *avctx)
     int interlaced = !!(avctx->flags & CODEC_FLAG_INTERLACED_DCT);
 
     avctx->bits_per_raw_sample = 10;
-    avctx->coded_frame = avcodec_alloc_frame();
+    avctx->coded_frame = av_frame_alloc();
     if (!avctx->coded_frame)
         return AVERROR(ENOMEM);
 
-    ff_proresdsp_init(&ctx->dsp, avctx);
-    ff_init_scantable(ctx->dsp.dct_permutation, &ctx->scantable,
-                      interlaced ? ff_prores_interlaced_scan
-                                 : ff_prores_progressive_scan);
+    ctx->fdct      = prores_fdct;
+    ctx->scantable = interlaced ? ff_prores_interlaced_scan
+                                : ff_prores_progressive_scan;
+    ff_fdctdsp_init(&ctx->fdsp, avctx);
 
     mps = ctx->mbs_per_slice;
     if (mps & (mps - 1)) {
@@ -902,12 +1147,36 @@ static av_cold int encode_init(AVCodecContext *avctx)
                "there should be an integer power of two MBs per slice\n");
         return AVERROR(EINVAL);
     }
+    if (ctx->profile == PRORES_PROFILE_AUTO) {
+        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(avctx->pix_fmt);
+        ctx->profile = (desc->flags & AV_PIX_FMT_FLAG_ALPHA ||
+                        !(desc->log2_chroma_w + desc->log2_chroma_h))
+                     ? PRORES_PROFILE_4444 : PRORES_PROFILE_HQ;
+        av_log(avctx, AV_LOG_INFO, "Autoselected %s. It can be overridden "
+               "through -profile option.\n", ctx->profile == PRORES_PROFILE_4444
+               ? "4:4:4:4 profile because of the used input colorspace"
+               : "HQ profile to keep best quality");
+    }
+    if (av_pix_fmt_desc_get(avctx->pix_fmt)->flags & AV_PIX_FMT_FLAG_ALPHA) {
+        if (ctx->profile != PRORES_PROFILE_4444) {
+            // force alpha and warn
+            av_log(avctx, AV_LOG_WARNING, "Profile selected will not "
+                   "encode alpha. Override with -profile if needed.\n");
+            ctx->alpha_bits = 0;
+        }
+        if (ctx->alpha_bits & 7) {
+            av_log(avctx, AV_LOG_ERROR, "alpha bits should be 0, 8 or 16\n");
+            return AVERROR(EINVAL);
+        }
+    } else {
+        ctx->alpha_bits = 0;
+    }
 
     ctx->chroma_factor = avctx->pix_fmt == AV_PIX_FMT_YUV422P10
                          ? CFACTOR_Y422
                          : CFACTOR_Y444;
     ctx->profile_info  = prores_profile_info + ctx->profile;
-    ctx->num_planes    = 3;
+    ctx->num_planes    = 3 + !!ctx->alpha_bits;
 
     ctx->mb_width      = FFALIGN(avctx->width,  16) >> 4;
 
@@ -993,15 +1262,21 @@ static av_cold int encode_init(AVCodecContext *avctx)
         ctx->bits_per_mb = ls * 8;
         if (ctx->chroma_factor == CFACTOR_Y444)
             ctx->bits_per_mb += ls * 4;
-        if (ctx->num_planes == 4)
-            ctx->bits_per_mb += ls * 4;
     }
 
-    ctx->frame_size_upper_bound = ctx->pictures_per_frame *
-                                  ctx->slices_per_picture *
+    ctx->frame_size_upper_bound = (ctx->pictures_per_frame *
+                                   ctx->slices_per_picture + 1) *
                                   (2 + 2 * ctx->num_planes +
                                    (mps * ctx->bits_per_mb) / 8)
                                   + 200;
+
+    if (ctx->alpha_bits) {
+         // The alpha plane is run-coded and might exceed the bit budget.
+         ctx->frame_size_upper_bound += (ctx->pictures_per_frame *
+                                         ctx->slices_per_picture + 1) *
+         /* num pixels per slice */     (ctx->mbs_per_slice * 256 *
+         /* bits per pixel */            (1 + ctx->alpha_bits + 1) + 7 >> 3);
+    }
 
     avctx->codec_tag   = ctx->profile_info->tag;
 
@@ -1022,8 +1297,10 @@ static const AVOption options[] = {
     { "mbs_per_slice", "macroblocks per slice", OFFSET(mbs_per_slice),
         AV_OPT_TYPE_INT, { .i64 = 8 }, 1, MAX_MBS_PER_SLICE, VE },
     { "profile",       NULL, OFFSET(profile), AV_OPT_TYPE_INT,
-        { .i64 = PRORES_PROFILE_STANDARD },
-        PRORES_PROFILE_PROXY, PRORES_PROFILE_HQ, VE, "profile" },
+        { .i64 = PRORES_PROFILE_AUTO },
+        PRORES_PROFILE_AUTO, PRORES_PROFILE_4444, VE, "profile" },
+    { "auto",         NULL, 0, AV_OPT_TYPE_CONST, { .i64 = PRORES_PROFILE_AUTO },
+        0, 0, VE, "profile" },
     { "proxy",         NULL, 0, AV_OPT_TYPE_CONST, { .i64 = PRORES_PROFILE_PROXY },
         0, 0, VE, "profile" },
     { "lt",            NULL, 0, AV_OPT_TYPE_CONST, { .i64 = PRORES_PROFILE_LT },
@@ -1031,6 +1308,8 @@ static const AVOption options[] = {
     { "standard",      NULL, 0, AV_OPT_TYPE_CONST, { .i64 = PRORES_PROFILE_STANDARD },
         0, 0, VE, "profile" },
     { "hq",            NULL, 0, AV_OPT_TYPE_CONST, { .i64 = PRORES_PROFILE_HQ },
+        0, 0, VE, "profile" },
+    { "4444",          NULL, 0, AV_OPT_TYPE_CONST, { .i64 = PRORES_PROFILE_4444 },
         0, 0, VE, "profile" },
     { "vendor", "vendor ID", OFFSET(vendor),
         AV_OPT_TYPE_STRING, { .str = "Lavc" }, CHAR_MIN, CHAR_MAX, VE },
@@ -1050,6 +1329,8 @@ static const AVOption options[] = {
         0, 0, VE, "quant_mat" },
     { "default",       NULL, 0, AV_OPT_TYPE_CONST, { .i64 = QUANT_MAT_DEFAULT },
         0, 0, VE, "quant_mat" },
+    { "alpha_bits", "bits for alpha plane", OFFSET(alpha_bits), AV_OPT_TYPE_INT,
+        { .i64 = 16 }, 0, 16, VE },
     { NULL }
 };
 
@@ -1060,8 +1341,9 @@ static const AVClass proresenc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_prores_kostya_encoder = {
-    .name           = "prores_kostya",
+AVCodec ff_prores_ks_encoder = {
+    .name           = "prores_ks",
+    .long_name      = NULL_IF_CONFIG_SMALL("Apple ProRes (iCodec Pro)"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_PRORES,
     .priv_data_size = sizeof(ProresContext),
@@ -1069,9 +1351,9 @@ AVCodec ff_prores_kostya_encoder = {
     .close          = encode_close,
     .encode2        = encode_frame,
     .capabilities   = CODEC_CAP_SLICE_THREADS,
-    .long_name      = NULL_IF_CONFIG_SMALL("Apple ProRes (iCodec Pro)"),
     .pix_fmts       = (const enum AVPixelFormat[]) {
-                          AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10, AV_PIX_FMT_NONE
+                          AV_PIX_FMT_YUV422P10, AV_PIX_FMT_YUV444P10,
+                          AV_PIX_FMT_YUVA444P10, AV_PIX_FMT_NONE
                       },
     .priv_class     = &proresenc_class,
 };

@@ -32,12 +32,12 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/opt.h"
 
 #include "libmpcodecs/vf.h"
 #include "libmpcodecs/img_format.h"
 #include "libmpcodecs/cpudetect.h"
 #include "libmpcodecs/av_helpers.h"
-#include "libmpcodecs/vf_scale.h"
 #include "libmpcodecs/libvo/fastmemcpy.h"
 
 #include "libswscale/swscale.h"
@@ -111,8 +111,11 @@ static const struct {
     {IMGFMT_444P,  AV_PIX_FMT_YUVJ444P},
     {IMGFMT_440P,  AV_PIX_FMT_YUVJ440P},
 
+#if FF_API_XVMC
     {IMGFMT_XVMC_MOCO_MPEG2, AV_PIX_FMT_XVMC_MPEG2_MC},
     {IMGFMT_XVMC_IDCT_MPEG2, AV_PIX_FMT_XVMC_MPEG2_IDCT},
+#endif /* FF_API_XVMC */
+
     {IMGFMT_VDPAU_MPEG1,     AV_PIX_FMT_VDPAU_MPEG1},
     {IMGFMT_VDPAU_MPEG2,     AV_PIX_FMT_VDPAU_MPEG2},
     {IMGFMT_VDPAU_H264,      AV_PIX_FMT_VDPAU_H264},
@@ -122,58 +125,22 @@ static const struct {
     {0, AV_PIX_FMT_NONE}
 };
 
-extern const vf_info_t ff_vf_info_detc;
-extern const vf_info_t ff_vf_info_dint;
-extern const vf_info_t ff_vf_info_divtc;
-extern const vf_info_t ff_vf_info_down3dright;
 extern const vf_info_t ff_vf_info_eq2;
 extern const vf_info_t ff_vf_info_eq;
-extern const vf_info_t ff_vf_info_fil;
-//extern const vf_info_t ff_vf_info_filmdint;
 extern const vf_info_t ff_vf_info_fspp;
 extern const vf_info_t ff_vf_info_ilpack;
-extern const vf_info_t ff_vf_info_ivtc;
-extern const vf_info_t ff_vf_info_mcdeint;
-extern const vf_info_t ff_vf_info_noise;
-extern const vf_info_t ff_vf_info_ow;
-extern const vf_info_t ff_vf_info_perspective;
-extern const vf_info_t ff_vf_info_phase;
 extern const vf_info_t ff_vf_info_pp7;
-extern const vf_info_t ff_vf_info_pullup;
-extern const vf_info_t ff_vf_info_qp;
-extern const vf_info_t ff_vf_info_sab;
 extern const vf_info_t ff_vf_info_softpulldown;
-extern const vf_info_t ff_vf_info_spp;
-extern const vf_info_t ff_vf_info_telecine;
-extern const vf_info_t ff_vf_info_tinterlace;
 extern const vf_info_t ff_vf_info_uspp;
 
 
 static const vf_info_t* const filters[]={
-    &ff_vf_info_detc,
-    &ff_vf_info_dint,
-    &ff_vf_info_divtc,
-    &ff_vf_info_down3dright,
     &ff_vf_info_eq2,
     &ff_vf_info_eq,
-    &ff_vf_info_fil,
-//    &ff_vf_info_filmdint, cmmx.h vd.h ‘opt_screen_size_x’
     &ff_vf_info_fspp,
     &ff_vf_info_ilpack,
-    &ff_vf_info_ivtc,
-    &ff_vf_info_mcdeint,
-    &ff_vf_info_noise,
-    &ff_vf_info_ow,
-    &ff_vf_info_perspective,
-    &ff_vf_info_phase,
     &ff_vf_info_pp7,
-    &ff_vf_info_pullup,
-    &ff_vf_info_qp,
-    &ff_vf_info_sab,
     &ff_vf_info_softpulldown,
-    &ff_vf_info_spp,
-    &ff_vf_info_telecine,
-    &ff_vf_info_tinterlace,
     &ff_vf_info_uspp,
 
     NULL
@@ -210,67 +177,24 @@ enum AVPixelFormat ff_mp2ff_pix_fmt(int mp){
     return mp == conversion_map[i].fmt ? conversion_map[i].pix_fmt : AV_PIX_FMT_NONE;
 }
 
-static void ff_sws_getFlagsAndFilterFromCmdLine(int *flags, SwsFilter **srcFilterParam, SwsFilter **dstFilterParam)
-{
-        static int firstTime=1;
-        *flags=0;
-
-#if ARCH_X86
-        if(ff_gCpuCaps.hasMMX)
-                __asm__ volatile("emms\n\t"::: "memory"); //FIXME this should not be required but it IS (even for non-MMX versions)
-#endif
-        if(firstTime)
-        {
-                firstTime=0;
-                *flags= SWS_PRINT_INFO;
-        }
-        else if( ff_mp_msg_test(MSGT_VFILTER,MSGL_DBG2) ) *flags= SWS_PRINT_INFO;
-
-        switch(SWS_BILINEAR)
-        {
-                case 0: *flags|= SWS_FAST_BILINEAR; break;
-                case 1: *flags|= SWS_BILINEAR; break;
-                case 2: *flags|= SWS_BICUBIC; break;
-                case 3: *flags|= SWS_X; break;
-                case 4: *flags|= SWS_POINT; break;
-                case 5: *flags|= SWS_AREA; break;
-                case 6: *flags|= SWS_BICUBLIN; break;
-                case 7: *flags|= SWS_GAUSS; break;
-                case 8: *flags|= SWS_SINC; break;
-                case 9: *flags|= SWS_LANCZOS; break;
-                case 10:*flags|= SWS_SPLINE; break;
-                default:*flags|= SWS_BILINEAR; break;
-        }
-
-        *srcFilterParam= NULL;
-        *dstFilterParam= NULL;
-}
-
-//exact copy from vf_scale.c
-// will use sws_flags & src_filter (from cmd line)
-struct SwsContext *ff_sws_getContextFromCmdLine(int srcW, int srcH, int srcFormat, int dstW, int dstH, int dstFormat)
-{
-        int flags, i;
-        SwsFilter *dstFilterParam, *srcFilterParam;
-        enum AVPixelFormat dfmt, sfmt;
-
-        for(i=0; conversion_map[i].fmt && dstFormat != conversion_map[i].fmt; i++);
-        dfmt= conversion_map[i].pix_fmt;
-        for(i=0; conversion_map[i].fmt && srcFormat != conversion_map[i].fmt; i++);
-        sfmt= conversion_map[i].pix_fmt;
-
-        if (srcFormat == IMGFMT_RGB8 || srcFormat == IMGFMT_BGR8) sfmt = AV_PIX_FMT_PAL8;
-        ff_sws_getFlagsAndFilterFromCmdLine(&flags, &srcFilterParam, &dstFilterParam);
-
-        return sws_getContext(srcW, srcH, sfmt, dstW, dstH, dfmt, flags , srcFilterParam, dstFilterParam, NULL);
-}
-
 typedef struct {
+    const AVClass *class;
     vf_instance_t vf;
     vf_instance_t next_vf;
     AVFilterContext *avfctx;
     int frame_returned;
+    char *filter;
+    enum AVPixelFormat in_pix_fmt;
 } MPContext;
+
+#define OFFSET(x) offsetof(MPContext, x)
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+static const AVOption mp_options[] = {
+    { "filter", "set MPlayer filter name and parameters", OFFSET(filter), AV_OPT_TYPE_STRING, {.str=NULL}, .flags = FLAGS },
+    { NULL }
+};
+
+AVFILTER_DEFINE_CLASS(mp);
 
 void ff_mp_msg(int mod, int lev, const char *format, ... ){
     va_list va;
@@ -286,7 +210,7 @@ int ff_mp_msg_test(int mod, int lev){
 
 void ff_init_avcodec(void)
 {
-    //we maybe should init but its kinda 1. unneeded 2. a bit inpolite from here
+    //we maybe should init but its kinda 1. unneeded 2. a bit impolite from here
 }
 
 //Exact copy of vf.c
@@ -534,10 +458,8 @@ mp_image_t* ff_vf_get_image(vf_instance_t* vf, unsigned int outfmt, int mp_imgty
   return mpi;
 }
 
-static void dummy_free(void *opaque, uint8_t *data){}
-
 int ff_vf_next_put_image(struct vf_instance *vf,mp_image_t *mpi, double pts){
-    MPContext *m= (void*)vf;
+    MPContext *m= (MPContext*)(((uint8_t*)vf) - offsetof(MPContext, vf));
     AVFilterLink *outlink     = m->avfctx->outputs[0];
     AVFrame *picref = av_frame_alloc();
     int i;
@@ -552,23 +474,27 @@ int ff_vf_next_put_image(struct vf_instance *vf,mp_image_t *mpi, double pts){
     picref->width  = mpi->w;
     picref->height = mpi->h;
 
-    picref->type = AVMEDIA_TYPE_VIDEO;
-
     for(i=0; conversion_map[i].fmt && mpi->imgfmt != conversion_map[i].fmt; i++);
     picref->format = conversion_map[i].pix_fmt;
+
+    for(i=0; conversion_map[i].fmt && m->in_pix_fmt != conversion_map[i].pix_fmt; i++);
+    if (mpi->imgfmt == conversion_map[i].fmt)
+        picref->format = conversion_map[i].pix_fmt;
 
     memcpy(picref->linesize, mpi->stride, FFMIN(sizeof(picref->linesize), sizeof(mpi->stride)));
 
     for(i=0; i<4 && mpi->stride[i]; i++){
-        picref->buf[i] = av_buffer_create(mpi->planes[i], mpi->stride[i], dummy_free, NULL,
-                                          (mpi->flags & MP_IMGFLAG_PRESERVE) ? AV_BUFFER_FLAG_READONLY : 0);
-        if (!picref->buf[i])
-            goto fail;
-        picref->data[i] = picref->buf[i]->data;
+        picref->data[i] = mpi->planes[i];
     }
 
     if(pts != MP_NOPTS_VALUE)
         picref->pts= pts * av_q2d(outlink->time_base);
+
+    if(1) { // mp buffers are currently unsupported in libavfilter, we thus must copy
+        AVFrame *tofree = picref;
+        picref = av_frame_clone(picref);
+        av_frame_free(&tofree);
+    }
 
     ff_filter_frame(outlink, picref);
     m->frame_returned++;
@@ -609,13 +535,13 @@ int ff_vf_next_config(struct vf_instance *vf,
 }
 
 int ff_vf_next_control(struct vf_instance *vf, int request, void* data){
-    MPContext *m= (void*)vf;
+    MPContext *m= (MPContext*)(((uint8_t*)vf) - offsetof(MPContext, vf));
     av_log(m->avfctx, AV_LOG_DEBUG, "Received control %d\n", request);
     return 0;
 }
 
 static int vf_default_query_format(struct vf_instance *vf, unsigned int fmt){
-    MPContext *m= (void*)vf;
+    MPContext *m= (MPContext*)(((uint8_t*)vf) - offsetof(MPContext, vf));
     int i;
     av_log(m->avfctx, AV_LOG_DEBUG, "query %X\n", fmt);
 
@@ -627,14 +553,29 @@ static int vf_default_query_format(struct vf_instance *vf, unsigned int fmt){
 }
 
 
-static av_cold int init(AVFilterContext *ctx, const char *args)
+static av_cold int init(AVFilterContext *ctx)
 {
     MPContext *m = ctx->priv;
+    int cpu_flags = av_get_cpu_flags();
     char name[256];
+    const char *args;
     int i;
+
+    ff_gCpuCaps.hasMMX      = cpu_flags & AV_CPU_FLAG_MMX;
+    ff_gCpuCaps.hasMMX2     = cpu_flags & AV_CPU_FLAG_MMX2;
+    ff_gCpuCaps.hasSSE      = cpu_flags & AV_CPU_FLAG_SSE;
+    ff_gCpuCaps.hasSSE2     = cpu_flags & AV_CPU_FLAG_SSE2;
+    ff_gCpuCaps.hasSSE3     = cpu_flags & AV_CPU_FLAG_SSE3;
+    ff_gCpuCaps.hasSSSE3    = cpu_flags & AV_CPU_FLAG_SSSE3;
+    ff_gCpuCaps.hasSSE4     = cpu_flags & AV_CPU_FLAG_SSE4;
+    ff_gCpuCaps.hasSSE42    = cpu_flags & AV_CPU_FLAG_SSE42;
+    ff_gCpuCaps.hasAVX      = cpu_flags & AV_CPU_FLAG_AVX;
+    ff_gCpuCaps.has3DNow    = cpu_flags & AV_CPU_FLAG_3DNOW;
+    ff_gCpuCaps.has3DNowExt = cpu_flags & AV_CPU_FLAG_3DNOWEXT;
 
     m->avfctx= ctx;
 
+    args = m->filter;
     if(!args || 1!=sscanf(args, "%255[^:=]", name)){
         av_log(ctx, AV_LOG_ERROR, "Invalid parameter.\n");
         return AVERROR(EINVAL);
@@ -793,11 +734,17 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *inpic)
 
     for(i=0; conversion_map[i].fmt && conversion_map[i].pix_fmt != inlink->format; i++);
     ff_mp_image_setfmt(mpi,conversion_map[i].fmt);
+    m->in_pix_fmt = inlink->format;
 
     memcpy(mpi->planes, inpic->data,     FFMIN(sizeof(inpic->data)    , sizeof(mpi->planes)));
     memcpy(mpi->stride, inpic->linesize, FFMIN(sizeof(inpic->linesize), sizeof(mpi->stride)));
 
-    //FIXME pass interleced & tff flags around
+    if (inpic->interlaced_frame)
+        mpi->fields |= MP_IMGFIELD_INTERLACED;
+    if (inpic->top_field_first)
+        mpi->fields |= MP_IMGFIELD_TOP_FIRST;
+    if (inpic->repeat_pict)
+        mpi->fields |= MP_IMGFIELD_REPEAT_FIRST;
 
     // mpi->flags|=MP_IMGFLAG_ALLOCATED; ?
     mpi->flags |= MP_IMGFLAG_READABLE;
@@ -832,13 +779,14 @@ static const AVFilterPad mp_outputs[] = {
     { NULL }
 };
 
-AVFilter avfilter_vf_mp = {
-    .name      = "mp",
-    .description = NULL_IF_CONFIG_SMALL("Apply a libmpcodecs filter to the input video."),
-    .init = init,
-    .uninit = uninit,
-    .priv_size = sizeof(MPContext),
+AVFilter ff_vf_mp = {
+    .name          = "mp",
+    .description   = NULL_IF_CONFIG_SMALL("Apply a libmpcodecs filter to the input video."),
+    .init          = init,
+    .uninit        = uninit,
+    .priv_size     = sizeof(MPContext),
     .query_formats = query_formats,
     .inputs        = mp_inputs,
     .outputs       = mp_outputs,
+    .priv_class    = &mp_class,
 };

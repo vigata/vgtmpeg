@@ -44,7 +44,7 @@ static int subviewer_probe(AVProbeData *p)
     if (AV_RB24(ptr) == 0xEFBBBF)
         ptr += 3;  /* skip UTF-8 BOM */
     if (sscanf(ptr, "%*u:%*u:%*u.%*u,%*u:%*u:%*u.%*u%c", &c) == 1)
-        return AVPROBE_SCORE_MAX/2;
+        return AVPROBE_SCORE_EXTENSION;
     if (!strncmp(ptr, "[INFORMATION]", 13))
         return AVPROBE_SCORE_MAX/3;
     return 0;
@@ -84,7 +84,7 @@ static int subviewer_read_header(AVFormatContext *s)
 
     av_bprint_init(&header, 0, AV_BPRINT_SIZE_UNLIMITED);
 
-    while (!url_feof(s->pb)) {
+    while (!avio_feof(s->pb)) {
         char line[2048];
         int64_t pos = 0;
         int len = ff_get_line(s->pb, line, sizeof(line));

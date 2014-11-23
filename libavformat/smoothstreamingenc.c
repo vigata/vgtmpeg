@@ -34,6 +34,7 @@
 
 #include "libavutil/opt.h"
 #include "libavutil/avstring.h"
+#include "libavutil/file.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/intreadwrite.h"
 
@@ -154,8 +155,11 @@ static void get_private_data(OutputStream *os)
     if (!ptr)
         return;
     os->private_str = av_mallocz(2*size + 1);
+    if (!os->private_str)
+        goto fail;
     for (i = 0; i < size; i++)
         snprintf(&os->private_str[2*i], 3, "%02x", ptr[i]);
+fail:
     if (ptr != codec->extradata)
         av_free(ptr);
 }
@@ -210,14 +214,17 @@ static int write_manifest(AVFormatContext *s, int final)
 {
     SmoothStreamingContext *c = s->priv_data;
     AVIOContext *out;
-    char filename[1024];
+    char filename[1024], temp_filename[1024];
+    const char *write_filename;
     int ret, i, video_chunks = 0, audio_chunks = 0, video_streams = 0, audio_streams = 0;
     int64_t duration = 0;
 
     snprintf(filename, sizeof(filename), "%s/Manifest", s->filename);
-    ret = avio_open2(&out, filename, AVIO_FLAG_WRITE, &s->interrupt_callback, NULL);
+    snprintf(temp_filename, sizeof(temp_filename), "%s/Manifest.tmp", s->filename);
+    write_filename = USE_RENAME_REPLACE ? temp_filename : filename;
+    ret = avio_open2(&out, write_filename, AVIO_FLAG_WRITE, &s->interrupt_callback, NULL);
     if (ret < 0) {
-        av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", filename);
+        av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", write_filename);
         return ret;
     }
     avio_printf(out, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
@@ -278,7 +285,7 @@ static int write_manifest(AVFormatContext *s, int final)
     avio_printf(out, "</SmoothStreamingMedia>\n");
     avio_flush(out);
     avio_close(out);
-    return 0;
+    return USE_RENAME_REPLACE ? ff_rename(temp_filename, filename, s) : 0;
 }
 
 static int ism_write_header(AVFormatContext *s)
@@ -287,9 +294,9 @@ static int ism_write_header(AVFormatContext *s)
     int ret = 0, i;
     AVOutputFormat *oformat;
 
-    if (mkdir(s->filename, 0777) < 0) {
-        av_log(s, AV_LOG_ERROR, "mkdir failed\n");
+    if (mkdir(s->filename, 0777) == -1 && errno != EEXIST) {
         ret = AVERROR(errno);
+        av_log(s, AV_LOG_ERROR, "mkdir failed\n");
         goto fail;
     }
 
@@ -299,7 +306,7 @@ static int ism_write_header(AVFormatContext *s)
         goto fail;
     }
 
-    c->streams = av_mallocz(sizeof(*c->streams) * s->nb_streams);
+    c->streams = av_mallocz_array(s->nb_streams, sizeof(*c->streams));
     if (!c->streams) {
         ret = AVERROR(ENOMEM);
         goto fail;
@@ -310,7 +317,6 @@ static int ism_write_header(AVFormatContext *s)
         AVFormatContext *ctx;
         AVStream *st;
         AVDictionary *opts = NULL;
-        char buf[10];
 
         if (!s->streams[i]->codec->bit_rate) {
             av_log(s, AV_LOG_ERROR, "No bit rate set for stream %d\n", i);
@@ -318,7 +324,7 @@ static int ism_write_header(AVFormatContext *s)
             goto fail;
         }
         snprintf(os->dirname, sizeof(os->dirname), "%s/QualityLevels(%d)", s->filename, s->streams[i]->codec->bit_rate);
-        if (mkdir(os->dirname, 0777) < 0) {
+        if (mkdir(os->dirname, 0777) == -1 && errno != EEXIST) {
             ret = AVERROR(errno);
             av_log(s, AV_LOG_ERROR, "mkdir failed\n");
             goto fail;
@@ -339,6 +345,7 @@ static int ism_write_header(AVFormatContext *s)
         }
         avcodec_copy_context(st->codec, s->streams[i]->codec);
         st->sample_aspect_ratio = s->streams[i]->sample_aspect_ratio;
+        st->time_base = s->streams[i]->time_base;
 
         ctx->pb = avio_alloc_context(os->iobuf, sizeof(os->iobuf), AVIO_FLAG_WRITE, os, NULL, ism_write, ism_seek);
         if (!ctx->pb) {
@@ -346,8 +353,7 @@ static int ism_write_header(AVFormatContext *s)
             goto fail;
         }
 
-        snprintf(buf, sizeof(buf), "%d", c->lookahead_count);
-        av_dict_set(&opts, "ism_lookahead", buf, 0);
+        av_dict_set_int(&opts, "ism_lookahead", c->lookahead_count, 0);
         av_dict_set(&opts, "movflags", "frag_custom", 0);
         if ((ret = avformat_write_header(ctx, &opts)) < 0) {
              goto fail;
@@ -428,7 +434,7 @@ static int parse_fragment(AVFormatContext *s, const char *filename, int64_t *sta
         if (len < 8 || len >= *moof_size)
             goto fail;
         if (tag == MKTAG('u','u','i','d')) {
-            const uint8_t tfxd[] = {
+            static const uint8_t tfxd[] = {
                 0x6d, 0x1d, 0x9b, 0x05, 0x42, 0xd5, 0x44, 0xe6,
                 0x80, 0xe2, 0x14, 0x1d, 0xaf, 0xf7, 0x57, 0xb2
             };
@@ -451,12 +457,16 @@ fail:
 
 static int add_fragment(OutputStream *os, const char *file, const char *infofile, int64_t start_time, int64_t duration, int64_t start_pos, int64_t size)
 {
+    int err;
     Fragment *frag;
     if (os->nb_fragments >= os->fragments_size) {
         os->fragments_size = (os->fragments_size + 1) * 2;
-        os->fragments = av_realloc(os->fragments, sizeof(*os->fragments)*os->fragments_size);
-        if (!os->fragments)
-            return AVERROR(ENOMEM);
+        if ((err = av_reallocp(&os->fragments, sizeof(*os->fragments) *
+                               os->fragments_size)) < 0) {
+            os->fragments_size = 0;
+            os->nb_fragments = 0;
+            return err;
+        }
     }
     frag = av_mallocz(sizeof(*frag));
     if (!frag)
@@ -508,7 +518,7 @@ static int ism_flush(AVFormatContext *s, int final)
     for (i = 0; i < s->nb_streams; i++) {
         OutputStream *os = &c->streams[i];
         char filename[1024], target_filename[1024], header_filename[1024];
-        int64_t start_pos = os->tail_pos, size;
+        int64_t size;
         int64_t start_ts, duration, moof_size;
         if (!os->packets_written)
             continue;
@@ -526,14 +536,17 @@ static int ism_flush(AVFormatContext *s, int final)
 
         ffurl_close(os->out);
         os->out = NULL;
-        size = os->tail_pos - start_pos;
+        size = os->tail_pos - os->cur_start_pos;
         if ((ret = parse_fragment(s, filename, &start_ts, &duration, &moof_size, size)) < 0)
             break;
         snprintf(header_filename, sizeof(header_filename), "%s/FragmentInfo(%s=%"PRIu64")", os->dirname, os->stream_type_tag, start_ts);
         snprintf(target_filename, sizeof(target_filename), "%s/Fragments(%s=%"PRIu64")", os->dirname, os->stream_type_tag, start_ts);
         copy_moof(s, filename, header_filename, moof_size);
-        rename(filename, target_filename);
-        add_fragment(os, target_filename, header_filename, start_ts, duration, start_pos, size);
+        ret = ff_rename(filename, target_filename, s);
+        if (ret < 0)
+            break;
+        add_fragment(os, target_filename, header_filename, start_ts, duration,
+                     os->cur_start_pos, size);
     }
 
     if (c->window_size || (final && c->remove_at_exit)) {
@@ -567,7 +580,7 @@ static int ism_write_packet(AVFormatContext *s, AVPacket *pkt)
     SmoothStreamingContext *c = s->priv_data;
     AVStream *st = s->streams[pkt->stream_index];
     OutputStream *os = &c->streams[pkt->stream_index];
-    int64_t end_dts = (c->nb_fragments + 1LL) * c->min_frag_duration;
+    int64_t end_dts = (c->nb_fragments + 1) * (int64_t) c->min_frag_duration;
     int ret;
 
     if (st->first_dts == AV_NOPTS_VALUE)
@@ -584,7 +597,7 @@ static int ism_write_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     os->packets_written++;
-    return ff_write_chained(os->ctx, 0, pkt, s);
+    return ff_write_chained(os->ctx, 0, pkt, s, 0);
 }
 
 static int ism_write_trailer(AVFormatContext *s)

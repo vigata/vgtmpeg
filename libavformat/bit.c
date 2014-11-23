@@ -44,7 +44,7 @@ static int probe(AVProbeData *p)
             return 0;
         i+=j;
     }
-    return AVPROBE_SCORE_MAX/2;
+    return AVPROBE_SCORE_EXTENSION;
 }
 
 static int read_header(AVFormatContext *s)
@@ -76,7 +76,7 @@ static int read_packet(AVFormatContext *s,
     int i, j, ret;
     int64_t pos= avio_tell(pb);
 
-    if(url_feof(pb))
+    if(avio_feof(pb))
         return AVERROR_EOF;
 
     avio_rl16(pb); // sync word
@@ -139,7 +139,6 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
     init_get_bits(&gb, pkt->data, 8*10);
     for(i=0; i< 8 * 10; i++)
         avio_wl16(pb, get_bits1(&gb) ? BIT_1 : BIT_0);
-    avio_flush(pb);
 
     return 0;
 }

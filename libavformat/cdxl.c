@@ -41,7 +41,7 @@ typedef struct CDXLDemuxContext {
 
 static int cdxl_read_probe(AVProbeData *p)
 {
-    int score = AVPROBE_SCORE_MAX / 2 + 10;
+    int score = AVPROBE_SCORE_EXTENSION + 10;
 
     if (p->buf_size < CDXL_HEADER_SIZE)
         return 0;
@@ -110,7 +110,7 @@ static int cdxl_read_packet(AVFormatContext *s, AVPacket *pkt)
     int64_t  pos;
     int      ret;
 
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return AVERROR_EOF;
 
     pos = avio_tell(pb);

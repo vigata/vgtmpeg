@@ -195,8 +195,8 @@ static void libschroedinger_handle_first_access_unit(AVCodecContext *avctx)
         return;
     }
 
-    avctx->time_base.den = p_schro_params->format->frame_rate_numerator;
-    avctx->time_base.num = p_schro_params->format->frame_rate_denominator;
+    avctx->framerate.num = p_schro_params->format->frame_rate_numerator;
+    avctx->framerate.den = p_schro_params->format->frame_rate_denominator;
 }
 
 static int libschroedinger_decode_frame(AVCodecContext *avctx,
@@ -374,6 +374,7 @@ static void libschroedinger_flush(AVCodecContext *avctx)
 
 AVCodec ff_libschroedinger_decoder = {
     .name           = "libschroedinger",
+    .long_name      = NULL_IF_CONFIG_SMALL("libschroedinger Dirac 2.2"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_DIRAC,
     .priv_data_size = sizeof(SchroDecoderParams),
@@ -382,5 +383,4 @@ AVCodec ff_libschroedinger_decoder = {
     .decode         = libschroedinger_decode_frame,
     .capabilities   = CODEC_CAP_DELAY,
     .flush          = libschroedinger_flush,
-    .long_name      = NULL_IF_CONFIG_SMALL("libschroedinger Dirac 2.2"),
 };

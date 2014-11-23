@@ -27,6 +27,7 @@
  * @see http://notbrainsurgery.livejournal.com/29773.html
  */
 
+#include "libavutil/opt.h"
 #include "avfilter.h"
 #include "internal.h"
 
@@ -38,27 +39,27 @@ struct thumb_frame {
 };
 
 typedef struct {
+    const AVClass *class;
     int n;                      ///< current frame
     int n_frames;               ///< number of frames for analysis
     struct thumb_frame *frames; ///< the n_frames frames
     AVRational tb;              ///< copy of the input timebase to ease access
 } ThumbContext;
 
-static av_cold int init(AVFilterContext *ctx, const char *args)
+#define OFFSET(x) offsetof(ThumbContext, x)
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+
+static const AVOption thumbnail_options[] = {
+    { "n", "set the frames batch size", OFFSET(n_frames), AV_OPT_TYPE_INT, {.i64=100}, 2, INT_MAX, FLAGS },
+    { NULL }
+};
+
+AVFILTER_DEFINE_CLASS(thumbnail);
+
+static av_cold int init(AVFilterContext *ctx)
 {
     ThumbContext *thumb = ctx->priv;
 
-    if (!args) {
-        thumb->n_frames = 100;
-    } else {
-        int n = sscanf(args, "%d", &thumb->n_frames);
-        if (n != 1 || thumb->n_frames < 2) {
-            thumb->n_frames = 0;
-            av_log(ctx, AV_LOG_ERROR,
-                   "Invalid number of frames specified (minimum is 2).\n");
-            return AVERROR(EINVAL);
-        }
-    }
     thumb->frames = av_calloc(thumb->n_frames, sizeof(*thumb->frames));
     if (!thumb->frames) {
         av_log(ctx, AV_LOG_ERROR,
@@ -208,11 +209,10 @@ static int query_formats(AVFilterContext *ctx)
 
 static const AVFilterPad thumbnail_inputs[] = {
     {
-        .name             = "default",
-        .type             = AVMEDIA_TYPE_VIDEO,
-        .config_props     = config_props,
-        .get_video_buffer = ff_null_get_video_buffer,
-        .filter_frame     = filter_frame,
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_VIDEO,
+        .config_props = config_props,
+        .filter_frame = filter_frame,
     },
     { NULL }
 };
@@ -226,7 +226,7 @@ static const AVFilterPad thumbnail_outputs[] = {
     { NULL }
 };
 
-AVFilter avfilter_vf_thumbnail = {
+AVFilter ff_vf_thumbnail = {
     .name          = "thumbnail",
     .description   = NULL_IF_CONFIG_SMALL("Select the most representative frame in a given sequence of consecutive frames."),
     .priv_size     = sizeof(ThumbContext),
@@ -235,4 +235,5 @@ AVFilter avfilter_vf_thumbnail = {
     .query_formats = query_formats,
     .inputs        = thumbnail_inputs,
     .outputs       = thumbnail_outputs,
+    .priv_class    = &thumbnail_class,
 };

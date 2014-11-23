@@ -71,7 +71,7 @@ static const AVOption sine_options[] = {
     OPT_DUR("duration",          duration,               0, 0, INT64_MAX, "set the audio duration"),
     OPT_DUR("d",                 duration,               0, 0, INT64_MAX, "set the audio duration"),
     OPT_INT("samples_per_frame", samples_per_frame,   1024, 0, INT_MAX,   "set the number of samples per frame"),
-    {NULL},
+    {NULL}
 };
 
 AVFILTER_DEFINE_CLASS(sine);
@@ -120,17 +120,10 @@ static void make_sin_table(int16_t *sin)
         sin[i + 2 * half_pi] = -sin[i];
 }
 
-static av_cold int init(AVFilterContext *ctx, const char *args)
+static av_cold int init(AVFilterContext *ctx)
 {
     SineContext *sine = ctx->priv;
-    static const char *shorthand[] = { "frequency", "beep_factor", NULL };
-    int ret;
 
-    sine->class = &sine_class;
-    av_opt_set_defaults(sine);
-
-    if ((ret = av_opt_set_from_string(sine, args, shorthand, "=", ":")) < 0)
-        return ret;
     if (!(sine->sin = av_malloc(sizeof(*sine->sin) << LOG_PERIOD)))
         return AVERROR(ENOMEM);
     sine->dphi = ldexp(sine->frequency, 32) / sine->sample_rate + 0.5;
@@ -217,7 +210,7 @@ static const AVFilterPad sine_outputs[] = {
     { NULL }
 };
 
-AVFilter avfilter_asrc_sine = {
+AVFilter ff_asrc_sine = {
     .name          = "sine",
     .description   = NULL_IF_CONFIG_SMALL("Generate sine wave audio signal."),
     .query_formats = query_formats,

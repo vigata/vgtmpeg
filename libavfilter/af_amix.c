@@ -2,20 +2,20 @@
  * Audio Mix Filter
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -28,6 +28,7 @@
  * output.
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/audio_fifo.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
@@ -109,7 +110,7 @@ static void frame_list_remove_samples(FrameList *frame_list, int nb_samples)
         int samples = nb_samples;
         while (samples > 0) {
             FrameInfo *info = frame_list->list;
-            av_assert0(info != NULL);
+            av_assert0(info);
             if (info->nb_samples <= samples) {
                 samples -= info->nb_samples;
                 frame_list->list = info->next;
@@ -141,7 +142,7 @@ static int frame_list_add_frame(FrameList *frame_list, int nb_samples, int64_t p
         frame_list->list = info;
         frame_list->end  = info;
     } else {
-        av_assert0(frame_list->end != NULL);
+        av_assert0(frame_list->end);
         frame_list->end->next = info;
         frame_list->end       = info;
     }
@@ -154,7 +155,7 @@ static int frame_list_add_frame(FrameList *frame_list, int nb_samples, int64_t p
 
 typedef struct MixContext {
     const AVClass *class;       /**< class for AVOptions */
-    AVFloatDSPContext fdsp;
+    AVFloatDSPContext *fdsp;
 
     int nb_inputs;              /**< number of inputs */
     int active_inputs;          /**< number of input currently active */
@@ -186,7 +187,7 @@ static const AVOption amix_options[] = {
     { "dropout_transition", "Transition time, in seconds, for volume "
                             "renormalization when an input stream ends.",
             OFFSET(dropout_transition), AV_OPT_TYPE_FLOAT, { .dbl = 2.0 }, 0, INT_MAX, A|F },
-    { NULL },
+    { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(amix);
@@ -248,7 +249,7 @@ static int config_output(AVFilterLink *outlink)
     memset(s->input_state, INPUT_ON, s->nb_inputs);
     s->active_inputs = s->nb_inputs;
 
-    s->input_scale = av_mallocz(s->nb_inputs * sizeof(*s->input_scale));
+    s->input_scale = av_mallocz_array(s->nb_inputs, sizeof(*s->input_scale));
     if (!s->input_scale)
         return AVERROR(ENOMEM);
     s->scale_norm = s->active_inputs;
@@ -297,7 +298,7 @@ static int output_frame(AVFilterLink *outlink, int nb_samples)
             plane_size = FFALIGN(plane_size, 16);
 
             for (p = 0; p < planes; p++) {
-                s->fdsp.vector_fmac_scalar((float *)out_buf->extended_data[p],
+                s->fdsp->vector_fmac_scalar((float *)out_buf->extended_data[p],
                                            (float *) in_buf->extended_data[p],
                                            s->input_scale[i], plane_size);
             }
@@ -483,17 +484,10 @@ fail:
     return ret;
 }
 
-static int init(AVFilterContext *ctx, const char *args)
+static av_cold int init(AVFilterContext *ctx)
 {
     MixContext *s = ctx->priv;
-    int i, ret;
-
-    s->class = &amix_class;
-    av_opt_set_defaults(s);
-
-    if ((ret = av_set_options_string(s, args, "=", ":")) < 0)
-        return ret;
-    av_opt_free(s);
+    int i;
 
     for (i = 0; i < s->nb_inputs; i++) {
         char name[32];
@@ -507,12 +501,14 @@ static int init(AVFilterContext *ctx, const char *args)
         ff_insert_inpad(ctx, i, &pad);
     }
 
-    avpriv_float_dsp_init(&s->fdsp, 0);
+    s->fdsp = avpriv_float_dsp_alloc(0);
+    if (!s->fdsp)
+        return AVERROR(ENOMEM);
 
     return 0;
 }
 
-static void uninit(AVFilterContext *ctx)
+static av_cold void uninit(AVFilterContext *ctx)
 {
     int i;
     MixContext *s = ctx->priv;
@@ -526,6 +522,7 @@ static void uninit(AVFilterContext *ctx)
     av_freep(&s->frame_list);
     av_freep(&s->input_state);
     av_freep(&s->input_scale);
+    av_freep(&s->fdsp);
 
     for (i = 0; i < ctx->nb_inputs; i++)
         av_freep(&ctx->input_pads[i].name);
@@ -534,10 +531,17 @@ static void uninit(AVFilterContext *ctx)
 static int query_formats(AVFilterContext *ctx)
 {
     AVFilterFormats *formats = NULL;
+    AVFilterChannelLayouts *layouts;
+
+    layouts = ff_all_channel_layouts();
+
+    if (!layouts)
+        return AVERROR(ENOMEM);
+
     ff_add_format(&formats, AV_SAMPLE_FMT_FLT);
     ff_add_format(&formats, AV_SAMPLE_FMT_FLTP);
     ff_set_common_formats(ctx, formats);
-    ff_set_common_channel_layouts(ctx, ff_all_channel_layouts());
+    ff_set_common_channel_layouts(ctx, layouts);
     ff_set_common_samplerates(ctx, ff_all_samplerates());
     return 0;
 }
@@ -552,16 +556,15 @@ static const AVFilterPad avfilter_af_amix_outputs[] = {
     { NULL }
 };
 
-AVFilter avfilter_af_amix = {
-    .name          = "amix",
-    .description   = NULL_IF_CONFIG_SMALL("Audio mixing."),
-    .priv_size     = sizeof(MixContext),
-
+AVFilter ff_af_amix = {
+    .name           = "amix",
+    .description    = NULL_IF_CONFIG_SMALL("Audio mixing."),
+    .priv_size      = sizeof(MixContext),
+    .priv_class     = &amix_class,
     .init           = init,
     .uninit         = uninit,
     .query_formats  = query_formats,
-
-    .inputs    = NULL,
-    .outputs   = avfilter_af_amix_outputs,
-    .priv_class = &amix_class,
+    .inputs         = NULL,
+    .outputs        = avfilter_af_amix_outputs,
+    .flags          = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };

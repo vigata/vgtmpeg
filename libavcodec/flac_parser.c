@@ -27,11 +27,12 @@
  * Each time it finds and verifies a CRC-8 header it sees which of the
  * FLAC_MAX_SEQUENTIAL_HEADERS that came before it have a valid CRC-16 footer
  * that ends at the newly found header.
- * Headers are scored by FLAC_HEADER_BASE_SCORE plus the max of it's crc-verified
+ * Headers are scored by FLAC_HEADER_BASE_SCORE plus the max of its crc-verified
  * children, penalized by changes in sample rate, frame number, etc.
  * The parser returns the frame with the highest score.
  **/
 
+#include "libavutil/attributes.h"
 #include "libavutil/crc.h"
 #include "libavutil/fifo.h"
 #include "bytestream.h"
@@ -86,6 +87,8 @@ typedef struct FLACParseContext {
     int end_padded;                /**< specifies if fifo_buf's end is padded */
     uint8_t *wrap_buf;             /**< general fifo read buffer when wrapped */
     int wrap_buf_allocated_size;   /**< actual allocated size of the buffer   */
+    FLACFrameInfo last_fi;         /**< last decoded frame header info        */
+    int last_fi_valid;             /**< set if last_fi is valid               */
 } FLACParseContext;
 
 static int frame_header_is_valid(AVCodecContext *avctx, const uint8_t *buf,
@@ -266,13 +269,12 @@ static int find_new_headers(FLACParseContext *fpc, int search_start)
     return size;
 }
 
-static int check_header_mismatch(FLACParseContext  *fpc,
-                                 FLACHeaderMarker  *header,
-                                 FLACHeaderMarker  *child,
-                                 int                log_level_offset)
+static int check_header_fi_mismatch(FLACParseContext  *fpc,
+                                    FLACFrameInfo     *header_fi,
+                                    FLACFrameInfo     *child_fi,
+                                    int                log_level_offset)
 {
-    FLACFrameInfo  *header_fi = &header->fi, *child_fi = &child->fi;
-    int deduction = 0, deduction_expected = 0, i;
+    int deduction = 0;
     if (child_fi->samplerate != header_fi->samplerate) {
         deduction += FLAC_HEADER_CHANGED_PENALTY;
         av_log(fpc->avctx, AV_LOG_WARNING + log_level_offset,
@@ -287,13 +289,25 @@ static int check_header_mismatch(FLACParseContext  *fpc,
         /* Changing blocking strategy not allowed per the spec */
         deduction += FLAC_HEADER_BASE_SCORE;
         av_log(fpc->avctx, AV_LOG_WARNING + log_level_offset,
-                   "blocking strategy change detected in adjacent frames\n");
+               "blocking strategy change detected in adjacent frames\n");
     }
     if (child_fi->channels != header_fi->channels) {
         deduction += FLAC_HEADER_CHANGED_PENALTY;
         av_log(fpc->avctx, AV_LOG_WARNING + log_level_offset,
-                   "number of channels change detected in adjacent frames\n");
+               "number of channels change detected in adjacent frames\n");
     }
+    return deduction;
+}
+
+static int check_header_mismatch(FLACParseContext  *fpc,
+                                 FLACHeaderMarker  *header,
+                                 FLACHeaderMarker  *child,
+                                 int                log_level_offset)
+{
+    FLACFrameInfo  *header_fi = &header->fi, *child_fi = &child->fi;
+    int deduction, deduction_expected = 0, i;
+    deduction = check_header_fi_mismatch(fpc, header_fi, child_fi,
+                                         log_level_offset);
     /* Check sample and frame numbers. */
     if ((child_fi->frame_or_sample_num - header_fi->frame_or_sample_num
          != header_fi->blocksize) &&
@@ -398,11 +412,18 @@ static int score_header(FLACParseContext *fpc, FLACHeaderMarker *header)
     FLACHeaderMarker *child;
     int dist = 0;
     int child_score;
-
+    int base_score = FLAC_HEADER_BASE_SCORE;
     if (header->max_score != FLAC_HEADER_NOT_SCORED_YET)
         return header->max_score;
 
-    header->max_score = FLAC_HEADER_BASE_SCORE;
+    /* Modify the base score with changes from the last output header */
+    if (fpc->last_fi_valid) {
+        /* Silence the log since this will be repeated if selected */
+        base_score -= check_header_fi_mismatch(fpc, &fpc->last_fi, &header->fi,
+                                               AV_LOG_DEBUG);
+    }
+
+    header->max_score = base_score;
 
     /* Check and compute the children's scores. */
     child = header->next;
@@ -418,7 +439,7 @@ static int score_header(FLACParseContext *fpc, FLACHeaderMarker *header)
         if (FLAC_HEADER_BASE_SCORE + child_score > header->max_score) {
             /* Keep the child because the frame scoring is dynamic. */
             header->best_child = child;
-            header->max_score  = FLAC_HEADER_BASE_SCORE + child_score;
+            header->max_score  = base_score + child_score;
         }
         child = child->next;
     }
@@ -429,7 +450,7 @@ static int score_header(FLACParseContext *fpc, FLACHeaderMarker *header)
 static void score_sequences(FLACParseContext *fpc)
 {
     FLACHeaderMarker *curr;
-    int best_score = FLAC_HEADER_NOT_SCORED_YET;
+    int best_score = 0;//FLAC_HEADER_NOT_SCORED_YET;
     /* First pass to clear all old scores. */
     for (curr = fpc->headers; curr; curr = curr->next)
         curr->max_score = FLAC_HEADER_NOT_SCORED_YET;
@@ -468,7 +489,18 @@ static int get_best_header(FLACParseContext* fpc, const uint8_t **poutbuf,
                                         &fpc->wrap_buf,
                                         &fpc->wrap_buf_allocated_size);
 
+
+    if (fpc->pc->flags & PARSER_FLAG_USE_CODEC_TS){
+        if (header->fi.is_var_size)
+          fpc->pc->pts = header->fi.frame_or_sample_num;
+        else if (header->best_child)
+          fpc->pc->pts = header->fi.frame_or_sample_num * header->fi.blocksize;
+    }
+
     fpc->best_header_valid = 0;
+    fpc->last_fi_valid = 1;
+    fpc->last_fi = header->fi;
+
     /* Return the negative overread index so the client can compute pos.
        This should be the amount overread to the beginning of the child */
     if (child)
@@ -488,8 +520,16 @@ static int flac_parse(AVCodecParserContext *s, AVCodecContext *avctx,
 
     if (s->flags & PARSER_FLAG_COMPLETE_FRAMES) {
         FLACFrameInfo fi;
-        if (frame_header_is_valid(avctx, buf, &fi))
+        if (frame_header_is_valid(avctx, buf, &fi)) {
             s->duration = fi.blocksize;
+            if (!avctx->sample_rate)
+                avctx->sample_rate = fi.samplerate;
+            if (fpc->pc->flags & PARSER_FLAG_USE_CODEC_TS){
+                fpc->pc->pts = fi.frame_or_sample_num;
+                if (!fi.is_var_size)
+                  fpc->pc->pts *= fi.blocksize;
+            }
+        }
         *poutbuf      = buf;
         *poutbuf_size = buf_size;
         return buf_size;
@@ -572,7 +612,7 @@ static int flac_parse(AVCodecParserContext *s, AVCodecContext *avctx,
         if (   av_fifo_space(fpc->fifo_buf) < read_end - read_start
             && av_fifo_realloc2(fpc->fifo_buf, (read_end - read_start) + 2*av_fifo_size(fpc->fifo_buf)) < 0) {
             av_log(avctx, AV_LOG_ERROR,
-                   "couldn't reallocate buffer of size %td\n",
+                   "couldn't reallocate buffer of size %"PTRDIFF_SPECIFIER"\n",
                    (read_end - read_start) + av_fifo_size(fpc->fifo_buf));
             goto handle_error;
         }
@@ -627,10 +667,12 @@ static int flac_parse(AVCodecParserContext *s, AVCodecContext *avctx,
         }
     }
 
-    curr = fpc->headers;
-    for (curr = fpc->headers; curr; curr = curr->next)
-        if (!fpc->best_header || curr->max_score > fpc->best_header->max_score)
+    for (curr = fpc->headers; curr; curr = curr->next) {
+        if (curr->max_score > 0 &&
+            (!fpc->best_header || curr->max_score > fpc->best_header->max_score)) {
             fpc->best_header = curr;
+        }
+    }
 
     if (fpc->best_header) {
         fpc->best_header_valid = 1;
@@ -658,13 +700,15 @@ handle_error:
     return read_end - buf;
 }
 
-static int flac_parse_init(AVCodecParserContext *c)
+static av_cold int flac_parse_init(AVCodecParserContext *c)
 {
     FLACParseContext *fpc = c->priv_data;
     fpc->pc = c;
     /* There will generally be FLAC_MIN_HEADERS buffered in the fifo before
        it drains.  This is allocated early to avoid slow reallocation. */
-    fpc->fifo_buf = av_fifo_alloc(FLAC_AVG_FRAME_SIZE * (FLAC_MIN_HEADERS + 3));
+    fpc->fifo_buf = av_fifo_alloc_array(FLAC_MIN_HEADERS + 3, FLAC_AVG_FRAME_SIZE);
+    if (!fpc->fifo_buf)
+        return AVERROR(ENOMEM);
     return 0;
 }
 
@@ -679,8 +723,8 @@ static void flac_parse_close(AVCodecParserContext *c)
         av_free(curr);
         curr = temp;
     }
-    av_fifo_free(fpc->fifo_buf);
-    av_free(fpc->wrap_buf);
+    av_fifo_freep(&fpc->fifo_buf);
+    av_freep(&fpc->wrap_buf);
 }
 
 AVCodecParser ff_flac_parser = {

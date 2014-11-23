@@ -1,7 +1,7 @@
 /*
  * FFV1 codec for libavcodec
  *
- * Copyright (c) 2003-2012 Michael Niedermayer <michaelni@gmx.at>
+ * Copyright (c) 2003-2013 Michael Niedermayer <michaelni@gmx.at>
  *
  * This file is part of FFmpeg.
  *
@@ -25,6 +25,7 @@
  * FF Video Codec 1 (a lossless codec)
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/crc.h"
 #include "libavutil/opt.h"
@@ -48,9 +49,10 @@ av_cold int ffv1_common_init(AVCodecContext *avctx)
     s->avctx = avctx;
     s->flags = avctx->flags;
 
-    avcodec_get_frame_defaults(&s->picture);
-
-    ff_dsputil_init(&s->dsp, avctx);
+    s->picture.f = av_frame_alloc();
+    s->last_picture.f = av_frame_alloc();
+    if (!s->picture.f || !s->last_picture.f)
+        return AVERROR(ENOMEM);
 
     s->width  = avctx->width;
     s->height = avctx->height;
@@ -62,7 +64,7 @@ av_cold int ffv1_common_init(AVCodecContext *avctx)
     return 0;
 }
 
-int ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs)
+av_cold int ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs)
 {
     int j;
 
@@ -73,13 +75,13 @@ int ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs)
 
         if (fs->ac) {
             if (!p->state)
-                p->state = av_malloc(CONTEXT_SIZE * p->context_count *
+                p->state = av_malloc_array(p->context_count, CONTEXT_SIZE *
                                      sizeof(uint8_t));
             if (!p->state)
                 return AVERROR(ENOMEM);
         } else {
             if (!p->vlc_state)
-                p->vlc_state = av_malloc(p->context_count * sizeof(VlcState));
+                p->vlc_state = av_malloc_array(p->context_count, sizeof(VlcState));
             if (!p->vlc_state)
                 return AVERROR(ENOMEM);
         }
@@ -96,7 +98,7 @@ int ffv1_init_slice_state(FFV1Context *f, FFV1Context *fs)
     return 0;
 }
 
-int ffv1_init_slices_state(FFV1Context *f)
+av_cold int ffv1_init_slices_state(FFV1Context *f)
 {
     int i, ret;
     for (i = 0; i < f->slice_count; i++) {
@@ -135,7 +137,7 @@ av_cold int ffv1_init_slice_contexts(FFV1Context *f)
         fs->slice_x      = sxs;
         fs->slice_y      = sys;
 
-        fs->sample_buffer = av_malloc(3 * MAX_PLANES * (fs->width + 6) *
+        fs->sample_buffer = av_malloc_array((fs->width + 6), 3 * MAX_PLANES *
                                       sizeof(*fs->sample_buffer));
         if (!fs->sample_buffer)
             return AVERROR(ENOMEM);
@@ -148,7 +150,7 @@ int ffv1_allocate_initial_states(FFV1Context *f)
     int i;
 
     for (i = 0; i < f->quant_table_count; i++) {
-        f->initial_states[i] = av_malloc(f->context_count[i] *
+        f->initial_states[i] = av_malloc_array(f->context_count[i],
                                          sizeof(*f->initial_states[i]));
         if (!f->initial_states[i])
             return AVERROR(ENOMEM);
@@ -191,7 +193,13 @@ av_cold int ffv1_close(AVCodecContext *avctx)
     FFV1Context *s = avctx->priv_data;
     int i, j;
 
-    av_frame_unref(&s->last_picture);
+    if (s->picture.f)
+        ff_thread_release_buffer(avctx, &s->picture);
+    av_frame_free(&s->picture.f);
+
+    if (s->last_picture.f)
+        ff_thread_release_buffer(avctx, &s->last_picture);
+    av_frame_free(&s->last_picture.f);
 
     for (j = 0; j < s->slice_count; j++) {
         FFV1Context *fs = s->slice_context[j];

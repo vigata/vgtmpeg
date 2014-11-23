@@ -24,7 +24,7 @@ various FFmpeg APIs.
 @chapter Options
 @c man begin OPTIONS
 
-@include avtools-common-opts.texi
+@include fftools-common-opts.texi
 
 @section Main options
 
@@ -37,10 +37,14 @@ Force displayed height.
 Set frame size (WxH or abbreviation), needed for videos which do
 not contain a header with the frame size like raw YUV.  This option
 has been deprecated in favor of private options, try -video_size.
+@item -fs
+Start in fullscreen mode.
 @item -an
 Disable audio.
 @item -vn
 Disable video.
+@item -sn
+Disable subtitles.
 @item -ss @var{pos}
 Seek to a given position in seconds.
 @item -t @var{duration}
@@ -73,19 +77,22 @@ Default value is "video", if video is not present or cannot be played
 You can interactively cycle through the available show modes by
 pressing the key @key{w}.
 
-@item -vf @var{filter_graph}
-Create the filter graph specified by @var{filter_graph} and use it to
+@item -vf @var{filtergraph}
+Create the filtergraph specified by @var{filtergraph} and use it to
 filter the video stream.
 
-@var{filter_graph} is a description of the filter graph to apply to
+@var{filtergraph} is a description of the filtergraph to apply to
 the stream, and must have a single video input and a single video
-output. In the filter graph, the input is associated to the label
+output. In the filtergraph, the input is associated to the label
 @code{in}, and the output to the label @code{out}. See the
 ffmpeg-filters manual for more information about the filtergraph
 syntax.
 
-@item -af @var{filter_graph}
-@var{filter_graph} is a description of the filter graph to apply to
+You can specify this parameter multiple times and cycle through the specified
+filtergraphs along with the show modes by pressing the key @key{w}.
+
+@item -af @var{filtergraph}
+@var{filtergraph} is a description of the filtergraph to apply to
 the input audio.
 Use the option "-filters" to show all the available filters (including
 sources and sinks).
@@ -106,15 +113,10 @@ duration, the codec parameters, the current position in the stream and
 the audio/video synchronisation drift. It is on by default, to
 explicitly disable it you need to specify @code{-nostats}.
 
-@item -bug
-Work around bugs.
 @item -fast
 Non-spec-compliant optimizations.
 @item -genpts
 Generate pts.
-@item -rtp_tcp
-Force RTP/TCP protocol usage instead of RTP/UDP. It is only meaningful
-if you are streaming with the RTSP protocol.
 @item -sync @var{type}
 Set the master clock to audio (@code{type=audio}), video
 (@code{type=video}) or external (@code{type=ext}). Default is audio. The
@@ -123,7 +125,8 @@ players use audio as master clock, but in some cases (streaming or high
 quality broadcast) it is necessary to change that. This option is mainly
 used for debugging purposes.
 @item -threads @var{count}
-Set the thread count.
+Set the thread count. By default, @command{ffplay} automatically detects a
+suitable number of threads to use.
 @item -ast @var{audio_stream_number}
 Select the desired audio stream number, counting from 0. The number
 refers to the list of all the input audio streams. If it is greater
@@ -159,6 +162,22 @@ Force a specific video decoder.
 
 @item -scodec @var{codec_name}
 Force a specific subtitle decoder.
+
+@item -autorotate
+Automatically rotate the video according to presentation metadata. Enabled by
+default, use @option{-noautorotate} to disable it.
+
+@item -framedrop
+Drop video frames if video is out of sync. Enabled by default if the master
+clock is not set to video. Use this option to enable frame dropping for all
+master clock sources, use @option{-noframedrop} to disable it.
+
+@item -infbuf
+Do not limit the input buffer size, read as much data as possible from the
+input as soon as possible. Enabled by default for realtime streams, where data
+may be dropped if not read in time. Use this option to enable infinite buffers
+for all inputs, use @option{-noinfbuf} to disable it.
+
 @end table
 
 @section While playing
@@ -174,16 +193,25 @@ Toggle full screen.
 Pause.
 
 @item a
-Cycle audio channel.
+Cycle audio channel in the current program.
 
 @item v
 Cycle video channel.
 
 @item t
-Cycle subtitle channel.
+Cycle subtitle channel in the current program.
+
+@item c
+Cycle program.
 
 @item w
-Show audio waves.
+Cycle video filters or show modes.
+
+@item s
+Step to the next frame.
+
+Pause if the stream is not already paused, step to the next video
+frame, and pause.
 
 @item left/right
 Seek backward/forward 10 seconds.
@@ -192,6 +220,8 @@ Seek backward/forward 10 seconds.
 Seek backward/forward 1 minute.
 
 @item page down/page up
+Seek to the previous/next chapter.
+or if there are no chapters
 Seek backward/forward 10 minutes.
 
 @item mouse click
@@ -201,9 +231,43 @@ Seek to percentage in file corresponding to fraction of width.
 
 @c man end
 
+@include config.texi
+@ifset config-all
+@set config-readonly
+@ifset config-avutil
+@include utils.texi
+@end ifset
+@ifset config-avcodec
+@include codecs.texi
+@include bitstream_filters.texi
+@end ifset
+@ifset config-avformat
+@include formats.texi
+@include protocols.texi
+@end ifset
+@ifset config-avdevice
+@include devices.texi
+@end ifset
+@ifset config-swresample
+@include resampler.texi
+@end ifset
+@ifset config-swscale
+@include scaler.texi
+@end ifset
+@ifset config-avfilter
+@include filters.texi
+@end ifset
+@end ifset
+
 @chapter See Also
 
 @ifhtml
+@ifset config-all
+@url{ffplay.html,ffplay},
+@end ifset
+@ifset config-not-all
+@url{ffplay-all.html,ffmpeg-all},
+@end ifset
 @url{ffmpeg.html,ffmpeg}, @url{ffprobe.html,ffprobe}, @url{ffserver.html,ffserver},
 @url{ffmpeg-utils.html,ffmpeg-utils},
 @url{ffmpeg-scaler.html,ffmpeg-scaler},
@@ -217,6 +281,12 @@ Seek to percentage in file corresponding to fraction of width.
 @end ifhtml
 
 @ifnothtml
+@ifset config-all
+ffplay(1),
+@end ifset
+@ifset config-not-all
+ffplay-all(1),
+@end ifset
 ffmpeg(1), ffprobe(1), ffserver(1),
 ffmpeg-utils(1), ffmpeg-scaler(1), ffmpeg-resampler(1),
 ffmpeg-codecs(1), ffmpeg-bitstream-filters(1), ffmpeg-formats(1),

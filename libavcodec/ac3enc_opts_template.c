@@ -2,20 +2,20 @@
  * AC-3 encoder options
  * Copyright (c) 2011 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -46,18 +46,20 @@ static const AVOption ac3_options[] = {
     {"off",          "Not Dolby Surround Encoded", 0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_MODE_OFF      }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dsur_mode"},
 {"original", "Original Bit Stream", OFFSET(original), AV_OPT_TYPE_INT,   {.i64 = AC3ENC_OPT_NONE }, AC3ENC_OPT_NONE, 1, AC3ENC_PARAM},
 /* extended bitstream information */
-{"dmix_mode", "Preferred Stereo Downmix Mode", OFFSET(preferred_stereo_downmix), AV_OPT_TYPE_INT, {.i64 = AC3ENC_OPT_NONE }, AC3ENC_OPT_NONE, AC3ENC_OPT_DOWNMIX_LORO, AC3ENC_PARAM, "dmix_mode"},
+{"dmix_mode", "Preferred Stereo Downmix Mode", OFFSET(preferred_stereo_downmix), AV_OPT_TYPE_INT, {.i64 = AC3ENC_OPT_NONE }, AC3ENC_OPT_NONE, AC3ENC_OPT_DOWNMIX_DPLII, AC3ENC_PARAM, "dmix_mode"},
     {"notindicated", "Not Indicated (default)", 0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_NOT_INDICATED }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dmix_mode"},
     {"ltrt", "Lt/Rt Downmix Preferred",         0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_DOWNMIX_LTRT  }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dmix_mode"},
     {"loro", "Lo/Ro Downmix Preferred",         0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_DOWNMIX_LORO  }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dmix_mode"},
+    {"dplii", "Dolby Pro Logic II Downmix Preferred", 0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_DOWNMIX_DPLII }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dmix_mode"},
 {"ltrt_cmixlev", "Lt/Rt Center Mix Level", OFFSET(ltrt_center_mix_level), AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, AC3ENC_PARAM},
 {"ltrt_surmixlev", "Lt/Rt Surround Mix Level", OFFSET(ltrt_surround_mix_level), AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, AC3ENC_PARAM},
 {"loro_cmixlev", "Lo/Ro Center Mix Level", OFFSET(loro_center_mix_level), AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, AC3ENC_PARAM},
 {"loro_surmixlev", "Lo/Ro Surround Mix Level", OFFSET(loro_surround_mix_level), AV_OPT_TYPE_FLOAT, {.dbl = -1.0 }, -1.0, 2.0, AC3ENC_PARAM},
-{"dsurex_mode", "Dolby Surround EX Mode", OFFSET(dolby_surround_ex_mode), AV_OPT_TYPE_INT, {.i64 = AC3ENC_OPT_NONE }, AC3ENC_OPT_NONE, AC3ENC_OPT_MODE_ON, AC3ENC_PARAM, "dsurex_mode"},
+{"dsurex_mode", "Dolby Surround EX Mode", OFFSET(dolby_surround_ex_mode), AV_OPT_TYPE_INT, {.i64 = AC3ENC_OPT_NONE }, AC3ENC_OPT_NONE, AC3ENC_OPT_DSUREX_DPLIIZ, AC3ENC_PARAM, "dsurex_mode"},
     {"notindicated", "Not Indicated (default)",       0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_NOT_INDICATED }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dsurex_mode"},
     {"on",           "Dolby Surround EX Encoded",     0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_MODE_ON       }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dsurex_mode"},
     {"off",          "Not Dolby Surround EX Encoded", 0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_MODE_OFF      }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dsurex_mode"},
+    {"dpliiz",       "Dolby Pro Logic IIz-encoded",   0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_DSUREX_DPLIIZ }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dsurex_mode"},
 {"dheadphone_mode", "Dolby Headphone Mode", OFFSET(dolby_headphone_mode), AV_OPT_TYPE_INT, {.i64 = AC3ENC_OPT_NONE }, AC3ENC_OPT_NONE, AC3ENC_OPT_MODE_ON, AC3ENC_PARAM, "dheadphone_mode"},
     {"notindicated", "Not Indicated (default)",     0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_NOT_INDICATED }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dheadphone_mode"},
     {"on",           "Dolby Headphone Encoded",     0, AV_OPT_TYPE_CONST, {.i64 = AC3ENC_OPT_MODE_ON       }, INT_MIN, INT_MAX, AC3ENC_PARAM, "dheadphone_mode"},

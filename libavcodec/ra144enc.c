@@ -29,11 +29,11 @@
 
 #include "avcodec.h"
 #include "audio_frame_queue.h"
-#include "internal.h"
-#include "put_bits.h"
 #include "celp_filters.h"
+#include "internal.h"
+#include "mathops.h"
+#include "put_bits.h"
 #include "ra144.h"
-
 
 static av_cold int ra144_encode_close(AVCodecContext *avctx)
 {
@@ -55,12 +55,13 @@ static av_cold int ra144_encode_init(AVCodecContext * avctx)
         return -1;
     }
     avctx->frame_size = NBLOCKS * BLOCKSIZE;
-    avctx->delay      = avctx->frame_size;
+    avctx->initial_padding = avctx->frame_size;
     avctx->bit_rate = 8000;
     ractx = avctx->priv_data;
     ractx->lpc_coef[0] = ractx->lpc_tables[0];
     ractx->lpc_coef[1] = ractx->lpc_tables[1];
     ractx->avctx = avctx;
+    ff_audiodsp_init(&ractx->adsp);
     ret = ff_lpc_init(&ractx->lpc_ctx, avctx->frame_size, LPC_ORDER,
                       FF_LPC_TYPE_LEVINSON);
     if (ret < 0)
@@ -334,7 +335,6 @@ static void ra144_encode_subblock(RA144Context *ractx,
     float data[BLOCKSIZE] = { 0 }, work[LPC_ORDER + BLOCKSIZE];
     float coefs[LPC_ORDER];
     float zero[BLOCKSIZE], cba[BLOCKSIZE], cb1[BLOCKSIZE], cb2[BLOCKSIZE];
-    int16_t cba_vect[BLOCKSIZE];
     int cba_idx, cb1_idx, cb2_idx, gain;
     int i, n;
     unsigned m[3];
@@ -373,8 +373,8 @@ static void ra144_encode_subblock(RA144Context *ractx,
          */
         memcpy(cba, work + LPC_ORDER, sizeof(cba));
 
-        ff_copy_and_dup(cba_vect, ractx->adapt_cb, cba_idx + BLOCKSIZE / 2 - 1);
-        m[0] = (ff_irms(cba_vect) * rms) >> 12;
+        ff_copy_and_dup(ractx->buffer_a, ractx->adapt_cb, cba_idx + BLOCKSIZE / 2 - 1);
+        m[0] = (ff_irms(&ractx->adsp, ractx->buffer_a) * rms) >> 12;
     }
     fixed_cb_search(work + LPC_ORDER, coefs, data, cba_idx, &cb1_idx, &cb2_idx);
     for (i = 0; i < BLOCKSIZE; i++) {
@@ -447,7 +447,7 @@ static int ra144_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     if (ractx->last_frame)
         return 0;
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, FRAMESIZE)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, avpkt, FRAME_SIZE)) < 0)
         return ret;
 
     /**
@@ -536,7 +536,7 @@ static int ra144_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     ff_af_queue_remove(&ractx->afq, avctx->frame_size, &avpkt->pts,
                        &avpkt->duration);
 
-    avpkt->size = FRAMESIZE;
+    avpkt->size = FRAME_SIZE;
     *got_packet_ptr = 1;
     return 0;
 }
@@ -544,6 +544,7 @@ static int ra144_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
 AVCodec ff_ra_144_encoder = {
     .name           = "real_144",
+    .long_name      = NULL_IF_CONFIG_SMALL("RealAudio 1.0 (14.4K)"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_RA_144,
     .priv_data_size = sizeof(RA144Context),
@@ -554,5 +555,5 @@ AVCodec ff_ra_144_encoder = {
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
     .supported_samplerates = (const int[]){ 8000, 0 },
-    .long_name      = NULL_IF_CONFIG_SMALL("RealAudio 1.0 (14.4K)"),
+    .channel_layouts = (const uint64_t[]) { AV_CH_LAYOUT_MONO, 0 },
 };

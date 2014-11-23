@@ -30,8 +30,9 @@ static int ivf_write_header(AVFormatContext *s)
         return AVERROR(EINVAL);
     }
     ctx = s->streams[0]->codec;
-    if (ctx->codec_type != AVMEDIA_TYPE_VIDEO || ctx->codec_id != AV_CODEC_ID_VP8) {
-        av_log(s, AV_LOG_ERROR, "Currently only VP8 is supported!\n");
+    if (ctx->codec_type != AVMEDIA_TYPE_VIDEO ||
+        !(ctx->codec_id == AV_CODEC_ID_VP8 || ctx->codec_id == AV_CODEC_ID_VP9)) {
+        av_log(s, AV_LOG_ERROR, "Currently only VP8 and VP9 are supported!\n");
         return AVERROR(EINVAL);
     }
     avio_write(pb, "DKIF", 4);
@@ -53,7 +54,6 @@ static int ivf_write_packet(AVFormatContext *s, AVPacket *pkt)
     avio_wl32(pb, pkt->size);
     avio_wl64(pb, pkt->pts);
     avio_write(pb, pkt->data, pkt->size);
-    avio_flush(pb);
 
     return 0;
 }

@@ -23,6 +23,7 @@
  * bounding box detection filter
  */
 
+#include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/timestamp.h"
 #include "avfilter.h"
@@ -30,16 +31,19 @@
 #include "internal.h"
 
 typedef struct {
-    unsigned int frame;
-    int vsub, hsub;
+    const AVClass *class;
+    int min_val;
 } BBoxContext;
 
-static av_cold int init(AVFilterContext *ctx, const char *args)
-{
-    BBoxContext *bbox = ctx->priv;
-    bbox->frame = 0;
-    return 0;
-}
+#define OFFSET(x) offsetof(BBoxContext, x)
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+
+static const AVOption bbox_options[] = {
+    { "min_val", "set minimum luminance value for bounding box", OFFSET(min_val), AV_OPT_TYPE_INT, { .i64 = 16 }, 0, 254, FLAGS },
+    { NULL }
+};
+
+AVFILTER_DEFINE_CLASS(bbox);
 
 static int query_formats(AVFilterContext *ctx)
 {
@@ -56,6 +60,9 @@ static int query_formats(AVFilterContext *ctx)
     return 0;
 }
 
+#define SET_META(key, value) \
+    av_dict_set_int(metadata, key, value, 0);
+
 static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
@@ -66,15 +73,24 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     has_bbox =
         ff_calculate_bounding_box(&box,
                                   frame->data[0], frame->linesize[0],
-                                  inlink->w, inlink->h, 16);
+                                  inlink->w, inlink->h, bbox->min_val);
     w = box.x2 - box.x1 + 1;
     h = box.y2 - box.y1 + 1;
 
     av_log(ctx, AV_LOG_INFO,
-           "n:%d pts:%s pts_time:%s", bbox->frame,
+           "n:%"PRId64" pts:%s pts_time:%s", inlink->frame_count,
            av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base));
 
     if (has_bbox) {
+        AVDictionary **metadata = avpriv_frame_get_metadatap(frame);
+
+        SET_META("lavfi.bbox.x1", box.x1)
+        SET_META("lavfi.bbox.x2", box.x2)
+        SET_META("lavfi.bbox.y1", box.y1)
+        SET_META("lavfi.bbox.y2", box.y2)
+        SET_META("lavfi.bbox.w",  w)
+        SET_META("lavfi.bbox.h",  h)
+
         av_log(ctx, AV_LOG_INFO,
                " x1:%d x2:%d y1:%d y2:%d w:%d h:%d"
                " crop=%d:%d:%d:%d drawbox=%d:%d:%d:%d",
@@ -84,16 +100,14 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     }
     av_log(ctx, AV_LOG_INFO, "\n");
 
-    bbox->frame++;
     return ff_filter_frame(inlink->dst->outputs[0], frame);
 }
 
 static const AVFilterPad bbox_inputs[] = {
     {
-        .name             = "default",
-        .type             = AVMEDIA_TYPE_VIDEO,
-        .get_video_buffer = ff_null_get_video_buffer,
-        .filter_frame     = filter_frame,
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_VIDEO,
+        .filter_frame = filter_frame,
     },
     { NULL }
 };
@@ -106,12 +120,13 @@ static const AVFilterPad bbox_outputs[] = {
     { NULL }
 };
 
-AVFilter avfilter_vf_bbox = {
+AVFilter ff_vf_bbox = {
     .name          = "bbox",
     .description   = NULL_IF_CONFIG_SMALL("Compute bounding box for each frame."),
     .priv_size     = sizeof(BBoxContext),
+    .priv_class    = &bbox_class,
     .query_formats = query_formats,
-    .init          = init,
     .inputs        = bbox_inputs,
     .outputs       = bbox_outputs,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

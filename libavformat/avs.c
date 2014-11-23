@@ -50,7 +50,9 @@ static int avs_probe(AVProbeData * p)
 
     d = p->buf;
     if (d[0] == 'w' && d[1] == 'W' && d[2] == 0x10 && d[3] == 0)
-        return 55;
+        /* Ensure the buffer probe scores higher than the extension probe.
+         * This avoids problems with misdetection as AviSynth scripts. */
+        return AVPROBE_SCORE_EXTENSION + 5;
 
     return 0;
 }
@@ -180,7 +182,7 @@ static int avs_read_packet(AVFormatContext * s, AVPacket * pkt)
             case AVS_VIDEO:
                 if (!avs->st_video) {
                     avs->st_video = avformat_new_stream(s, NULL);
-                    if (avs->st_video == NULL)
+                    if (!avs->st_video)
                         return AVERROR(ENOMEM);
                     avs->st_video->codec->codec_type = AVMEDIA_TYPE_VIDEO;
                     avs->st_video->codec->codec_id = AV_CODEC_ID_AVS;
@@ -199,7 +201,7 @@ static int avs_read_packet(AVFormatContext * s, AVPacket * pkt)
             case AVS_AUDIO:
                 if (!avs->st_audio) {
                     avs->st_audio = avformat_new_stream(s, NULL);
-                    if (avs->st_audio == NULL)
+                    if (!avs->st_audio)
                         return AVERROR(ENOMEM);
                     avs->st_audio->codec->codec_type = AVMEDIA_TYPE_AUDIO;
                 }

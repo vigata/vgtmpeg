@@ -45,7 +45,7 @@
 #define XMAX(a,b) ((a) > (b) ? (a) : (b))
 
 //===========================================================================//
-static const uint8_t  __attribute__((aligned(8))) dither[8][8]={
+DECLARE_ALIGNED(8, static const uint8_t, dither)[8][8] = {
 {  0,  48,  12,  60,   3,  51,  15,  63, },
 { 32,  16,  44,  28,  35,  19,  47,  31, },
 {  8,  56,   4,  52,  11,  59,   7,  55, },
@@ -155,7 +155,7 @@ static void dctB_c(int16_t *dst, int16_t *src){
     }
 }
 
-#if HAVE_MMX
+#if HAVE_MMX_INLINE
 static void dctB_mmx(int16_t *dst, int16_t *src){
     __asm__ volatile (
         "movq  (%0), %%mm0      \n\t"
@@ -397,10 +397,10 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts){
         memcpy_pic(dmpi->planes[2], mpi->planes[2], mpi->w>>mpi->chroma_x_shift, mpi->h>>mpi->chroma_y_shift, dmpi->stride[2], mpi->stride[2]);
     }
 
-#if HAVE_MMX
+#if HAVE_MMX_INLINE
     if(ff_gCpuCaps.hasMMX) __asm__ volatile ("emms\n\t");
 #endif
-#if HAVE_MMX2
+#if HAVE_MMXEXT_INLINE
     if(ff_gCpuCaps.hasMMX2) __asm__ volatile ("sfence\n\t");
 #endif
 
@@ -464,7 +464,7 @@ static int vf_open(vf_instance_t *vf, char *args){
         case 2: requantize= mediumthresh_c; break;
     }
 
-#if HAVE_MMX
+#if HAVE_MMX_INLINE
     if(ff_gCpuCaps.hasMMX){
         dctB= dctB_mmx;
     }

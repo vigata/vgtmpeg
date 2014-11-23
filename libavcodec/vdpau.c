@@ -22,7 +22,9 @@
  */
 
 #include <limits.h>
+#include "libavutil/avassert.h"
 #include "avcodec.h"
+#include "internal.h"
 #include "h264.h"
 #include "vc1.h"
 
@@ -38,44 +40,257 @@
  * @{
  */
 
-int ff_vdpau_common_start_frame(AVCodecContext *avctx,
+static int vdpau_error(VdpStatus status)
+{
+    switch (status) {
+    case VDP_STATUS_OK:
+        return 0;
+    case VDP_STATUS_NO_IMPLEMENTATION:
+        return AVERROR(ENOSYS);
+    case VDP_STATUS_DISPLAY_PREEMPTED:
+        return AVERROR(EIO);
+    case VDP_STATUS_INVALID_HANDLE:
+        return AVERROR(EBADF);
+    case VDP_STATUS_INVALID_POINTER:
+        return AVERROR(EFAULT);
+    case VDP_STATUS_RESOURCES:
+        return AVERROR(ENOBUFS);
+    case VDP_STATUS_HANDLE_DEVICE_MISMATCH:
+        return AVERROR(EXDEV);
+    case VDP_STATUS_ERROR:
+        return AVERROR(EIO);
+    default:
+        return AVERROR(EINVAL);
+    }
+}
+
+AVVDPAUContext *av_alloc_vdpaucontext(void)
+{
+    return av_vdpau_alloc_context();
+}
+
+MAKE_ACCESSORS(AVVDPAUContext, vdpau_hwaccel, AVVDPAU_Render2, render2)
+
+int ff_vdpau_common_init(AVCodecContext *avctx, VdpDecoderProfile profile,
+                         int level)
+{
+    VDPAUHWContext *hwctx = avctx->hwaccel_context;
+    VDPAUContext *vdctx = avctx->internal->hwaccel_priv_data;
+    VdpVideoSurfaceQueryCapabilities *surface_query_caps;
+    VdpDecoderQueryCapabilities *decoder_query_caps;
+    VdpDecoderCreate *create;
+    void *func;
+    VdpStatus status;
+    VdpBool supported;
+    uint32_t max_level, max_mb, max_width, max_height;
+    /* See vdpau/vdpau.h for alignment constraints. */
+    uint32_t width  = (avctx->coded_width + 1) & ~1;
+    uint32_t height = (avctx->coded_height + 3) & ~3;
+
+    vdctx->width            = UINT32_MAX;
+    vdctx->height           = UINT32_MAX;
+
+    if (!hwctx) {
+        vdctx->device  = VDP_INVALID_HANDLE;
+        av_log(avctx, AV_LOG_WARNING, "hwaccel_context has not been setup by the user application, cannot initialize\n");
+        return 0;
+    }
+
+    if (hwctx->context.decoder != VDP_INVALID_HANDLE) {
+        vdctx->decoder = hwctx->context.decoder;
+        vdctx->render  = hwctx->context.render;
+        vdctx->device  = VDP_INVALID_HANDLE;
+        return 0; /* Decoder created by user */
+    }
+    hwctx->reset            = 0;
+
+    vdctx->device           = hwctx->device;
+    vdctx->get_proc_address = hwctx->get_proc_address;
+
+    if (hwctx->flags & AV_HWACCEL_FLAG_IGNORE_LEVEL)
+        level = 0;
+    else if (level < 0)
+        return AVERROR(ENOTSUP);
+
+    status = vdctx->get_proc_address(vdctx->device,
+                                     VDP_FUNC_ID_VIDEO_SURFACE_QUERY_CAPABILITIES,
+                                     &func);
+    if (status != VDP_STATUS_OK)
+        return vdpau_error(status);
+    else
+        surface_query_caps = func;
+
+    status = surface_query_caps(vdctx->device, VDP_CHROMA_TYPE_420, &supported,
+                                &max_width, &max_height);
+    if (status != VDP_STATUS_OK)
+        return vdpau_error(status);
+    if (supported != VDP_TRUE ||
+        max_width < width || max_height < height)
+        return AVERROR(ENOTSUP);
+
+    status = vdctx->get_proc_address(vdctx->device,
+                                     VDP_FUNC_ID_DECODER_QUERY_CAPABILITIES,
+                                     &func);
+    if (status != VDP_STATUS_OK)
+        return vdpau_error(status);
+    else
+        decoder_query_caps = func;
+
+    status = decoder_query_caps(vdctx->device, profile, &supported, &max_level,
+                                &max_mb, &max_width, &max_height);
+    if (status != VDP_STATUS_OK)
+        return vdpau_error(status);
+
+    if (supported != VDP_TRUE || max_level < level ||
+        max_width < width || max_height < height)
+        return AVERROR(ENOTSUP);
+
+    status = vdctx->get_proc_address(vdctx->device, VDP_FUNC_ID_DECODER_CREATE,
+                                     &func);
+    if (status != VDP_STATUS_OK)
+        return vdpau_error(status);
+    else
+        create = func;
+
+    status = vdctx->get_proc_address(vdctx->device, VDP_FUNC_ID_DECODER_RENDER,
+                                     &func);
+    if (status != VDP_STATUS_OK)
+        return vdpau_error(status);
+    else
+        vdctx->render = func;
+
+    status = create(vdctx->device, profile, width, height, avctx->refs,
+                    &vdctx->decoder);
+    if (status == VDP_STATUS_OK) {
+        vdctx->width  = avctx->coded_width;
+        vdctx->height = avctx->coded_height;
+    }
+
+    return vdpau_error(status);
+}
+
+int ff_vdpau_common_uninit(AVCodecContext *avctx)
+{
+    VDPAUContext *vdctx = avctx->internal->hwaccel_priv_data;
+    VdpDecoderDestroy *destroy;
+    void *func;
+    VdpStatus status;
+
+    if (vdctx->device == VDP_INVALID_HANDLE)
+        return 0; /* Decoder created and destroyed by user */
+    if (vdctx->width == UINT32_MAX && vdctx->height == UINT32_MAX)
+        return 0;
+
+    status = vdctx->get_proc_address(vdctx->device,
+                                     VDP_FUNC_ID_DECODER_DESTROY, &func);
+    if (status != VDP_STATUS_OK)
+        return vdpau_error(status);
+    else
+        destroy = func;
+
+    status = destroy(vdctx->decoder);
+    return vdpau_error(status);
+}
+
+static int ff_vdpau_common_reinit(AVCodecContext *avctx)
+{
+    VDPAUHWContext *hwctx = avctx->hwaccel_context;
+    VDPAUContext *vdctx = avctx->internal->hwaccel_priv_data;
+
+    if (vdctx->device == VDP_INVALID_HANDLE)
+        return 0; /* Decoder created by user */
+    if (avctx->coded_width == vdctx->width &&
+        avctx->coded_height == vdctx->height && !hwctx->reset)
+        return 0;
+
+    avctx->hwaccel->uninit(avctx);
+    return avctx->hwaccel->init(avctx);
+}
+
+int ff_vdpau_common_start_frame(struct vdpau_picture_context *pic_ctx,
                                 av_unused const uint8_t *buffer,
                                 av_unused uint32_t size)
 {
-    AVVDPAUContext *hwctx = avctx->hwaccel_context;
-
-    hwctx->bitstream_buffers_used = 0;
+    pic_ctx->bitstream_buffers_allocated = 0;
+    pic_ctx->bitstream_buffers_used      = 0;
+    pic_ctx->bitstream_buffers           = NULL;
     return 0;
 }
 
+int ff_vdpau_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
+                              struct vdpau_picture_context *pic_ctx)
+{
+    VDPAUContext *vdctx = avctx->internal->hwaccel_priv_data;
+    AVVDPAUContext *hwctx = avctx->hwaccel_context;
+    VdpVideoSurface surf = ff_vdpau_get_surface_id(frame);
+    VdpStatus status;
+    int val;
+
+    val = ff_vdpau_common_reinit(avctx);
+    if (val < 0)
+        return val;
+
+#if FF_API_BUFS_VDPAU
+FF_DISABLE_DEPRECATION_WARNINGS
+    hwctx->info = pic_ctx->info;
+    hwctx->bitstream_buffers = pic_ctx->bitstream_buffers;
+    hwctx->bitstream_buffers_used = pic_ctx->bitstream_buffers_used;
+    hwctx->bitstream_buffers_allocated = pic_ctx->bitstream_buffers_allocated;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+
+    if (!hwctx->render && hwctx->render2) {
+        status = hwctx->render2(avctx, frame, (void *)&pic_ctx->info,
+                                pic_ctx->bitstream_buffers_used, pic_ctx->bitstream_buffers);
+    } else
+    status = vdctx->render(vdctx->decoder, surf, (void *)&pic_ctx->info,
+                           pic_ctx->bitstream_buffers_used,
+                           pic_ctx->bitstream_buffers);
+
+    av_freep(&pic_ctx->bitstream_buffers);
+
+#if FF_API_BUFS_VDPAU
+FF_DISABLE_DEPRECATION_WARNINGS
+    hwctx->bitstream_buffers = NULL;
+    hwctx->bitstream_buffers_used = 0;
+    hwctx->bitstream_buffers_allocated = 0;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
+
+    return vdpau_error(status);
+}
+
+#if CONFIG_H263_VDPAU_HWACCEL  || CONFIG_MPEG1_VDPAU_HWACCEL || \
+    CONFIG_MPEG2_VDPAU_HWACCEL || CONFIG_MPEG4_VDPAU_HWACCEL || \
+    CONFIG_VC1_VDPAU_HWACCEL   || CONFIG_WMV3_VDPAU_HWACCEL
 int ff_vdpau_mpeg_end_frame(AVCodecContext *avctx)
 {
-    AVVDPAUContext *hwctx = avctx->hwaccel_context;
     MpegEncContext *s = avctx->priv_data;
-    VdpVideoSurface surf = ff_vdpau_get_surface_id(s->current_picture_ptr);
+    Picture *pic = s->current_picture_ptr;
+    struct vdpau_picture_context *pic_ctx = pic->hwaccel_picture_private;
+    int val;
 
-    hwctx->render(hwctx->decoder, surf, (void *)&hwctx->info,
-                  hwctx->bitstream_buffers_used, hwctx->bitstream_buffers);
+    val = ff_vdpau_common_end_frame(avctx, pic->f, pic_ctx);
+    if (val < 0)
+        return val;
 
     ff_mpeg_draw_horiz_band(s, 0, s->avctx->height);
-    hwctx->bitstream_buffers_used = 0;
-
     return 0;
 }
+#endif
 
-int ff_vdpau_add_buffer(AVCodecContext *avctx,
+int ff_vdpau_add_buffer(struct vdpau_picture_context *pic_ctx,
                         const uint8_t *buf, uint32_t size)
 {
-    AVVDPAUContext *hwctx = avctx->hwaccel_context;
-    VdpBitstreamBuffer *buffers = hwctx->bitstream_buffers;
+    VdpBitstreamBuffer *buffers = pic_ctx->bitstream_buffers;
 
-    buffers = av_fast_realloc(buffers, &hwctx->bitstream_buffers_allocated,
-                              (hwctx->bitstream_buffers_used + 1) * sizeof(*buffers));
+    buffers = av_fast_realloc(buffers, &pic_ctx->bitstream_buffers_allocated,
+                              (pic_ctx->bitstream_buffers_used + 1) * sizeof(*buffers));
     if (!buffers)
         return AVERROR(ENOMEM);
 
-    hwctx->bitstream_buffers = buffers;
-    buffers += hwctx->bitstream_buffers_used++;
+    pic_ctx->bitstream_buffers = buffers;
+    buffers += pic_ctx->bitstream_buffers_used++;
 
     buffers->struct_version  = VDP_BITSTREAM_BUFFER_VERSION;
     buffers->bitstream       = buf;
@@ -89,7 +304,7 @@ void ff_vdpau_h264_set_reference_frames(H264Context *h)
 {
     struct vdpau_render_state *render, *render_ref;
     VdpReferenceFrameH264 *rf, *rf2;
-    Picture *pic;
+    H264Picture *pic;
     int i, list, pic_frame_idx;
 
     render = (struct vdpau_render_state *)h->cur_pic_ptr->f.data[0];
@@ -99,7 +314,7 @@ void ff_vdpau_h264_set_reference_frames(H264Context *h)
 #define H264_RF_COUNT FF_ARRAY_ELEMS(render->info.h264.referenceFrames)
 
     for (list = 0; list < 2; ++list) {
-        Picture **lp = list ? h->long_ref : h->short_ref;
+        H264Picture **lp = list ? h->long_ref : h->short_ref;
         int ls = list ? 16 : h->short_ref_count;
 
         for (i = 0; i < ls; ++i) {
@@ -170,6 +385,7 @@ void ff_vdpau_add_data_chunk(uint8_t *data, const uint8_t *buf, int buf_size)
     render->bitstream_buffers_used++;
 }
 
+#if CONFIG_H264_VDPAU_DECODER
 void ff_vdpau_h264_picture_start(H264Context *h)
 {
     struct vdpau_render_state *render;
@@ -230,7 +446,9 @@ void ff_vdpau_h264_picture_complete(H264Context *h)
     ff_h264_draw_horiz_band(h, 0, h->avctx->height);
     render->bitstream_buffers_used = 0;
 }
+#endif /* CONFIG_H264_VDPAU_DECODER */
 
+#if CONFIG_MPEG_VDPAU_DECODER || CONFIG_MPEG1_VDPAU_DECODER
 void ff_vdpau_mpeg_picture_complete(MpegEncContext *s, const uint8_t *buf,
                                     int buf_size, int slice_count)
 {
@@ -239,7 +457,7 @@ void ff_vdpau_mpeg_picture_complete(MpegEncContext *s, const uint8_t *buf,
 
     if (!s->current_picture_ptr) return;
 
-    render = (struct vdpau_render_state *)s->current_picture_ptr->f.data[0];
+    render = (struct vdpau_render_state *)s->current_picture_ptr->f->data[0];
     assert(render);
 
     /* fill VdpPictureInfoMPEG1Or2 struct */
@@ -268,18 +486,18 @@ void ff_vdpau_mpeg_picture_complete(MpegEncContext *s, const uint8_t *buf,
 
     switch(s->pict_type){
     case  AV_PICTURE_TYPE_B:
-        next = (struct vdpau_render_state *)s->next_picture.f.data[0];
+        next = (struct vdpau_render_state *)s->next_picture.f->data[0];
         assert(next);
         render->info.mpeg.backward_reference     = next->surface;
         // no return here, going to set forward prediction
     case  AV_PICTURE_TYPE_P:
-        last = (struct vdpau_render_state *)s->last_picture.f.data[0];
+        last = (struct vdpau_render_state *)s->last_picture.f->data[0];
         if (!last) // FIXME: Does this test make sense?
             last = render; // predict second field from the first
         render->info.mpeg.forward_reference      = last->surface;
     }
 
-    ff_vdpau_add_data_chunk(s->current_picture_ptr->f.data[0], buf, buf_size);
+    ff_vdpau_add_data_chunk(s->current_picture_ptr->f->data[0], buf, buf_size);
 
     render->info.mpeg.slice_count                = slice_count;
 
@@ -287,18 +505,20 @@ void ff_vdpau_mpeg_picture_complete(MpegEncContext *s, const uint8_t *buf,
         ff_mpeg_draw_horiz_band(s, 0, s->avctx->height);
     render->bitstream_buffers_used               = 0;
 }
+#endif /* CONFIG_MPEG_VDPAU_DECODER || CONFIG_MPEG1_VDPAU_DECODER */
 
+#if CONFIG_VC1_VDPAU_DECODER
 void ff_vdpau_vc1_decode_picture(MpegEncContext *s, const uint8_t *buf,
                                  int buf_size)
 {
     VC1Context *v = s->avctx->priv_data;
     struct vdpau_render_state *render, *last, *next;
 
-    render = (struct vdpau_render_state *)s->current_picture.f.data[0];
+    render = (struct vdpau_render_state *)s->current_picture.f->data[0];
     assert(render);
 
     /*  fill LvPictureInfoVC1 struct */
-    render->info.vc1.frame_coding_mode  = v->fcm;
+    render->info.vc1.frame_coding_mode  = v->fcm ? v->fcm + 1 : 0;
     render->info.vc1.postprocflag       = v->postprocflag;
     render->info.vc1.pulldown           = v->broadcast;
     render->info.vc1.interlace          = v->interlace;
@@ -321,7 +541,7 @@ void ff_vdpau_vc1_decode_picture(MpegEncContext *s, const uint8_t *buf,
     render->info.vc1.range_mapuv        = v->range_mapuv;
     /* Specific to simple/main profile only */
     render->info.vc1.multires           = v->multires;
-    render->info.vc1.syncmarker         = v->s.resync_marker;
+    render->info.vc1.syncmarker         = v->resync_marker;
     render->info.vc1.rangered           = v->rangered | (v->rangeredfrm << 1);
     render->info.vc1.maxbframes         = v->s.max_b_frames;
 
@@ -338,34 +558,37 @@ void ff_vdpau_vc1_decode_picture(MpegEncContext *s, const uint8_t *buf,
 
     switch(s->pict_type){
     case  AV_PICTURE_TYPE_B:
-        next = (struct vdpau_render_state *)s->next_picture.f.data[0];
+        next = (struct vdpau_render_state *)s->next_picture.f->data[0];
         assert(next);
         render->info.vc1.backward_reference = next->surface;
         // no break here, going to set forward prediction
     case  AV_PICTURE_TYPE_P:
-        last = (struct vdpau_render_state *)s->last_picture.f.data[0];
+        last = (struct vdpau_render_state *)s->last_picture.f->data[0];
         if (!last) // FIXME: Does this test make sense?
             last = render; // predict second field from the first
         render->info.vc1.forward_reference = last->surface;
     }
 
-    ff_vdpau_add_data_chunk(s->current_picture_ptr->f.data[0], buf, buf_size);
+    ff_vdpau_add_data_chunk(s->current_picture_ptr->f->data[0], buf, buf_size);
 
     render->info.vc1.slice_count          = 1;
 
     ff_mpeg_draw_horiz_band(s, 0, s->avctx->height);
     render->bitstream_buffers_used        = 0;
 }
+#endif /* (CONFIG_VC1_VDPAU_DECODER */
 
-void ff_vdpau_mpeg4_decode_picture(MpegEncContext *s, const uint8_t *buf,
+#if CONFIG_MPEG4_VDPAU_DECODER
+void ff_vdpau_mpeg4_decode_picture(Mpeg4DecContext *ctx, const uint8_t *buf,
                                    int buf_size)
 {
+    MpegEncContext *s = &ctx->m;
     struct vdpau_render_state *render, *last, *next;
     int i;
 
     if (!s->current_picture_ptr) return;
 
-    render = (struct vdpau_render_state *)s->current_picture_ptr->f.data[0];
+    render = (struct vdpau_render_state *)s->current_picture_ptr->f->data[0];
     assert(render);
 
     /* fill VdpPictureInfoMPEG4Part2 struct */
@@ -377,7 +600,7 @@ void ff_vdpau_mpeg4_decode_picture(MpegEncContext *s, const uint8_t *buf,
     render->info.mpeg4.vop_coding_type                   = 0;
     render->info.mpeg4.vop_fcode_forward                 = s->f_code;
     render->info.mpeg4.vop_fcode_backward                = s->b_code;
-    render->info.mpeg4.resync_marker_disable             = !s->resync_marker;
+    render->info.mpeg4.resync_marker_disable             = !ctx->resync_marker;
     render->info.mpeg4.interlaced                        = !s->progressive_sequence;
     render->info.mpeg4.quant_type                        = s->mpeg_quant;
     render->info.mpeg4.quarter_sample                    = s->quarter_sample;
@@ -394,21 +617,92 @@ void ff_vdpau_mpeg4_decode_picture(MpegEncContext *s, const uint8_t *buf,
 
     switch (s->pict_type) {
     case AV_PICTURE_TYPE_B:
-        next = (struct vdpau_render_state *)s->next_picture.f.data[0];
+        next = (struct vdpau_render_state *)s->next_picture.f->data[0];
         assert(next);
         render->info.mpeg4.backward_reference     = next->surface;
         render->info.mpeg4.vop_coding_type        = 2;
         // no break here, going to set forward prediction
     case AV_PICTURE_TYPE_P:
-        last = (struct vdpau_render_state *)s->last_picture.f.data[0];
+        last = (struct vdpau_render_state *)s->last_picture.f->data[0];
         assert(last);
         render->info.mpeg4.forward_reference      = last->surface;
     }
 
-    ff_vdpau_add_data_chunk(s->current_picture_ptr->f.data[0], buf, buf_size);
+    ff_vdpau_add_data_chunk(s->current_picture_ptr->f->data[0], buf, buf_size);
 
     ff_mpeg_draw_horiz_band(s, 0, s->avctx->height);
     render->bitstream_buffers_used = 0;
+}
+#endif /* CONFIG_MPEG4_VDPAU_DECODER */
+
+int av_vdpau_get_profile(AVCodecContext *avctx, VdpDecoderProfile *profile)
+{
+#define PROFILE(prof)       \
+do {                        \
+    *profile = prof;        \
+    return 0;               \
+} while (0)
+
+    switch (avctx->codec_id) {
+    case AV_CODEC_ID_MPEG1VIDEO:               PROFILE(VDP_DECODER_PROFILE_MPEG1);
+    case AV_CODEC_ID_MPEG2VIDEO:
+        switch (avctx->profile) {
+        case FF_PROFILE_MPEG2_MAIN:            PROFILE(VDP_DECODER_PROFILE_MPEG2_MAIN);
+        case FF_PROFILE_MPEG2_SIMPLE:          PROFILE(VDP_DECODER_PROFILE_MPEG2_SIMPLE);
+        default:                               return AVERROR(EINVAL);
+        }
+    case AV_CODEC_ID_H263:                     PROFILE(VDP_DECODER_PROFILE_MPEG4_PART2_ASP);
+    case AV_CODEC_ID_MPEG4:
+        switch (avctx->profile) {
+        case FF_PROFILE_MPEG4_SIMPLE:          PROFILE(VDP_DECODER_PROFILE_MPEG4_PART2_SP);
+        case FF_PROFILE_MPEG4_ADVANCED_SIMPLE: PROFILE(VDP_DECODER_PROFILE_MPEG4_PART2_ASP);
+        default:                               return AVERROR(EINVAL);
+        }
+    case AV_CODEC_ID_H264:
+        switch (avctx->profile & ~FF_PROFILE_H264_INTRA) {
+        case FF_PROFILE_H264_BASELINE:         PROFILE(VDP_DECODER_PROFILE_H264_BASELINE);
+        case FF_PROFILE_H264_CONSTRAINED_BASELINE:
+        case FF_PROFILE_H264_MAIN:             PROFILE(VDP_DECODER_PROFILE_H264_MAIN);
+        case FF_PROFILE_H264_HIGH:             PROFILE(VDP_DECODER_PROFILE_H264_HIGH);
+        default:                               return AVERROR(EINVAL);
+        }
+    case AV_CODEC_ID_WMV3:
+    case AV_CODEC_ID_VC1:
+        switch (avctx->profile) {
+        case FF_PROFILE_VC1_SIMPLE:            PROFILE(VDP_DECODER_PROFILE_VC1_SIMPLE);
+        case FF_PROFILE_VC1_MAIN:              PROFILE(VDP_DECODER_PROFILE_VC1_MAIN);
+        case FF_PROFILE_VC1_ADVANCED:          PROFILE(VDP_DECODER_PROFILE_VC1_ADVANCED);
+        default:                               return AVERROR(EINVAL);
+        }
+    }
+    return AVERROR(EINVAL);
+}
+
+AVVDPAUContext *av_vdpau_alloc_context(void)
+{
+    return av_mallocz(sizeof(AVVDPAUContext));
+}
+
+int av_vdpau_bind_context(AVCodecContext *avctx, VdpDevice device,
+                          VdpGetProcAddress *get_proc, unsigned flags)
+{
+    VDPAUHWContext *hwctx;
+
+    if (flags & ~AV_HWACCEL_FLAG_IGNORE_LEVEL)
+        return AVERROR(EINVAL);
+
+    if (av_reallocp(&avctx->hwaccel_context, sizeof(*hwctx)))
+        return AVERROR(ENOMEM);
+
+    hwctx = avctx->hwaccel_context;
+
+    memset(hwctx, 0, sizeof(*hwctx));
+    hwctx->context.decoder  = VDP_INVALID_HANDLE;
+    hwctx->device           = device;
+    hwctx->get_proc_address = get_proc;
+    hwctx->flags            = flags;
+    hwctx->reset            = 1;
+    return 0;
 }
 
 /* @}*/

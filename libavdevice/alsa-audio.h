@@ -57,6 +57,7 @@ typedef struct AlsaData {
     void (*reorder_func)(const void *, void *, int);
     void *reorder_buf;
     int reorder_buf_size; ///< in frames
+    int64_t timestamp; ///< current timestamp, without latency applied.
 } AlsaData;
 
 /**
@@ -97,5 +98,7 @@ int ff_alsa_close(AVFormatContext *s1);
 int ff_alsa_xrun_recover(AVFormatContext *s1, int err);
 
 int ff_alsa_extend_reorder_buf(AlsaData *s, int size);
+
+int ff_alsa_get_device_list(AVDeviceInfoList *device_list, snd_pcm_stream_t stream_type);
 
 #endif /* AVDEVICE_ALSA_AUDIO_H */

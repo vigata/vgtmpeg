@@ -24,7 +24,7 @@
  * "Aria Nosratinia Embedded Post-Processing for
  * Enhancement of Compressed Images (1999)"
  * (http://citeseer.nj.nec.com/nosratinia99embedded.html)
- * Futher, with splitting (i)dct into hor/ver passes, one of them can be
+ * Further, with splitting (i)dct into hor/ver passes, one of them can be
  * performed once per block, not pixel. This allows for much better speed.
  */
 
@@ -53,7 +53,6 @@
 #include "libavutil/mem.h"
 #include "libavutil/x86/asm.h"
 #include "libavcodec/avcodec.h"
-#include "libavcodec/dsputil.h"
 
 #undef free
 #undef malloc
@@ -75,7 +74,7 @@ static const short custom_threshold[64]=
   20,  27,  26,  23,  20,  15,  11,   5
 };
 
-static const uint8_t  __attribute__((aligned(32))) dither[8][8]={
+DECLARE_ALIGNED(32, static const uint8_t, dither)[8][8] = {
     {  0,  48,  12,  60,   3,  51,  15,  63, },
     { 32,  16,  44,  28,  35,  19,  47,  31, },
     {  8,  56,   4,  52,  11,  59,   7,  55, },
@@ -102,7 +101,7 @@ struct vf_priv_s { //align 16 !
 };
 
 
-#if !HAVE_MMX
+#if !HAVE_MMX_INLINE
 
 //This func reads from 1 slice, 1 and clears 0 & 1
 static void store_slice_c(uint8_t *dst, int16_t *src, int dst_stride, int src_stride, int width, int height, int log2_scale)
@@ -178,7 +177,7 @@ static void row_fdct_c(int16_t *data, const uint8_t *pixels, int line_size, int 
 #define row_idct_s row_idct_c
 #define row_fdct_s row_fdct_c
 
-#else /* HAVE_MMX */
+#else /* HAVE_MMX_INLINE */
 
 //This func reads from 1 slice, 1 and clears 0 & 1
 static void store_slice_mmx(uint8_t *dst, int16_t *src, long dst_stride, long src_stride, long width, long height, long log2_scale)
@@ -215,11 +214,11 @@ static void store_slice_mmx(uint8_t *dst, int16_t *src, long dst_stride, long sr
         "psraw %%mm5, %%mm3            \n\t"
         "psraw %%mm5, %%mm4            \n\t"
         "1:                        \n\t"
-        "movq %%mm7, (%%"REG_S",%%"REG_a",)     \n\t"
+        "movq %%mm7, (%%"REG_S",%%"REG_a")     \n\t"
         "movq (%%"REG_S"), %%mm0           \n\t"
         "movq 8(%%"REG_S"), %%mm1          \n\t"
 
-        "movq %%mm7, 8(%%"REG_S",%%"REG_a",)    \n\t"
+        "movq %%mm7, 8(%%"REG_S",%%"REG_a")    \n\t"
         "paddw %%mm3, %%mm0            \n\t"
         "paddw %%mm4, %%mm1            \n\t"
 
@@ -286,15 +285,15 @@ static void store_slice2_mmx(uint8_t *dst, int16_t *src, long dst_stride, long s
         "movq 8(%%"REG_S"), %%mm1          \n\t"
         "paddw %%mm3, %%mm0            \n\t"
 
-        "paddw (%%"REG_S",%%"REG_a",), %%mm0    \n\t"
+        "paddw (%%"REG_S",%%"REG_a"), %%mm0    \n\t"
         "paddw %%mm4, %%mm1            \n\t"
-        "movq 8(%%"REG_S",%%"REG_a",), %%mm6    \n\t"
+        "movq 8(%%"REG_S",%%"REG_a"), %%mm6    \n\t"
 
-        "movq %%mm7, (%%"REG_S",%%"REG_a",)     \n\t"
+        "movq %%mm7, (%%"REG_S",%%"REG_a")     \n\t"
         "psraw %%mm2, %%mm0            \n\t"
         "paddw %%mm6, %%mm1            \n\t"
 
-        "movq %%mm7, 8(%%"REG_S",%%"REG_a",)    \n\t"
+        "movq %%mm7, 8(%%"REG_S",%%"REG_a")    \n\t"
         "psraw %%mm2, %%mm1            \n\t"
         "packuswb %%mm1, %%mm0         \n\t"
 
@@ -405,7 +404,7 @@ static void row_fdct_mmx(int16_t *data,  const uint8_t *pixels,  int line_size, 
 #define column_fidct_s column_fidct_mmx
 #define row_idct_s row_idct_mmx
 #define row_fdct_s row_fdct_mmx
-#endif // HAVE_MMX
+#endif // HAVE_MMX_INLINE
 
 static void filter(struct vf_priv_s *p, uint8_t *dst, uint8_t *src,
                    int dst_stride, int src_stride,
@@ -416,7 +415,7 @@ static void filter(struct vf_priv_s *p, uint8_t *dst, uint8_t *src,
     const int stride= is_luma ? p->temp_stride : (width+16);//((width+16+15)&(~15))
     const int step=6-p->log2_count;
     const int qps= 3 + is_luma;
-    int32_t __attribute__((aligned(32))) block_align[4*8*BLOCKSZ+ 4*8*BLOCKSZ];
+    DECLARE_ALIGNED(32, int32_t, block_align)[4*8*BLOCKSZ+ 4*8*BLOCKSZ];
     int16_t *block= (int16_t *)block_align;
     int16_t *block3=(int16_t *)(block_align+4*8*BLOCKSZ);
 
@@ -564,10 +563,10 @@ static int put_image(struct vf_instance *vf, mp_image_t *mpi, double pts)
         }
     }
 
-#if HAVE_MMX
+#if HAVE_MMX_INLINE
     if(ff_gCpuCaps.hasMMX) __asm__ volatile ("emms\n\t");
 #endif
-#if HAVE_MMX2
+#if HAVE_MMXEXT_INLINE
     if(ff_gCpuCaps.hasMMX2) __asm__ volatile ("sfence\n\t");
 #endif
     return ff_vf_next_put_image(vf,dmpi, pts);
@@ -708,7 +707,7 @@ const vf_info_t ff_vf_info_fspp = {
 #define THRESHOLD(r,x,t) if(((unsigned)((x)+t))>t*2) r=(x);else r=0;
 #define DESCALE(x,n)  (((x) + (1 << ((n)-1))) >> n)
 
-#if HAVE_MMX
+#if HAVE_MMX_INLINE
 
 DECLARE_ASM_CONST(8, uint64_t, MM_FIX_0_382683433)=FIX64(0.382683433, 14);
 DECLARE_ALIGNED(8, uint64_t, ff_MM_FIX_0_541196100)=FIX64(0.541196100, 14);
@@ -729,7 +728,7 @@ DECLARE_ASM_CONST(8, uint64_t, MM_FIX_0_198912367)=FIX64(0.198912367, 14);
 DECLARE_ASM_CONST(8, uint64_t, MM_DESCALE_RND)=C64(4);
 DECLARE_ASM_CONST(8, uint64_t, MM_2)=C64(2);
 
-#else /* !HAVE_MMX */
+#else /* !HAVE_MMX_INLINE */
 
 typedef int32_t int_simd16_t;
 static const int16_t FIX_0_382683433=FIX(0.382683433, 14);
@@ -744,7 +743,7 @@ static const int16_t FIX_1_082392200=FIX(1.082392200, 13);
 
 #endif
 
-#if !HAVE_MMX
+#if !HAVE_MMX_INLINE
 
 static void column_fidct_c(int16_t* thr_adr, int16_t *data, int16_t *output, int cnt)
 {
@@ -869,11 +868,11 @@ static void column_fidct_c(int16_t* thr_adr, int16_t *data, int16_t *output, int
     }
 }
 
-#else /* HAVE_MMX */
+#else /* HAVE_MMX_INLINE */
 
 static void column_fidct_mmx(int16_t* thr_adr,  int16_t *data,  int16_t *output,  int cnt)
 {
-    uint64_t __attribute__((aligned(8))) temps[4];
+    DECLARE_ALIGNED(8, uint64_t, temps)[4];
     __asm__ volatile(
         ASMALIGN(4)
         "1:                   \n\t"
@@ -1598,13 +1597,17 @@ static void column_fidct_mmx(int16_t* thr_adr,  int16_t *data,  int16_t *output,
 
         : "+S"(data), "+D"(output), "+c"(cnt), "=o"(temps)
         : "d"(thr_adr)
+          NAMED_CONSTRAINTS_ADD(ff_MM_FIX_0_707106781,MM_2,MM_FIX_1_414213562_A,MM_FIX_1_414213562,MM_FIX_0_382683433,
+          ff_MM_FIX_0_541196100,MM_FIX_1_306562965,MM_FIX_0_847759065)
+          NAMED_CONSTRAINTS_ADD(MM_FIX_0_566454497,MM_FIX_0_198912367,MM_FIX_2_613125930,MM_FIX_1_847759065,
+          MM_FIX_1_082392200)
         : "%"REG_a
         );
 }
 
-#endif // HAVE_MMX
+#endif // HAVE_MMX_INLINE
 
-#if !HAVE_MMX
+#if !HAVE_MMX_INLINE
 
 static void row_idct_c(int16_t* workspace,
                        int16_t* output_adr, int output_stride, int cnt)
@@ -1669,12 +1672,12 @@ static void row_idct_c(int16_t* workspace,
     }
 }
 
-#else /* HAVE_MMX */
+#else /* HAVE_MMX_INLINE */
 
 static void row_idct_mmx (int16_t* workspace,
                           int16_t* output_adr,  int output_stride,  int cnt)
 {
-    uint64_t __attribute__((aligned(8))) temps[4];
+    DECLARE_ALIGNED(8, uint64_t, temps)[4];
     __asm__ volatile(
         "lea (%%"REG_a",%%"REG_a",2), %%"REG_d"    \n\t"
         "1:                     \n\t"
@@ -1816,7 +1819,7 @@ static void row_idct_mmx (int16_t* workspace,
         "paddw (%%"REG_D"), %%mm5          \n\t"
         "psraw $3, %%mm7              \n\t"
 
-        "paddw (%%"REG_D",%%"REG_a",), %%mm1    \n\t"
+        "paddw (%%"REG_D",%%"REG_a"), %%mm1    \n\t"
         "paddw %%mm2, %%mm0            \n\t"
 
         "paddw (%%"REG_D",%%"REG_a",2), %%mm7   \n\t"
@@ -1825,7 +1828,7 @@ static void row_idct_mmx (int16_t* workspace,
         "movq %%mm5, (%%"REG_D")           \n\t"
         "paddw %%mm2, %%mm6            \n\t"
 
-        "movq %%mm1, (%%"REG_D",%%"REG_a",)     \n\t"
+        "movq %%mm1, (%%"REG_D",%%"REG_a")     \n\t"
         "psraw $3, %%mm0              \n\t"
 
         "movq %%mm7, (%%"REG_D",%%"REG_a",2)    \n\t"
@@ -1837,7 +1840,7 @@ static void row_idct_mmx (int16_t* workspace,
         "paddw (%%"REG_D",%%"REG_a",2), %%mm0   \n\t"
         "psubw %%mm4, %%mm5            \n\t" //d3
 
-        "paddw (%%"REG_D",%%"REG_d",), %%mm3    \n\t"
+        "paddw (%%"REG_D",%%"REG_d"), %%mm3    \n\t"
         "psraw $3, %%mm6              \n\t"
 
         "paddw 1*8+%3, %%mm4           \n\t" //d4
@@ -1852,13 +1855,13 @@ static void row_idct_mmx (int16_t* workspace,
         "paddw (%%"REG_D"), %%mm5          \n\t"
         "psraw $3, %%mm4              \n\t"
 
-        "paddw (%%"REG_D",%%"REG_a",), %%mm4    \n\t"
+        "paddw (%%"REG_D",%%"REG_a"), %%mm4    \n\t"
         "add $"DCTSIZE_S"*2*4, %%"REG_S"      \n\t" //4 rows
 
-        "movq %%mm3, (%%"REG_D",%%"REG_d",)     \n\t"
+        "movq %%mm3, (%%"REG_D",%%"REG_d")     \n\t"
         "movq %%mm6, (%%"REG_D",%%"REG_a",4)    \n\t"
         "movq %%mm5, (%%"REG_D")           \n\t"
-        "movq %%mm4, (%%"REG_D",%%"REG_a",)     \n\t"
+        "movq %%mm4, (%%"REG_D",%%"REG_a")     \n\t"
 
         "sub %%"REG_d", %%"REG_D"             \n\t"
         "add $8, %%"REG_D"               \n\t"
@@ -1867,13 +1870,15 @@ static void row_idct_mmx (int16_t* workspace,
 
         : "+S"(workspace), "+D"(output_adr), "+c"(cnt), "=o"(temps)
         : "a"(output_stride*sizeof(short))
+        NAMED_CONSTRAINTS_ADD(MM_FIX_1_414213562_A,MM_FIX_2_613125930,MM_FIX_1_847759065,MM_FIX_1_082392200,
+        MM_FIX_1_414213562,MM_DESCALE_RND)
         : "%"REG_d
         );
 }
 
-#endif // HAVE_MMX
+#endif // HAVE_MMX_INLINE
 
-#if !HAVE_MMX
+#if !HAVE_MMX_INLINE
 
 static void row_fdct_c(int16_t *data, const uint8_t *pixels, int line_size, int cnt)
 {
@@ -1936,18 +1941,18 @@ static void row_fdct_c(int16_t *data, const uint8_t *pixels, int line_size, int 
     }
 }
 
-#else /* HAVE_MMX */
+#else /* HAVE_MMX_INLINE */
 
 static void row_fdct_mmx(int16_t *data,  const uint8_t *pixels,  int line_size,  int cnt)
 {
-    uint64_t __attribute__((aligned(8))) temps[4];
+    DECLARE_ALIGNED(8, uint64_t, temps)[4];
     __asm__ volatile(
         "lea (%%"REG_a",%%"REG_a",2), %%"REG_d"    \n\t"
         "6:                     \n\t"
         "movd (%%"REG_S"), %%mm0           \n\t"
         "pxor %%mm7, %%mm7             \n\t"
 
-        "movd (%%"REG_S",%%"REG_a",), %%mm1     \n\t"
+        "movd (%%"REG_S",%%"REG_a"), %%mm1     \n\t"
         "punpcklbw %%mm7, %%mm0        \n\t"
 
         "movd (%%"REG_S",%%"REG_a",2), %%mm2    \n\t"
@@ -1962,7 +1967,7 @@ static void row_fdct_mmx(int16_t *data,  const uint8_t *pixels,  int line_size, 
         "movd (%%"REG_S",%%"REG_a",4), %%mm3    \n\t" //7  ;prefetch!
         "movq %%mm1, %%mm6             \n\t"
 
-        "movd (%%"REG_S",%%"REG_d",), %%mm4     \n\t" //6
+        "movd (%%"REG_S",%%"REG_d"), %%mm4     \n\t" //6
         "punpcklbw %%mm7, %%mm3        \n\t"
 
         "psubw %%mm3, %%mm5            \n\t"
@@ -1974,16 +1979,16 @@ static void row_fdct_mmx(int16_t *data,  const uint8_t *pixels,  int line_size, 
         "movd (%%"REG_S",%%"REG_a",2), %%mm3    \n\t" //5
         "paddw %%mm4, %%mm1            \n\t"
 
-        "movq %%mm5, 0*8+%3            \n\t" //t7
+        "movq %%mm5, %3                \n\t" //t7
         "punpcklbw %%mm7, %%mm3        \n\t"
 
-        "movq %%mm6, 1*8+%3            \n\t" //t6
+        "movq %%mm6, %4                \n\t" //t6
         "movq %%mm2, %%mm4             \n\t"
 
         "movd (%%"REG_S"), %%mm5           \n\t" //3
         "paddw %%mm3, %%mm2            \n\t"
 
-        "movd (%%"REG_S",%%"REG_a",), %%mm6     \n\t" //4
+        "movd (%%"REG_S",%%"REG_a"), %%mm6     \n\t" //4
         "punpcklbw %%mm7, %%mm5        \n\t"
 
         "psubw %%mm3, %%mm4            \n\t"
@@ -2023,7 +2028,7 @@ static void row_fdct_mmx(int16_t *data,  const uint8_t *pixels,  int line_size, 
         "psubw %%mm1, %%mm5            \n\t" //d1
         "movq %%mm0, %%mm6             \n\t"
 
-        "movq 1*8+%3, %%mm1            \n\t"
+        "movq %4, %%mm1                \n\t"
         "punpcklwd %%mm5, %%mm0        \n\t"
 
         "punpckhwd %%mm5, %%mm6        \n\t"
@@ -2047,7 +2052,7 @@ static void row_fdct_mmx(int16_t *data,  const uint8_t *pixels,  int line_size, 
         "movq %%mm7, "DCTSIZE_S"*3*2(%%"REG_D") \n\t"
         "psllw $2, %%mm3              \n\t" //t10
 
-        "movq 0*8+%3, %%mm2           \n\t"
+        "movq %3, %%mm2               \n\t"
         "psllw $2, %%mm4              \n\t" //t11
 
         "pmulhw "MANGLE(ff_MM_FIX_0_707106781)", %%mm4 \n\t" //z3
@@ -2110,9 +2115,10 @@ static void row_fdct_mmx(int16_t *data,  const uint8_t *pixels,  int line_size, 
         "dec %%"REG_c"                   \n\t"
         "jnz 6b                  \n\t"
 
-        : "+S"(pixels), "+D"(data), "+c"(cnt), "=o"(temps)
+        : "+S"(pixels), "+D"(data), "+c"(cnt), "=o"(temps), "=o"(temps[1])
         : "a"(line_size)
+        NAMED_CONSTRAINTS_ADD(ff_MM_FIX_0_707106781,ff_MM_FIX_0_541196100,MM_FIX_0_382683433,MM_FIX_1_306562965)
         : "%"REG_d);
 }
 
-#endif // HAVE_MMX
+#endif // HAVE_MMX_INLINE

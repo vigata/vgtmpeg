@@ -261,11 +261,11 @@ static void cdg_scroll(CDGraphicsContext *cc, uint8_t *data,
 static int cdg_decode_frame(AVCodecContext *avctx,
                             void *data, int *got_frame, AVPacket *avpkt)
 {
-    const uint8_t *buf = avpkt->data;
+    GetByteContext gb;
     int buf_size       = avpkt->size;
     int ret;
     uint8_t command, inst;
-    uint8_t cdg_data[CDG_DATA_SIZE];
+    uint8_t cdg_data[CDG_DATA_SIZE] = {0};
     AVFrame *frame = data;
     CDGraphicsContext *cc = avctx->priv_data;
 
@@ -278,6 +278,8 @@ static int cdg_decode_frame(AVCodecContext *avctx,
         return AVERROR(EINVAL);
     }
 
+    bytestream2_init(&gb, avpkt->data, avpkt->size);
+
     if ((ret = ff_reget_buffer(avctx, cc->frame)) < 0)
         return ret;
     if (!avctx->frame_number) {
@@ -285,11 +287,11 @@ static int cdg_decode_frame(AVCodecContext *avctx,
         memset(cc->frame->data[1], 0, AVPALETTE_SIZE);
     }
 
-    command = bytestream_get_byte(&buf);
-    inst    = bytestream_get_byte(&buf);
+    command = bytestream2_get_byte(&gb);
+    inst    = bytestream2_get_byte(&gb);
     inst    &= CDG_MASK;
-    buf += 2;  /// skipping 2 unneeded bytes
-    bytestream_get_buffer(&buf, cdg_data, buf_size - CDG_HEADER_SIZE);
+    bytestream2_skip(&gb, 2);
+    bytestream2_get_buffer(&gb, cdg_data, sizeof(cdg_data));
 
     if ((command & CDG_MASK) == CDG_COMMAND) {
         switch (inst) {
@@ -351,10 +353,9 @@ static int cdg_decode_frame(AVCodecContext *avctx,
         *got_frame = 1;
     } else {
         *got_frame = 0;
-        buf_size   = 0;
     }
 
-    return buf_size;
+    return avpkt->size;
 }
 
 static av_cold int cdg_decode_end(AVCodecContext *avctx)
@@ -368,6 +369,7 @@ static av_cold int cdg_decode_end(AVCodecContext *avctx)
 
 AVCodec ff_cdgraphics_decoder = {
     .name           = "cdgraphics",
+    .long_name      = NULL_IF_CONFIG_SMALL("CD Graphics video"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_CDGRAPHICS,
     .priv_data_size = sizeof(CDGraphicsContext),
@@ -375,5 +377,4 @@ AVCodec ff_cdgraphics_decoder = {
     .close          = cdg_decode_end,
     .decode         = cdg_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("CD Graphics video"),
 };

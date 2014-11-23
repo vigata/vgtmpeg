@@ -315,6 +315,8 @@ static int rm_write_header(AVFormatContext *s)
     }
 
     for(n=0;n<s->nb_streams;n++) {
+        AVStream *st = s->streams[n];
+
         s->streams[n]->id = n;
         codec = s->streams[n]->codec;
         stream = &rm->streams[n];
@@ -334,7 +336,8 @@ static int rm_write_header(AVFormatContext *s)
             break;
         case AVMEDIA_TYPE_VIDEO:
             rm->video_stream = stream;
-            stream->frame_rate = (float)codec->time_base.den / (float)codec->time_base.num;
+            // TODO: should be avg_frame_rate
+            stream->frame_rate = (float)st->time_base.den / (float)st->time_base.num;
             /* XXX: dummy values */
             stream->packet_max_size = 4096;
             stream->nb_packets = 0;
@@ -374,7 +377,6 @@ static int rm_write_audio(AVFormatContext *s, const uint8_t *buf, int size, int 
     } else {
         avio_write(pb, buf, size);
     }
-    avio_flush(pb);
     stream->nb_frames++;
     av_free(buf1);
     return 0;
@@ -419,7 +421,6 @@ static int rm_write_video(AVFormatContext *s, const uint8_t *buf, int size, int 
     avio_w8(pb, stream->nb_frames & 0xff);
 
     avio_write(pb, buf, size);
-    avio_flush(pb);
 
     stream->nb_frames++;
     return 0;

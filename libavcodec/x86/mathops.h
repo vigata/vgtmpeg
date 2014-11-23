@@ -24,6 +24,7 @@
 
 #include "config.h"
 #include "libavutil/common.h"
+#include "libavutil/x86/asm.h"
 
 #if HAVE_INLINE_ASM
 
@@ -68,13 +69,13 @@ static av_always_inline av_const int64_t MUL64(int a, int b)
 
 #endif /* ARCH_X86_32 */
 
-#if HAVE_CMOV
+#if HAVE_I686
 /* median of 3 */
 #define mid_pred mid_pred
 static inline av_const int mid_pred(int a, int b, int c)
 {
     int i=b;
-    __asm__ volatile(
+    __asm__ (
         "cmp    %2, %1 \n\t"
         "cmovg  %1, %0 \n\t"
         "cmovg  %2, %1 \n\t"
@@ -87,9 +88,8 @@ static inline av_const int mid_pred(int a, int b, int c)
     );
     return i;
 }
-#endif
 
-#if HAVE_CMOV
+#if HAVE_6REGS
 #define COPY3_IF_LT(x, y, a, b, c, d)\
 __asm__ volatile(\
     "cmpl  %0, %3       \n\t"\
@@ -99,10 +99,11 @@ __asm__ volatile(\
     : "+&r" (x), "+&r" (a), "+r" (c)\
     : "r" (y), "r" (b), "r" (d)\
 );
-#endif
+#endif /* HAVE_6REGS */
+#endif /* HAVE_I686 */
 
 #define MASK_ABS(mask, level)                   \
-    __asm__ ("cltd                   \n\t"      \
+    __asm__ ("cdq                    \n\t"      \
              "xorl %1, %0            \n\t"      \
              "subl %1, %0            \n\t"      \
              : "+a"(level), "=&d"(mask))

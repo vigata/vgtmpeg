@@ -78,7 +78,7 @@ static void pack_li_1_C(unsigned char *dst, unsigned char *y,
     }
 }
 
-#if HAVE_MMX
+#if HAVE_MMX_INLINE
 static void pack_nn_MMX(unsigned char *dst, unsigned char *y,
     unsigned char *u, unsigned char *v, int w,
     int av_unused us, int av_unused vs)
@@ -125,7 +125,7 @@ static void pack_li_0_MMX(unsigned char *dst, unsigned char *y,
         "pxor %%mm0, %%mm0 \n\t"
 
         ASMALIGN(4)
-        ".Lli0: \n\t"
+        "2: \n\t"
         "movq (%%"REG_S"), %%mm1 \n\t"
         "movq (%%"REG_S"), %%mm2 \n\t"
 
@@ -204,7 +204,7 @@ static void pack_li_0_MMX(unsigned char *dst, unsigned char *y,
         "add $32, %%"REG_D" \n\t"
 
         "decl %%ecx \n\t"
-        "jnz .Lli0 \n\t"
+        "jnz 2b \n\t"
         "emms \n\t"
         "pop %%"REG_BP" \n\t"
         :
@@ -233,7 +233,7 @@ static void pack_li_1_MMX(unsigned char *dst, unsigned char *y,
         "pxor %%mm0, %%mm0 \n\t"
 
         ASMALIGN(4)
-        ".Lli1: \n\t"
+        "3: \n\t"
         "movq (%%"REG_S"), %%mm1 \n\t"
         "movq (%%"REG_S"), %%mm2 \n\t"
 
@@ -316,7 +316,7 @@ static void pack_li_1_MMX(unsigned char *dst, unsigned char *y,
         "add $32, %%"REG_D" \n\t"
 
         "decl %%ecx \n\t"
-        "jnz .Lli1 \n\t"
+        "jnz 3b \n\t"
         "emms \n\t"
         "pop %%"REG_BP" \n\t"
         :
@@ -420,7 +420,7 @@ static int vf_open(vf_instance_t *vf, char *args)
     pack_nn = pack_nn_C;
     pack_li_0 = pack_li_0_C;
     pack_li_1 = pack_li_1_C;
-#if HAVE_MMX
+#if HAVE_MMX_INLINE
     if(ff_gCpuCaps.hasMMX) {
         pack_nn = pack_nn_MMX;
 #if HAVE_EBX_AVAILABLE

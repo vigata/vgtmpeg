@@ -2,19 +2,19 @@
  * Copyright (C) 2006-2011 Michael Niedermayer <michaelni@gmx.at>
  *               2010      James Darnley <james.darnley@gmail.com>
  *
- * FFmpeg is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with FFmpeg; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 #include "libavutil/avassert.h"
@@ -22,14 +22,20 @@
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/imgutils.h"
 #include "avfilter.h"
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
 #include "yadif.h"
 
-#undef NDEBUG
-#include <assert.h>
+typedef struct ThreadData {
+    AVFrame *frame;
+    int plane;
+    int w, h;
+    int parity;
+    int tff;
+} ThreadData;
 
 #define CHECK(j)\
     {   int score = FFABS(cur[mrefs - 1 + (j)] - cur[prefs - 1 - (j)])\
@@ -60,7 +66,7 @@
             CHECK( 1) CHECK( 2) }} }} \
         }\
  \
-        if (mode < 2) { \
+        if (!(mode&2)) { \
             int b = (prev2[2 * mrefs] + next2[2 * mrefs])>>1; \
             int f = (prev2[2 * prefs] + next2[2 * prefs])>>1; \
             int max = FFMAX3(d - e, d - c, FFMIN(b - c, f - e)); \
@@ -103,6 +109,7 @@ static void filter_line_c(void *dst1,
     FILTER(0, w, 1)
 }
 
+#define MAX_ALIGN 8
 static void filter_edges(void *dst1, void *prev1, void *cur1, void *next1,
                          int w, int prefs, int mrefs, int parity, int mode)
 {
@@ -118,13 +125,14 @@ static void filter_edges(void *dst1, void *prev1, void *cur1, void *next1,
      * for is_not_edge should let the compiler ignore the whole branch. */
     FILTER(0, 3, 0)
 
-    dst  = (uint8_t*)dst1  + w - 3;
-    prev = (uint8_t*)prev1 + w - 3;
-    cur  = (uint8_t*)cur1  + w - 3;
-    next = (uint8_t*)next1 + w - 3;
+    dst  = (uint8_t*)dst1  + w - (MAX_ALIGN-1);
+    prev = (uint8_t*)prev1 + w - (MAX_ALIGN-1);
+    cur  = (uint8_t*)cur1  + w - (MAX_ALIGN-1);
+    next = (uint8_t*)next1 + w - (MAX_ALIGN-1);
     prev2 = (uint8_t*)(parity ? prev : cur);
     next2 = (uint8_t*)(parity ? cur  : next);
 
+    FILTER(w - (MAX_ALIGN-1), w - 3, 1)
     FILTER(w - 3, w, 0)
 }
 
@@ -162,60 +170,77 @@ static void filter_edges_16bit(void *dst1, void *prev1, void *cur1, void *next1,
 
     FILTER(0, 3, 0)
 
-    dst   = (uint16_t*)dst1  + w - 3;
-    prev  = (uint16_t*)prev1 + w - 3;
-    cur   = (uint16_t*)cur1  + w - 3;
-    next  = (uint16_t*)next1 + w - 3;
+    dst   = (uint16_t*)dst1  + w - (MAX_ALIGN/2-1);
+    prev  = (uint16_t*)prev1 + w - (MAX_ALIGN/2-1);
+    cur   = (uint16_t*)cur1  + w - (MAX_ALIGN/2-1);
+    next  = (uint16_t*)next1 + w - (MAX_ALIGN/2-1);
     prev2 = (uint16_t*)(parity ? prev : cur);
     next2 = (uint16_t*)(parity ? cur  : next);
 
+    FILTER(w - (MAX_ALIGN/2-1), w - 3, 1)
     FILTER(w - 3, w, 0)
+}
+
+static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
+{
+    YADIFContext *s = ctx->priv;
+    ThreadData *td  = arg;
+    int refs = s->cur->linesize[td->plane];
+    int df = (s->csp->comp[td->plane].depth_minus1 + 8) / 8;
+    int pix_3 = 3 * df;
+    int slice_start = (td->h *  jobnr   ) / nb_jobs;
+    int slice_end   = (td->h * (jobnr+1)) / nb_jobs;
+    int y;
+
+    /* filtering reads 3 pixels to the left/right; to avoid invalid reads,
+     * we need to call the c variant which avoids this for border pixels
+     */
+    for (y = slice_start; y < slice_end; y++) {
+        if ((y ^ td->parity) & 1) {
+            uint8_t *prev = &s->prev->data[td->plane][y * refs];
+            uint8_t *cur  = &s->cur ->data[td->plane][y * refs];
+            uint8_t *next = &s->next->data[td->plane][y * refs];
+            uint8_t *dst  = &td->frame->data[td->plane][y * td->frame->linesize[td->plane]];
+            int     mode  = y == 1 || y + 2 == td->h ? 2 : s->mode;
+            s->filter_line(dst + pix_3, prev + pix_3, cur + pix_3,
+                           next + pix_3, td->w - (3 + MAX_ALIGN/df-1),
+                           y + 1 < td->h ? refs : -refs,
+                           y ? -refs : refs,
+                           td->parity ^ td->tff, mode);
+            s->filter_edges(dst, prev, cur, next, td->w,
+                            y + 1 < td->h ? refs : -refs,
+                            y ? -refs : refs,
+                            td->parity ^ td->tff, mode);
+        } else {
+            memcpy(&td->frame->data[td->plane][y * td->frame->linesize[td->plane]],
+                   &s->cur->data[td->plane][y * refs], td->w * df);
+        }
+    }
+    return 0;
 }
 
 static void filter(AVFilterContext *ctx, AVFrame *dstpic,
                    int parity, int tff)
 {
     YADIFContext *yadif = ctx->priv;
-    int y, i;
+    ThreadData td = { .frame = dstpic, .parity = parity, .tff = tff };
+    int i;
 
     for (i = 0; i < yadif->csp->nb_components; i++) {
         int w = dstpic->width;
         int h = dstpic->height;
-        int refs = yadif->cur->linesize[i];
-        int df = (yadif->csp->comp[i].depth_minus1 + 8) / 8;
-        int pix_3 = 3 * df;
 
         if (i == 1 || i == 2) {
-        /* Why is this not part of the per-plane description thing? */
-            w >>= yadif->csp->log2_chroma_w;
-            h >>= yadif->csp->log2_chroma_h;
+            w = FF_CEIL_RSHIFT(w, yadif->csp->log2_chroma_w);
+            h = FF_CEIL_RSHIFT(h, yadif->csp->log2_chroma_h);
         }
 
-        /* filtering reads 3 pixels to the left/right; to avoid invalid reads,
-         * we need to call the c variant which avoids this for border pixels
-         */
 
-        for (y = 0; y < h; y++) {
-            if ((y ^ parity) & 1) {
-                uint8_t *prev = &yadif->prev->data[i][y * refs];
-                uint8_t *cur  = &yadif->cur ->data[i][y * refs];
-                uint8_t *next = &yadif->next->data[i][y * refs];
-                uint8_t *dst  = &dstpic->data[i][y * dstpic->linesize[i]];
-                int     mode  = y == 1 || y + 2 == h ? 2 : yadif->mode;
-                yadif->filter_line(dst + pix_3, prev + pix_3, cur + pix_3,
-                                   next + pix_3, w - 6,
-                                   y + 1 < h ? refs : -refs,
-                                   y ? -refs : refs,
-                                   parity ^ tff, mode);
-                yadif->filter_edges(dst, prev, cur, next, w,
-                                    y + 1 < h ? refs : -refs,
-                                    y ? -refs : refs,
-                                    parity ^ tff, mode);
-            } else {
-                memcpy(&dstpic->data[i][y * dstpic->linesize[i]],
-                       &yadif->cur->data[i][y * refs], w * df);
-            }
-        }
+        td.w       = w;
+        td.h       = h;
+        td.plane   = i;
+
+        ctx->internal->execute(ctx, filter_slice, &td, NULL, FFMIN(h, ctx->graph->nb_threads));
     }
 
     emms_c();
@@ -261,6 +286,29 @@ static int return_frame(AVFilterContext *ctx, int is_second)
     return ret;
 }
 
+static int checkstride(YADIFContext *yadif, const AVFrame *a, const AVFrame *b)
+{
+    int i;
+    for (i = 0; i < yadif->csp->nb_components; i++)
+        if (a->linesize[i] != b->linesize[i])
+            return 1;
+    return 0;
+}
+
+static void fixstride(AVFilterLink *link, AVFrame *f)
+{
+    AVFrame *dst = ff_default_get_video_buffer(link, f->width, f->height);
+    if(!dst)
+        return;
+    av_frame_copy_props(dst, f);
+    av_image_copy(dst->data, dst->linesize,
+                  (const uint8_t **)f->data, f->linesize,
+                  dst->format, dst->width, dst->height);
+    av_frame_unref(f);
+    av_frame_move_ref(f, dst);
+    av_frame_free(&dst);
+}
+
 static int filter_frame(AVFilterLink *link, AVFrame *frame)
 {
     AVFilterContext *ctx = link->dst;
@@ -277,10 +325,24 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
     yadif->cur  = yadif->next;
     yadif->next = frame;
 
-    if (!yadif->cur)
-        return 0;
+    if (!yadif->cur &&
+        !(yadif->cur = av_frame_clone(yadif->next)))
+        return AVERROR(ENOMEM);
 
-    if (yadif->deint && !yadif->cur->interlaced_frame) {
+    if (checkstride(yadif, yadif->next, yadif->cur)) {
+        av_log(ctx, AV_LOG_VERBOSE, "Reallocating frame due to differing stride\n");
+        fixstride(link, yadif->next);
+    }
+    if (checkstride(yadif, yadif->next, yadif->cur))
+        fixstride(link, yadif->cur);
+    if (yadif->prev && checkstride(yadif, yadif->next, yadif->prev))
+        fixstride(link, yadif->prev);
+    if (checkstride(yadif, yadif->next, yadif->cur) || (yadif->prev && checkstride(yadif, yadif->next, yadif->prev))) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to reallocate frame\n");
+        return -1;
+    }
+
+    if ((yadif->deint && !yadif->cur->interlaced_frame) || ctx->is_disabled) {
         yadif->out  = av_frame_clone(yadif->cur);
         if (!yadif->out)
             return AVERROR(ENOMEM);
@@ -291,9 +353,8 @@ static int filter_frame(AVFilterLink *link, AVFrame *frame)
         return ff_filter_frame(ctx->outputs[0], yadif->out);
     }
 
-    if (!yadif->prev &&
-        !(yadif->prev = av_frame_clone(yadif->cur)))
-        return AVERROR(ENOMEM);
+    if (!yadif->prev)
+        return 0;
 
     yadif->out = ff_get_video_buffer(ctx->outputs[0], link->w, link->h);
     if (!yadif->out)
@@ -339,36 +400,10 @@ static int request_frame(AVFilterLink *link)
         } else if (ret < 0) {
             return ret;
         }
-    } while (!yadif->cur);
+    } while (!yadif->prev);
 
     return 0;
 }
-
-#define OFFSET(x) offsetof(YADIFContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
-
-#define CONST(name, help, val, unit) { name, help, 0, AV_OPT_TYPE_CONST, {.i64=val}, INT_MIN, INT_MAX, FLAGS, unit }
-
-static const AVOption yadif_options[] = {
-    { "mode",   "specify the interlacing mode", OFFSET(mode), AV_OPT_TYPE_INT, {.i64=YADIF_MODE_SEND_FRAME}, 0, 3, FLAGS, "mode"},
-    CONST("send_frame",           "send one frame for each frame",                                     YADIF_MODE_SEND_FRAME,           "mode"),
-    CONST("send_field",           "send one frame for each field",                                     YADIF_MODE_SEND_FIELD,           "mode"),
-    CONST("send_frame_nospatial", "send one frame for each frame, but skip spatial interlacing check", YADIF_MODE_SEND_FRAME_NOSPATIAL, "mode"),
-    CONST("send_field_nospatial", "send one frame for each field, but skip spatial interlacing check", YADIF_MODE_SEND_FIELD_NOSPATIAL, "mode"),
-
-    { "parity", "specify the assumed picture field parity", OFFSET(parity), AV_OPT_TYPE_INT, {.i64=YADIF_PARITY_AUTO}, -1, 1, FLAGS, "parity" },
-    CONST("tff",  "assume top field first",    YADIF_PARITY_TFF,  "parity"),
-    CONST("bff",  "assume bottom field first", YADIF_PARITY_BFF,  "parity"),
-    CONST("auto", "auto detect parity",        YADIF_PARITY_AUTO, "parity"),
-
-    { "deint", "specify which frames to deinterlace", OFFSET(deint), AV_OPT_TYPE_INT, {.i64=YADIF_DEINT_ALL}, 0, 1, FLAGS, "deint" },
-    CONST("all",        "deinterlace all frames",                       YADIF_DEINT_ALL,         "deint"),
-    CONST("interlaced", "only deinterlace frames marked as interlaced", YADIF_DEINT_INTERLACED,  "deint"),
-
-    {NULL},
-};
-
-AVFILTER_DEFINE_CLASS(yadif);
 
 static av_cold void uninit(AVFilterContext *ctx)
 {
@@ -391,41 +426,33 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVJ420P,
         AV_PIX_FMT_YUVJ422P,
         AV_PIX_FMT_YUVJ444P,
-        AV_NE( AV_PIX_FMT_GRAY16BE, AV_PIX_FMT_GRAY16LE ),
+        AV_PIX_FMT_GRAY16,
         AV_PIX_FMT_YUV440P,
         AV_PIX_FMT_YUVJ440P,
-        AV_NE( AV_PIX_FMT_YUV420P9BE,  AV_PIX_FMT_YUV420P9LE ),
-        AV_NE( AV_PIX_FMT_YUV422P9BE,  AV_PIX_FMT_YUV422P9LE ),
-        AV_NE( AV_PIX_FMT_YUV444P9BE,  AV_PIX_FMT_YUV444P9LE ),
-        AV_NE( AV_PIX_FMT_YUV420P10BE, AV_PIX_FMT_YUV420P10LE ),
-        AV_NE( AV_PIX_FMT_YUV422P10BE, AV_PIX_FMT_YUV422P10LE ),
-        AV_NE( AV_PIX_FMT_YUV444P10BE, AV_PIX_FMT_YUV444P10LE ),
-        AV_NE( AV_PIX_FMT_YUV420P12BE, AV_PIX_FMT_YUV420P12LE ),
-        AV_NE( AV_PIX_FMT_YUV422P12BE, AV_PIX_FMT_YUV422P12LE ),
-        AV_NE( AV_PIX_FMT_YUV444P12BE, AV_PIX_FMT_YUV444P12LE ),
-        AV_NE( AV_PIX_FMT_YUV420P14BE, AV_PIX_FMT_YUV420P14LE ),
-        AV_NE( AV_PIX_FMT_YUV422P14BE, AV_PIX_FMT_YUV422P14LE ),
-        AV_NE( AV_PIX_FMT_YUV444P14BE, AV_PIX_FMT_YUV444P14LE ),
-        AV_NE( AV_PIX_FMT_YUV420P16BE, AV_PIX_FMT_YUV420P16LE ),
-        AV_NE( AV_PIX_FMT_YUV422P16BE, AV_PIX_FMT_YUV422P16LE ),
-        AV_NE( AV_PIX_FMT_YUV444P16BE, AV_PIX_FMT_YUV444P16LE ),
+        AV_PIX_FMT_YUV420P9,
+        AV_PIX_FMT_YUV422P9,
+        AV_PIX_FMT_YUV444P9,
+        AV_PIX_FMT_YUV420P10,
+        AV_PIX_FMT_YUV422P10,
+        AV_PIX_FMT_YUV444P10,
+        AV_PIX_FMT_YUV420P12,
+        AV_PIX_FMT_YUV422P12,
+        AV_PIX_FMT_YUV444P12,
+        AV_PIX_FMT_YUV420P14,
+        AV_PIX_FMT_YUV422P14,
+        AV_PIX_FMT_YUV444P14,
+        AV_PIX_FMT_YUV420P16,
+        AV_PIX_FMT_YUV422P16,
+        AV_PIX_FMT_YUV444P16,
         AV_PIX_FMT_YUVA420P,
         AV_PIX_FMT_YUVA422P,
         AV_PIX_FMT_YUVA444P,
+        AV_PIX_FMT_GBRP,
+        AV_PIX_FMT_GBRAP,
         AV_PIX_FMT_NONE
     };
 
     ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
-
-    return 0;
-}
-
-static av_cold int init(AVFilterContext *ctx, const char *args)
-{
-    YADIFContext *yadif = ctx->priv;
-
-    av_log(ctx, AV_LOG_VERBOSE, "mode:%d parity:%d deint:%d\n",
-           yadif->mode, yadif->parity, yadif->deint);
 
     return 0;
 }
@@ -463,11 +490,38 @@ static int config_props(AVFilterLink *link)
     return 0;
 }
 
+
+#define OFFSET(x) offsetof(YADIFContext, x)
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+
+#define CONST(name, help, val, unit) { name, help, 0, AV_OPT_TYPE_CONST, {.i64=val}, INT_MIN, INT_MAX, FLAGS, unit }
+
+static const AVOption yadif_options[] = {
+    { "mode",   "specify the interlacing mode", OFFSET(mode), AV_OPT_TYPE_INT, {.i64=YADIF_MODE_SEND_FRAME}, 0, 3, FLAGS, "mode"},
+    CONST("send_frame",           "send one frame for each frame",                                     YADIF_MODE_SEND_FRAME,           "mode"),
+    CONST("send_field",           "send one frame for each field",                                     YADIF_MODE_SEND_FIELD,           "mode"),
+    CONST("send_frame_nospatial", "send one frame for each frame, but skip spatial interlacing check", YADIF_MODE_SEND_FRAME_NOSPATIAL, "mode"),
+    CONST("send_field_nospatial", "send one frame for each field, but skip spatial interlacing check", YADIF_MODE_SEND_FIELD_NOSPATIAL, "mode"),
+
+    { "parity", "specify the assumed picture field parity", OFFSET(parity), AV_OPT_TYPE_INT, {.i64=YADIF_PARITY_AUTO}, -1, 1, FLAGS, "parity" },
+    CONST("tff",  "assume top field first",    YADIF_PARITY_TFF,  "parity"),
+    CONST("bff",  "assume bottom field first", YADIF_PARITY_BFF,  "parity"),
+    CONST("auto", "auto detect parity",        YADIF_PARITY_AUTO, "parity"),
+
+    { "deint", "specify which frames to deinterlace", OFFSET(deint), AV_OPT_TYPE_INT, {.i64=YADIF_DEINT_ALL}, 0, 1, FLAGS, "deint" },
+    CONST("all",        "deinterlace all frames",                       YADIF_DEINT_ALL,         "deint"),
+    CONST("interlaced", "only deinterlace frames marked as interlaced", YADIF_DEINT_INTERLACED,  "deint"),
+
+    { NULL }
+};
+
+AVFILTER_DEFINE_CLASS(yadif);
+
 static const AVFilterPad avfilter_vf_yadif_inputs[] = {
     {
-        .name             = "default",
-        .type             = AVMEDIA_TYPE_VIDEO,
-        .filter_frame     = filter_frame,
+        .name          = "default",
+        .type          = AVMEDIA_TYPE_VIDEO,
+        .filter_frame  = filter_frame,
     },
     { NULL }
 };
@@ -482,20 +536,14 @@ static const AVFilterPad avfilter_vf_yadif_outputs[] = {
     { NULL }
 };
 
-static const char *const shorthand[] = { "mode", "parity", "deint", NULL };
-
-AVFilter avfilter_vf_yadif = {
+AVFilter ff_vf_yadif = {
     .name          = "yadif",
     .description   = NULL_IF_CONFIG_SMALL("Deinterlace the input image."),
-
     .priv_size     = sizeof(YADIFContext),
-    .init          = init,
+    .priv_class    = &yadif_class,
     .uninit        = uninit,
     .query_formats = query_formats,
-
-    .inputs    = avfilter_vf_yadif_inputs,
-    .outputs   = avfilter_vf_yadif_outputs,
-
-    .priv_class = &yadif_class,
-    .shorthand = shorthand,
+    .inputs        = avfilter_vf_yadif_inputs,
+    .outputs       = avfilter_vf_yadif_outputs,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
 };

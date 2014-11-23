@@ -32,8 +32,8 @@
 #include <stddef.h>
 
 /* add and put pixel (decoding) */
-// blocksizes for op_pixels_func are 8x4,8x8 16x8 16x16
-// h for op_pixels_func is limited to {width/2, width} but never larger
+// blocksizes for hpel_pixels_func are 8x4,8x8 16x8 16x16
+// h for hpel_pixels_func is limited to {width/2, width} but never larger
 // than 16 and never smaller than 4
 typedef void (*op_pixels_func)(uint8_t *block /*align width (8 or 16)*/,
                                const uint8_t *pixels /*align 1*/,
@@ -92,14 +92,12 @@ typedef struct HpelDSPContext {
     op_pixels_func avg_no_rnd_pixels_tab[4];
 } HpelDSPContext;
 
-void ff_hpeldsp_init(HpelDSPContext* p, int flags);
+void ff_hpeldsp_init(HpelDSPContext *c, int flags);
 
-void ff_hpeldsp_init_alpha(HpelDSPContext* c, int flags);
-void ff_hpeldsp_init_arm(HpelDSPContext* c, int flags);
-void ff_hpeldsp_init_bfin(HpelDSPContext* c, int flags);
-void ff_hpeldsp_init_x86(HpelDSPContext* c, int flags);
-void ff_hpeldsp_init_ppc(HpelDSPContext* c, int flags);
-void ff_hpeldsp_init_sh4(HpelDSPContext* c, int flags);
-void ff_hpeldsp_init_vis(HpelDSPContext* c, int flags);
+void ff_hpeldsp_init_aarch64(HpelDSPContext *c, int flags);
+void ff_hpeldsp_init_alpha(HpelDSPContext *c, int flags);
+void ff_hpeldsp_init_arm(HpelDSPContext *c, int flags);
+void ff_hpeldsp_init_ppc(HpelDSPContext *c, int flags);
+void ff_hpeldsp_init_x86(HpelDSPContext *c, int flags);
 
 #endif /* AVCODEC_HPELDSP_H */

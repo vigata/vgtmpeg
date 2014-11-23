@@ -27,11 +27,12 @@
 #include "libavutil/bprint.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
-#include "libswresample/swresample.h" // only for SWR_CH_MAX
 #include "avfilter.h"
 #include "audio.h"
 #include "bufferqueue.h"
 #include "internal.h"
+
+#define SWR_CH_MAX 32
 
 typedef struct {
     const AVClass *class;
@@ -52,7 +53,7 @@ typedef struct {
 static const AVOption amerge_options[] = {
     { "inputs", "specify the number of inputs", OFFSET(nb_inputs),
       AV_OPT_TYPE_INT, { .i64 = 2 }, 2, SWR_CH_MAX, FLAGS },
-    {0}
+    { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(amerge);
@@ -82,9 +83,9 @@ static int query_formats(AVFilterContext *ctx)
     for (i = 0; i < am->nb_inputs; i++) {
         if (!ctx->inputs[i]->in_channel_layouts ||
             !ctx->inputs[i]->in_channel_layouts->nb_channel_layouts) {
-            av_log(ctx, AV_LOG_ERROR,
+            av_log(ctx, AV_LOG_WARNING,
                    "No channel layout for input %d\n", i + 1);
-            return AVERROR(EINVAL);
+            return AVERROR(EAGAIN);
         }
         inlayout[i] = ctx->inputs[i]->in_channel_layouts->channel_layouts[0];
         if (ctx->inputs[i]->in_channel_layouts->nb_channel_layouts > 1) {
@@ -234,7 +235,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
             break;
     av_assert1(input_number < am->nb_inputs);
     if (ff_bufqueue_is_full(&am->in[input_number].queue)) {
-        av_log(ctx, AV_LOG_ERROR, "Buffer queue overflow\n");
         av_frame_free(&insamples);
         return AVERROR(ENOMEM);
     }
@@ -248,6 +248,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
         return 0;
 
     outbuf = ff_get_audio_buffer(ctx->outputs[0], nb_samples);
+    if (!outbuf)
+        return AVERROR(ENOMEM);
     outs = outbuf->data[0];
     for (i = 0; i < am->nb_inputs; i++) {
         inbuf[i] = ff_bufqueue_peek(&am->in[i].queue, 0);
@@ -258,7 +260,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
     outbuf->pts = inbuf[0]->pts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE :
                   inbuf[0]->pts +
                   av_rescale_q(am->in[0].pos,
-                               (AVRational){ 1, ctx->inputs[0]->sample_rate },
+                               av_make_q(1, ctx->inputs[0]->sample_rate),
                                ctx->outputs[0]->time_base);
 
     outbuf->nb_samples     = nb_samples;
@@ -302,18 +304,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *insamples)
     return ff_filter_frame(ctx->outputs[0], outbuf);
 }
 
-static av_cold int init(AVFilterContext *ctx, const char *args)
+static av_cold int init(AVFilterContext *ctx)
 {
     AMergeContext *am = ctx->priv;
-    int ret, i;
+    int i;
 
-    am->class = &amerge_class;
-    av_opt_set_defaults(am);
-    ret = av_set_options_string(am, args, "=", ":");
-    if (ret < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error parsing options: '%s'\n", args);
-        return ret;
-    }
     am->in = av_calloc(am->nb_inputs, sizeof(*am->in));
     if (!am->in)
         return AVERROR(ENOMEM);
@@ -341,7 +336,7 @@ static const AVFilterPad amerge_outputs[] = {
     { NULL }
 };
 
-AVFilter avfilter_af_amerge = {
+AVFilter ff_af_amerge = {
     .name          = "amerge",
     .description   = NULL_IF_CONFIG_SMALL("Merge two or more audio streams into "
                                           "a single multi-channel stream."),
@@ -352,4 +347,5 @@ AVFilter avfilter_af_amerge = {
     .inputs        = NULL,
     .outputs       = amerge_outputs,
     .priv_class    = &amerge_class,
+    .flags         = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };

@@ -47,8 +47,10 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
 
     bytestream2_init(&s->gb, avctx->extradata, avctx->extradata_size);
-    if (bytestream2_get_bytes_left(&s->gb) < 16 * 8 + 4 * 256)
+    if (bytestream2_get_bytes_left(&s->gb) < 16 * 8 + 4 * 256) {
+        av_frame_free(&s->frame);
         return AVERROR_INVALIDDATA;
+    }
 
     bytestream2_skipu(&s->gb, 16 * 8);
     for (i = 0; i < 256; i++)
@@ -189,6 +191,7 @@ static av_cold int decode_end(AVCodecContext *avctx)
 
 AVCodec ff_anm_decoder = {
     .name           = "anm",
+    .long_name      = NULL_IF_CONFIG_SMALL("Deluxe Paint Animation"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_ANM,
     .priv_data_size = sizeof(AnmContext),
@@ -196,5 +199,4 @@ AVCodec ff_anm_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("Deluxe Paint Animation"),
 };

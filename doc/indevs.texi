@@ -13,8 +13,8 @@ You can disable all the input devices using the configure option
 option "--enable-indev=@var{INDEV}", or you can disable a particular
 input device using the option "--disable-indev=@var{INDEV}".
 
-The option "-formats" of the ff* tools will display the list of
-supported input devices (amongst the demuxers).
+The option "-devices" of the ff* tools will display the list of
+supported input devices.
 
 A description of the currently available input devices follows.
 
@@ -51,6 +51,101 @@ ffmpeg -f alsa -i hw:0 alsaout.wav
 For more information see:
 @url{http://www.alsa-project.org/alsa-doc/alsa-lib/pcm.html}
 
+@section avfoundation
+
+AVFoundation input device.
+
+AVFoundation is the currently recommended framework by Apple for streamgrabbing on OSX >= 10.7 as well as on iOS.
+The older QTKit framework has been marked deprecated since OSX version 10.7.
+
+The input filename has to be given in the following syntax:
+@example
+-i "[[VIDEO]:[AUDIO]]"
+@end example
+The first entry selects the video input while the latter selects the audio input.
+The stream has to be specified by the device name or the device index as shown by the device list.
+Alternatively, the video and/or audio input device can be chosen by index using the
+@option{
+    -video_device_index <INDEX>
+}
+and/or
+@option{
+    -audio_device_index <INDEX>
+}
+, overriding any
+device name or index given in the input filename.
+
+All available devices can be enumerated by using @option{-list_devices true}, listing
+all device names and corresponding indices.
+
+There are two device name aliases:
+@table @code
+
+@item default
+Select the AVFoundation default device of the corresponding type.
+
+@item none
+Do not record the corresponding media type.
+This is equivalent to specifiying an empty device name or index.
+
+@end table
+
+@subsection Options
+
+AVFoundation supports the following options:
+
+@table @option
+
+@item -list_devices <TRUE|FALSE>
+If set to true, a list of all available input devices is given showing all
+device names and indices.
+
+@item -video_device_index <INDEX>
+Specify the video device by its index. Overrides anything given in the input filename.
+
+@item -audio_device_index <INDEX>
+Specify the audio device by its index. Overrides anything given in the input filename.
+
+@item -pixel_format <FORMAT>
+Request the video device to use a specific pixel format.
+If the specified format is not supported, a list of available formats is given
+und the first one in this list is used instead. Available pixel formats are:
+@code{monob, rgb555be, rgb555le, rgb565be, rgb565le, rgb24, bgr24, 0rgb, bgr0, 0bgr, rgb0,
+ bgr48be, uyvy422, yuva444p, yuva444p16le, yuv444p, yuv422p16, yuv422p10, yuv444p10,
+ yuv420p, nv12, yuyv422, gray}
+
+@end table
+
+@subsection Examples
+
+@itemize
+
+@item
+Print the list of AVFoundation supported devices and exit:
+@example
+$ ffmpeg -f avfoundation -list_devices true -i ""
+@end example
+
+@item
+Record video from video device 0 and audio from audio device 0 into out.avi:
+@example
+$ ffmpeg -f avfoundation -i "0:0" out.avi
+@end example
+
+@item
+Record video from video device 2 and audio from audio device 1 into out.avi:
+@example
+$ ffmpeg -f avfoundation -video_device_index 2 -i ":1" out.avi
+@end example
+
+@item
+Record video from the system default video device using the pixel format bgr0 and do not record any audio into out.avi:
+@example
+$ ffmpeg -f avfoundation -pixel_format bgr0 -i "default:none" out.avi
+@end example
+
+@end itemize
+
 @section bktr
 
 BSD video input device.
@@ -86,7 +181,7 @@ fail to open.
 Set the video size in the captured video.
 
 @item framerate
-Set the framerate in the captured video.
+Set the frame rate in the captured video.
 
 @item sample_rate
 Set the sample rate (in Hz) of the captured audio.
@@ -191,6 +286,81 @@ ffmpeg -f fbdev -frames:v 1 -r 1 -i /dev/fb0 screenshot.jpeg
 @end example
 
 See also @url{http://linux-fbdev.sourceforge.net/}, and fbset(1).
+
+@section gdigrab
+
+Win32 GDI-based screen capture device.
+
+This device allows you to capture a region of the display on Windows.
+
+There are two options for the input filename:
+@example
+desktop
+@end example
+or
+@example
+title=@var{window_title}
+@end example
+
+The first option will capture the entire desktop, or a fixed region of the
+desktop. The second option will instead capture the contents of a single
+window, regardless of its position on the screen.
+
+For example, to grab the entire desktop using @command{ffmpeg}:
+@example
+ffmpeg -f gdigrab -framerate 6 -i desktop out.mpg
+@end example
+
+Grab a 640x480 region at position @code{10,20}:
+@example
+ffmpeg -f gdigrab -framerate 6 -offset_x 10 -offset_y 20 -video_size vga -i desktop out.mpg
+@end example
+
+Grab the contents of the window named "Calculator"
+@example
+ffmpeg -f gdigrab -framerate 6 -i title=Calculator out.mpg
+@end example
+
+@subsection Options
+
+@table @option
+@item draw_mouse
+Specify whether to draw the mouse pointer. Use the value @code{0} to
+not draw the pointer. Default value is @code{1}.
+
+@item framerate
+Set the grabbing frame rate. Default value is @code{ntsc},
+corresponding to a frame rate of @code{30000/1001}.
+
+@item show_region
+Show grabbed region on screen.
+
+If @var{show_region} is specified with @code{1}, then the grabbing
+region will be indicated on screen. With this option, it is easy to
+know what is being grabbed if only a portion of the screen is grabbed.
+
+Note that @var{show_region} is incompatible with grabbing the contents
+of a single window.
+
+For example:
+@example
+ffmpeg -f gdigrab -show_region 1 -framerate 6 -video_size cif -offset_x 10 -offset_y 20 -i desktop out.mpg
+@end example
+
+@item video_size
+Set the video frame size. The default is to capture the full screen if @file{desktop} is selected, or the full window size if @file{title=@var{window_title}} is selected.
+
+@item offset_x
+When capturing a region with @var{video_size}, set the distance from the left edge of the screen or desktop.
+
+Note that the offset calculation is from the top left corner of the primary monitor on Windows. If you have a monitor positioned to the left of your primary monitor, you will need to use a negative @var{offset_x} value to move the region to that monitor.
+
+@item offset_y
+When capturing a region with @var{video_size}, set the distance from the top edge of the screen or desktop.
+
+Note that the offset calculation is from the top left corner of the primary monitor on Windows. If you have a monitor positioned above your primary monitor, you will need to use a negative @var{offset_y} value to move the region to that monitor.
+
+@end table
 
 @section iec61883
 
@@ -373,9 +543,27 @@ ffplay -f lavfi "movie=test.avi[out0];amovie=test.wav[out1]"
 
 @end itemize
 
+@section libcdio
+
+Audio-CD input device based on cdio.
+
+To enable this input device during configuration you need libcdio
+installed on your system. Requires the configure option
+@code{--enable-libcdio}.
+
+This device allows playing and grabbing from an Audio-CD.
+
+For example to copy with @command{ffmpeg} the entire Audio-CD in /dev/sr0,
+you may run the command:
+@example
+ffmpeg -f libcdio -i /dev/sr0 cd.wav
+@end example
+
 @section libdc1394
 
 IIDC1394 input device, based on libdc1394 and libraw1394.
+
+Requires the configure option @code{--enable-libdc1394}.
 
 @section openal
 
@@ -409,7 +597,7 @@ OpenAL is part of Core Audio, the official Mac OS X Audio interface.
 See @url{http://developer.apple.com/technologies/mac/audio-and-video.html}
 @end table
 
-This device allows to capture from an audio input device handled
+This device allows one to capture from an audio input device handled
 through OpenAL.
 
 You need to specify the name of the device to capture in the provided
@@ -485,86 +673,78 @@ For more information about OSS see:
 
 @section pulse
 
-pulseaudio input device.
+PulseAudio input device.
 
-To enable this input device during configuration you need libpulse-simple
-installed in your system.
+To enable this output device you need to configure FFmpeg with @code{--enable-libpulse}.
 
 The filename to provide to the input device is a source device or the
 string "default"
 
-To list the pulse source devices and their properties you can invoke
+To list the PulseAudio source devices and their properties you can invoke
 the command @command{pactl list sources}.
 
+More information about PulseAudio can be found on @url{http://www.pulseaudio.org}.
+
+@subsection Options
+@table @option
+@item server
+Connect to a specific PulseAudio server, specified by an IP address.
+Default server is used when not provided.
+
+@item name
+Specify the application name PulseAudio will use when showing active clients,
+by default it is the @code{LIBAVFORMAT_IDENT} string.
+
+@item stream_name
+Specify the stream name PulseAudio will use when showing active streams,
+by default it is "record".
+
+@item sample_rate
+Specify the samplerate in Hz, by default 48kHz is used.
+
+@item channels
+Specify the channels in use, by default 2 (stereo) is set.
+
+@item frame_size
+Specify the number of bytes per frame, by default it is set to 1024.
+
+@item fragment_size
+Specify the minimal buffering fragment in PulseAudio, it will affect the
+audio latency. By default it is unset.
+@end table
+
+@subsection Examples
+Record a stream from default device:
 @example
 ffmpeg -f pulse -i default /tmp/pulse.wav
 @end example
 
-@subsection @var{server} AVOption
+@section qtkit
 
-The syntax is:
+QTKit input device.
+
+The filename passed as input is parsed to contain either a device name or index.
+The device index can also be given by using -video_device_index.
+A given device index will override any given device name.
+If the desired device consists of numbers only, use -video_device_index to identify it.
+The default device will be chosen if an empty string  or the device name "default" is given.
+The available devices can be enumerated by using -list_devices.
+
 @example
--server @var{server name}
+ffmpeg -f qtkit -i "0" out.mpg
 @end example
 
-Connects to a specific server.
-
-@subsection @var{name} AVOption
-
-The syntax is:
 @example
--name @var{application name}
+ffmpeg -f qtkit -video_device_index 0 -i "" out.mpg
 @end example
 
-Specify the application name pulse will use when showing active clients,
-by default it is the LIBAVFORMAT_IDENT string
-
-@subsection @var{stream_name} AVOption
-
-The syntax is:
 @example
--stream_name @var{stream name}
+ffmpeg -f qtkit -i "default" out.mpg
 @end example
 
-Specify the stream name pulse will use when showing active streams,
-by default it is "record"
-
-@subsection @var{sample_rate} AVOption
-
-The syntax is:
 @example
--sample_rate @var{samplerate}
+ffmpeg -f qtkit -list_devices true -i ""
 @end example
-
-Specify the samplerate in Hz, by default 48kHz is used.
-
-@subsection @var{channels} AVOption
-
-The syntax is:
-@example
--channels @var{N}
-@end example
-
-Specify the channels in use, by default 2 (stereo) is set.
-
-@subsection @var{frame_size} AVOption
-
-The syntax is:
-@example
--frame_size @var{bytes}
-@end example
-
-Specify the number of byte per frame, by default it is set to 1024.
-
-@subsection @var{fragment_size} AVOption
-
-The syntax is:
-@example
--fragment_size @var{bytes}
-@end example
-
-Specify the minimal buffering fragment in pulseaudio, it will affect the
-audio latency. By default it is unset.
 
 @section sndio
 
@@ -590,8 +770,8 @@ Video4Linux2 input video device.
 "v4l2" can be used as alias for "video4linux2".
 
 If FFmpeg is built with v4l-utils support (by using the
-@code{--enable-libv4l2} configure option), the device will always rely
-on libv4l2.
+@code{--enable-libv4l2} configure option), it is possible to use it with the
+@code{-use_libv4l2} input device option.
 
 The name of the device to grab is a file device node, usually Linux
 systems tend to automatically create such nodes when the device
@@ -600,7 +780,7 @@ kind @file{/dev/video@var{N}}, where @var{N} is a number associated to
 the device.
 
 Video4Linux2 devices usually support a limited set of
-@var{width}x@var{height} sizes and framerates. You can check which are
+@var{width}x@var{height} sizes and frame rates. You can check which are
 supported using @command{-list_formats all} for Video4Linux2 devices.
 Some devices, like TV cards, support one or more standards. It is possible
 to list all the supported standards using @command{-list_standards all}.
@@ -623,7 +803,7 @@ ffplay -f video4linux2 -framerate 30 -video_size hd720 /dev/video0
 
 @item
 Grab and record the input of a video4linux2 device, leave the
-framerate and size as previously set:
+frame rate and size as previously set:
 @example
 ffmpeg -f video4linux2 -input_format mjpeg -i /dev/video0 out.mpeg
 @end example
@@ -640,7 +820,8 @@ list of the supported standards, use the @option{list_standards}
 option.
 
 @item channel
-Set the input channel number. Default to 0.
+Set the input channel number. Default to -1, which means using the
+previously selected channel.
 
 @item video_size
 Set the video frame size. The argument must be a string in the form
@@ -651,11 +832,11 @@ Select the pixel format (only valid for raw video input).
 
 @item input_format
 Set the preferred pixel format (for raw video) or a codec name.
-This option allows to select the input format, when several are
+This option allows one to select the input format, when several are
 available.
 
 @item framerate
-Set the preferred video framerate.
+Set the preferred video frame rate.
 
 @item list_formats
 List available formats (supported pixel formats, codecs, and frame
@@ -712,7 +893,10 @@ other filename will be interpreted as device number 0.
 
 X11 video input device.
 
-This device allows to capture a region of an X11 display.
+Depends on X11, Xext, and Xfixes. Requires the configure option
+@code{--enable-x11grab}.
+
+This device allows one to capture a region of an X11 display.
 
 The filename passed as input has the syntax:
 @example
@@ -735,12 +919,12 @@ properties of your X11 display (e.g. grep for "name" or "dimensions").
 
 For example to grab from @file{:0.0} using @command{ffmpeg}:
 @example
-ffmpeg -f x11grab -r 25 -s cif -i :0.0 out.mpg
+ffmpeg -f x11grab -framerate 25 -video_size cif -i :0.0 out.mpg
 @end example
 
 Grab at position @code{10,20}:
 @example
-ffmpeg -f x11grab -r 25 -s cif -i :0.0+10,20 out.mpg
+ffmpeg -f x11grab -framerate 25 -video_size cif -i :0.0+10,20 out.mpg
 @end example
 
 @subsection Options
@@ -761,17 +945,17 @@ zero) to the edge of region.
 
 For example:
 @example
-ffmpeg -f x11grab -follow_mouse centered -r 25 -s cif -i :0.0 out.mpg
+ffmpeg -f x11grab -follow_mouse centered -framerate 25 -video_size cif -i :0.0 out.mpg
 @end example
 
 To follow only when the mouse pointer reaches within 100 pixels to edge:
 @example
-ffmpeg -f x11grab -follow_mouse 100 -r 25 -s cif -i :0.0 out.mpg
+ffmpeg -f x11grab -follow_mouse 100 -framerate 25 -video_size cif -i :0.0 out.mpg
 @end example
 
 @item framerate
 Set the grabbing frame rate. Default value is @code{ntsc},
-corresponding to a framerate of @code{30000/1001}.
+corresponding to a frame rate of @code{30000/1001}.
 
 @item show_region
 Show grabbed region on screen.
@@ -782,16 +966,74 @@ know what is being grabbed if only a portion of the screen is grabbed.
 
 For example:
 @example
-ffmpeg -f x11grab -show_region 1 -r 25 -s cif -i :0.0+10,20 out.mpg
+ffmpeg -f x11grab -show_region 1 -framerate 25 -video_size cif -i :0.0+10,20 out.mpg
 @end example
 
 With @var{follow_mouse}:
 @example
-ffmpeg -f x11grab -follow_mouse centered -show_region 1 -r 25 -s cif -i :0.0 out.mpg
+ffmpeg -f x11grab -follow_mouse centered -show_region 1 -framerate 25 -video_size cif -i :0.0 out.mpg
 @end example
 
 @item video_size
 Set the video frame size. Default value is @code{vga}.
+
+@item use_shm
+Use the MIT-SHM extension for shared memory. Default value is @code{1}.
+It may be necessary to disable it for remote displays.
 @end table
+
+@section decklink
+
+The decklink input device provides capture capabilities for Blackmagic
+DeckLink devices.
+
+To enable this input device, you need the Blackmagic DeckLink SDK and you
+need to configure with the appropriate @code{--extra-cflags}
+and @code{--extra-ldflags}.
+On Windows, you need to run the IDL files through @command{widl}.
+
+DeckLink is very picky about the formats it supports. Pixel format is always
+uyvy422, framerate and video size must be determined for your device with
+@command{-list_formats 1}. Audio sample rate is always 48 kHz and the number
+of channels currently is limited to 2 (stereo).
+
+@subsection Options
+
+@table @option
+
+@item list_devices
+If set to @option{true}, print a list of devices and exit.
+Defaults to @option{false}.
+
+@item list_formats
+If set to @option{true}, print a list of supported formats and exit.
+Defaults to @option{false}.
+
+@end table
+
+@subsection Examples
+
+@itemize
+
+@item
+List input devices:
+@example
+ffmpeg -f decklink -list_devices 1 -i dummy
+@end example
+
+@item
+List supported formats:
+@example
+ffmpeg -f decklink -list_formats 1 -i 'Intensity Pro'
+@end example
+
+@item
+Capture video clip at 1080i50 (format 11):
+@example
+ffmpeg -f decklink -i 'Intensity Pro@@11' -acodec copy -vcodec copy output.avi
+@end example
+
+@end itemize
+
 
 @c man end INPUT DEVICES

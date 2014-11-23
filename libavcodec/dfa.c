@@ -20,11 +20,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
+#include <inttypes.h>
+
 #include "avcodec.h"
 #include "bytestream.h"
 #include "internal.h"
 
+#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mem.h"
 
@@ -254,13 +256,16 @@ static int decode_wdlt(GetByteContext *gb, uint8_t *frame, int width, int height
             y        += skip_lines;
             segments = bytestream2_get_le16(gb);
         }
+
         if (frame_end <= frame)
-            return -1;
+            return AVERROR_INVALIDDATA;
         if (segments & 0x8000) {
             frame[width - 1] = segments & 0xFF;
             segments = bytestream2_get_le16(gb);
         }
         line_ptr = frame;
+        if (frame_end - frame < width)
+            return AVERROR_INVALIDDATA;
         frame += width;
         y++;
         while (segments--) {
@@ -288,9 +293,26 @@ static int decode_wdlt(GetByteContext *gb, uint8_t *frame, int width, int height
     return 0;
 }
 
-static int decode_unk6(GetByteContext *gb, uint8_t *frame, int width, int height)
+static int decode_tdlt(GetByteContext *gb, uint8_t *frame, int width, int height)
 {
-    return AVERROR_PATCHWELCOME;
+    const uint8_t *frame_end = frame + width * height;
+    uint32_t segments = bytestream2_get_le32(gb);
+    int skip, copy;
+
+    while (segments--) {
+        if (bytestream2_get_bytes_left(gb) < 2)
+            return AVERROR_INVALIDDATA;
+        copy = bytestream2_get_byteu(gb) * 2;
+        skip = bytestream2_get_byteu(gb) * 2;
+        if (frame_end - frame < copy + skip ||
+            bytestream2_get_bytes_left(gb) < copy)
+            return AVERROR_INVALIDDATA;
+        frame += skip;
+        bytestream2_get_buffer(gb, frame, copy);
+        frame += copy;
+    }
+
+    return 0;
 }
 
 static int decode_blck(GetByteContext *gb, uint8_t *frame, int width, int height)
@@ -304,11 +326,11 @@ typedef int (*chunk_decoder)(GetByteContext *gb, uint8_t *frame, int width, int 
 
 static const chunk_decoder decoder[8] = {
     decode_copy, decode_tsw1, decode_bdlt, decode_wdlt,
-    decode_unk6, decode_dsw1, decode_blck, decode_dds1,
+    decode_tdlt, decode_dsw1, decode_blck, decode_dds1,
 };
 
 static const char* chunk_name[8] = {
-    "COPY", "TSW1", "BDLT", "WDLT", "????", "DSW1", "BLCK", "DDS1"
+    "COPY", "TSW1", "BDLT", "WDLT", "TDLT", "DSW1", "BLCK", "DDS1"
 };
 
 static int dfa_decode_frame(AVCodecContext *avctx,
@@ -323,6 +345,7 @@ static int dfa_decode_frame(AVCodecContext *avctx,
     uint8_t *dst;
     int ret;
     int i, pal_elems;
+    int version = avctx->extradata_size==2 ? AV_RL16(avctx->extradata) : 0;
 
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
@@ -348,7 +371,8 @@ static int dfa_decode_frame(AVCodecContext *avctx,
                 return AVERROR_INVALIDDATA;
             }
         } else {
-            av_log(avctx, AV_LOG_WARNING, "Ignoring unknown chunk type %d\n",
+            av_log(avctx, AV_LOG_WARNING,
+                   "Ignoring unknown chunk type %"PRIu32"\n",
                    chunk_type);
         }
         buf += chunk_size;
@@ -357,9 +381,17 @@ static int dfa_decode_frame(AVCodecContext *avctx,
     buf = s->frame_buf;
     dst = frame->data[0];
     for (i = 0; i < avctx->height; i++) {
-        memcpy(dst, buf, avctx->width);
+        if(version == 0x100) {
+            int j;
+            for(j = 0; j < avctx->width; j++) {
+                dst[j] = buf[ (i&3)*(avctx->width /4) + (j/4) +
+                             ((j&3)*(avctx->height/4) + (i/4))*avctx->width];
+            }
+        } else {
+            memcpy(dst, buf, avctx->width);
+            buf += avctx->width;
+        }
         dst += frame->linesize[0];
-        buf += avctx->width;
     }
     memcpy(frame->data[1], s->pal, sizeof(s->pal));
 
@@ -379,6 +411,7 @@ static av_cold int dfa_decode_end(AVCodecContext *avctx)
 
 AVCodec ff_dfa_decoder = {
     .name           = "dfa",
+    .long_name      = NULL_IF_CONFIG_SMALL("Chronomaster DFA"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_DFA,
     .priv_data_size = sizeof(DfaContext),
@@ -386,5 +419,4 @@ AVCodec ff_dfa_decoder = {
     .close          = dfa_decode_end,
     .decode         = dfa_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("Chronomaster DFA"),
 };

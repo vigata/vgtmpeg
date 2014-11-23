@@ -31,60 +31,61 @@
 #define AVCODEC_TIFF_H
 
 #include <stdint.h>
+#include "tiff_common.h"
 
 /** abridged list of TIFF tags */
-enum TiffTags{
-    TIFF_SUBFILE = 0xfe,
-    TIFF_WIDTH = 0x100,
+enum TiffTags {
+    TIFF_SUBFILE            = 0xfe,
+    TIFF_WIDTH              = 0x100,
     TIFF_HEIGHT,
     TIFF_BPP,
     TIFF_COMPR,
-    TIFF_INVERT = 0x106,
-    TIFF_FILL_ORDER = 0x10A,
-    TIFF_DOCUMENT_NAME = 0x10D,
-    TIFF_IMAGE_DESCRIPTION = 0x10E,
-    TIFF_MAKE = 0x10F,
-    TIFF_MODEL = 0x110,
-    TIFF_STRIP_OFFS = 0x111,
-    TIFF_SAMPLES_PER_PIXEL = 0x115,
-    TIFF_ROWSPERSTRIP = 0x116,
+    TIFF_PHOTOMETRIC        = 0x106,
+    TIFF_FILL_ORDER         = 0x10A,
+    TIFF_DOCUMENT_NAME      = 0x10D,
+    TIFF_IMAGE_DESCRIPTION  = 0x10E,
+    TIFF_MAKE               = 0x10F,
+    TIFF_MODEL              = 0x110,
+    TIFF_STRIP_OFFS         = 0x111,
+    TIFF_SAMPLES_PER_PIXEL  = 0x115,
+    TIFF_ROWSPERSTRIP       = 0x116,
     TIFF_STRIP_SIZE,
-    TIFF_XRES = 0x11A,
-    TIFF_YRES = 0x11B,
-    TIFF_PLANAR = 0x11C,
-    TIFF_PAGE_NAME = 0x11D,
-    TIFF_XPOS = 0x11E,
-    TIFF_YPOS = 0x11F,
-    TIFF_T4OPTIONS = 0x124,
+    TIFF_XRES               = 0x11A,
+    TIFF_YRES               = 0x11B,
+    TIFF_PLANAR             = 0x11C,
+    TIFF_PAGE_NAME          = 0x11D,
+    TIFF_XPOS               = 0x11E,
+    TIFF_YPOS               = 0x11F,
+    TIFF_T4OPTIONS          = 0x124,
     TIFF_T6OPTIONS,
-    TIFF_RES_UNIT = 0x128,
-    TIFF_PAGE_NUMBER = 0x129,
-    TIFF_SOFTWARE_NAME = 0x131,
-    TIFF_DATE = 0x132,
-    TIFF_ARTIST = 0x13B,
-    TIFF_HOST_COMPUTER = 0x13C,
-    TIFF_PREDICTOR = 0x13D,
-    TIFF_PAL = 0x140,
-    TIFF_TILE_WIDTH = 0x142,
-    TIFF_TILE_LENGTH = 0x143,
-    TIFF_TILE_OFFSETS = 0x144,
-    TIFF_TILE_BYTE_COUNTS = 0x145,
-    TIFF_EXTRASAMPLES = 0x152,
+    TIFF_RES_UNIT           = 0x128,
+    TIFF_PAGE_NUMBER        = 0x129,
+    TIFF_SOFTWARE_NAME      = 0x131,
+    TIFF_DATE               = 0x132,
+    TIFF_ARTIST             = 0x13B,
+    TIFF_HOST_COMPUTER      = 0x13C,
+    TIFF_PREDICTOR          = 0x13D,
+    TIFF_PAL                = 0x140,
+    TIFF_TILE_WIDTH         = 0x142,
+    TIFF_TILE_LENGTH        = 0x143,
+    TIFF_TILE_OFFSETS       = 0x144,
+    TIFF_TILE_BYTE_COUNTS   = 0x145,
+    TIFF_EXTRASAMPLES       = 0x152,
     TIFF_YCBCR_COEFFICIENTS = 0x211,
-    TIFF_YCBCR_SUBSAMPLING = 0x212,
-    TIFF_YCBCR_POSITIONING = 0x213,
-    TIFF_REFERENCE_BW = 0x214,
-    TIFF_COPYRIGHT = 0x8298,
-    TIFF_MODEL_TIEPOINT = 0x8482,
-    TIFF_MODEL_PIXEL_SCALE = 0x830E,
-    TIFF_MODEL_TRANSFORMATION = 0x8480,
-    TIFF_GEO_KEY_DIRECTORY = 0x87AF,
-    TIFF_GEO_DOUBLE_PARAMS = 0x87B0,
-    TIFF_GEO_ASCII_PARAMS = 0x87B1
+    TIFF_YCBCR_SUBSAMPLING  = 0x212,
+    TIFF_YCBCR_POSITIONING  = 0x213,
+    TIFF_REFERENCE_BW       = 0x214,
+    TIFF_COPYRIGHT          = 0x8298,
+    TIFF_MODEL_TIEPOINT     = 0x8482,
+    TIFF_MODEL_PIXEL_SCALE  = 0x830E,
+    TIFF_MODEL_TRANSFORMATION= 0x8480,
+    TIFF_GEO_KEY_DIRECTORY  = 0x87AF,
+    TIFF_GEO_DOUBLE_PARAMS  = 0x87B0,
+    TIFF_GEO_ASCII_PARAMS   = 0x87B1
 };
 
 /** list of TIFF compression types */
-enum TiffCompr{
+enum TiffCompr {
     TIFF_RAW = 1,
     TIFF_CCITT_RLE,
     TIFF_G3,
@@ -94,23 +95,8 @@ enum TiffCompr{
     TIFF_NEWJPEG,
     TIFF_ADOBE_DEFLATE,
     TIFF_PACKBITS = 0x8005,
-    TIFF_DEFLATE = 0x80B2
-};
-
-enum TiffTypes{
-    TIFF_BYTE = 1,
-    TIFF_STRING,
-    TIFF_SHORT,
-    TIFF_LONG,
-    TIFF_RATIONAL,
-    TIFF_SBYTE,
-    TIFF_UNDEFINED,
-    TIFF_SSHORT,
-    TIFF_SLONG,
-    TIFF_SRATIONAL,
-    TIFF_FLOAT,
-    TIFF_DOUBLE,
-    TIFF_IFD
+    TIFF_DEFLATE  = 0x80B2,
+    TIFF_LZMA     = 0x886D,
 };
 
 enum TiffGeoTagKey {
@@ -161,15 +147,28 @@ enum TiffGeoTagKey {
     TIFF_VERTICAL_UNITS_GEOKEY               = 4099
 };
 
+enum TiffPhotometric {
+    TIFF_PHOTOMETRIC_NONE       = -1,
+    TIFF_PHOTOMETRIC_WHITE_IS_ZERO,      /* mono or grayscale, 0 is white */
+    TIFF_PHOTOMETRIC_BLACK_IS_ZERO,      /* mono or grayscale, 0 is black */
+    TIFF_PHOTOMETRIC_RGB,                /* RGB or RGBA*/
+    TIFF_PHOTOMETRIC_PALETTE,            /* Uses a palette */
+    TIFF_PHOTOMETRIC_ALPHA_MASK,         /* Transparency mask */
+    TIFF_PHOTOMETRIC_SEPARATED,          /* CMYK or some other ink set */
+    TIFF_PHOTOMETRIC_YCBCR,              /* YCbCr */
+    TIFF_PHOTOMETRIC_CIE_LAB    = 8,     /* 1976 CIE L*a*b* */
+    TIFF_PHOTOMETRIC_ICC_LAB,            /* ICC L*a*b* */
+    TIFF_PHOTOMETRIC_ITU_LAB,            /* ITU L*a*b* */
+    TIFF_PHOTOMETRIC_CFA        = 32803, /* Color Filter Array (DNG) */
+    TIFF_PHOTOMETRIC_LOG_L      = 32844, /* CIE Log2(L) */
+    TIFF_PHOTOMETRIC_LOG_LUV,            /* CIE Log L*u*v* */
+    TIFF_PHOTOMETRIC_LINEAR_RAW = 34892, /* Linear Raw (DNG) */
+};
+
 enum TiffGeoTagType {
     GEOTIFF_SHORT  = 0,
     GEOTIFF_DOUBLE = 34736,
     GEOTIFF_STRING = 34737
-};
-
-/** sizes of various TIFF field types (string size = 100)*/
-static const uint8_t type_sizes[14] = {
-    0, 1, 100, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8, 4
 };
 
 typedef struct TiffGeoTag {

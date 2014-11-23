@@ -120,29 +120,51 @@ typedef struct AVIOContext {
      * max filesize, used to limit allocations
      * This field is internal to libavformat and access from outside is not allowed.
      */
-     int64_t maxsize;
+    int64_t maxsize;
 
-     /**
-      * avio_read and avio_write should if possible be satisfied directly
-      * instead of going through a buffer, and avio_seek will always
-      * call the underlying seek function directly.
-      */
-     int direct;
+    /**
+     * avio_read and avio_write should if possible be satisfied directly
+     * instead of going through a buffer, and avio_seek will always
+     * call the underlying seek function directly.
+     */
+    int direct;
 
     /**
      * Bytes read statistic
      * This field is internal to libavformat and access from outside is not allowed.
      */
-     int64_t bytes_read;
+    int64_t bytes_read;
 
     /**
      * seek statistic
      * This field is internal to libavformat and access from outside is not allowed.
      */
-     int seek_count;
+    int seek_count;
+
+    /**
+     * writeout statistic
+     * This field is internal to libavformat and access from outside is not allowed.
+     */
+    int writeout_count;
+
+    /**
+     * Original buffer size
+     * used internally after probing and ensure seekback to reset the buffer size
+     * This field is internal to libavformat and access from outside is not allowed.
+     */
+    int orig_buffer_size;
 } AVIOContext;
 
 /* unbuffered I/O */
+
+/**
+ * Return the name of the protocol that will handle the passed URL.
+ *
+ * NULL is returned if no protocol could be found for the given URL.
+ *
+ * @return Name of the protocol or NULL.
+ */
+const char *avio_find_protocol_name(const char *url);
 
 /**
  * Return AVIO_FLAG_* access flags corresponding to the access permissions
@@ -254,16 +276,27 @@ int64_t avio_size(AVIOContext *s);
  * feof() equivalent for AVIOContext.
  * @return non zero if and only if end of file
  */
+int avio_feof(AVIOContext *s);
+#if FF_API_URL_FEOF
+/**
+ * @deprecated use avio_feof()
+ */
+attribute_deprecated
 int url_feof(AVIOContext *s);
+#endif
 
 /** @warning currently size is limited */
 int avio_printf(AVIOContext *s, const char *fmt, ...) av_printf_format(2, 3);
 
 /**
- * Force flushing of buffered data to the output s.
+ * Force flushing of buffered data.
  *
- * Force the buffered data to be immediately written to the output,
+ * For write streams, force the buffered data to be immediately written to the output,
  * without to wait to fill the internal buffer.
+ *
+ * For read streams, discard all currently buffered data, and advance the
+ * reported file position to that of the underlying stream. This does not
+ * read new data, and does not perform any seeks.
  */
 void avio_flush(AVIOContext *s);
 
@@ -360,9 +393,10 @@ int avio_get_str16be(AVIOContext *pb, int maxlen, char *buf, int buflen);
  *
  * @param s Used to return the pointer to the created AVIOContext.
  * In case of failure the pointed to value is set to NULL.
+ * @param url resource to access
  * @param flags flags which control how the resource indicated by url
  * is to be opened
- * @return 0 in case of success, a negative value corresponding to an
+ * @return >= 0 in case of success, a negative value corresponding to an
  * AVERROR code in case of failure
  */
 int avio_open(AVIOContext **s, const char *url, int flags);
@@ -375,13 +409,14 @@ int avio_open(AVIOContext **s, const char *url, int flags);
  *
  * @param s Used to return the pointer to the created AVIOContext.
  * In case of failure the pointed to value is set to NULL.
+ * @param url resource to access
  * @param flags flags which control how the resource indicated by url
  * is to be opened
  * @param int_cb an interrupt callback to be used at the protocols level
  * @param options  A dictionary filled with protocol-private options. On return
  * this parameter will be destroyed and replaced with a dict containing options
  * that were not found. May be NULL.
- * @return 0 in case of success, a negative value corresponding to an
+ * @return >= 0 in case of success, a negative value corresponding to an
  * AVERROR code in case of failure
  */
 int avio_open2(AVIOContext **s, const char *url, int flags,
@@ -448,6 +483,8 @@ const char *avio_enum_protocols(void **opaque, int output);
 /**
  * Pause and resume playing - only meaningful if using a network streaming
  * protocol (e.g. MMS).
+ *
+ * @param h     IO context from which to call the read_pause function pointer
  * @param pause 1 for pause, 0 for resume
  */
 int     avio_pause(AVIOContext *h, int pause);
@@ -455,6 +492,8 @@ int     avio_pause(AVIOContext *h, int pause);
 /**
  * Seek to a given timestamp relative to some component stream.
  * Only meaningful if using a network streaming protocol (e.g. MMS.).
+ *
+ * @param h IO context from which to call the seek function pointers
  * @param stream_index The stream index that the timestamp is relative to.
  *        If stream_index is (-1) the timestamp should be in AV_TIME_BASE
  *        units from the beginning of the presentation.
@@ -471,5 +510,16 @@ int     avio_pause(AVIOContext *h, int pause);
  */
 int64_t avio_seek_time(AVIOContext *h, int stream_index,
                        int64_t timestamp, int flags);
+
+/* Avoid a warning. The header can not be included because it breaks c++. */
+struct AVBPrint;
+
+/**
+ * Read contents of h into print buffer, up to max_size bytes, or up to EOF.
+ *
+ * @return 0 for success (max_size bytes read or EOF reached), negative error
+ * code otherwise
+ */
+int avio_read_to_bprint(AVIOContext *h, struct AVBPrint *pb, size_t max_size);
 
 #endif /* AVFORMAT_AVIO_H */

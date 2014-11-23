@@ -64,9 +64,35 @@ fate-acodec-adpcm-ms:      FMT = wav
 fate-acodec-adpcm-swf:     FMT = flv
 fate-acodec-adpcm-yamaha:  FMT = wav
 
+FATE_ACODEC_ADPCM_TRELLIS-$(call ENCDEC, ADPCM_ADX,     ADX)  += adx
+FATE_ACODEC_ADPCM_TRELLIS-$(call ENCDEC, ADPCM_IMA_QT,  AIFF) += ima_qt
+FATE_ACODEC_ADPCM_TRELLIS-$(call ENCDEC, ADPCM_IMA_WAV, WAV)  += ima_wav
+FATE_ACODEC_ADPCM_TRELLIS-$(call ENCDEC, ADPCM_MS,      WAV)  += ms
+FATE_ACODEC_ADPCM_TRELLIS-$(call ENCDEC, ADPCM_SWF,     FLV)  += swf
+FATE_ACODEC_ADPCM_TRELLIS-$(call ENCDEC, ADPCM_YAMAHA,  WAV)  += yamaha
+
+FATE_ACODEC_ADPCM_TRELLIS := $(FATE_ACODEC_ADPCM_TRELLIS-yes:%=fate-acodec-adpcm-%-trellis)
+FATE_ACODEC += $(FATE_ACODEC_ADPCM_TRELLIS)
+fate-acodec-adpcm-trellis: $(FATE_ACODEC_ADPCM_TRELLIS)
+
+fate-acodec-adpcm-%-trellis: CODEC = adpcm_$(@:fate-acodec-adpcm-%-trellis=%)
+fate-acodec-adpcm-%-trellis: ENCOPTS = -trellis 5
+
+fate-acodec-adpcm-adx-trellis:     FMT = adx
+fate-acodec-adpcm-ima_qt-trellis:  FMT = aiff
+fate-acodec-adpcm-ima_wav-trellis: FMT = wav
+fate-acodec-adpcm-ms-trellis:      FMT = wav
+fate-acodec-adpcm-swf-trellis:     FMT = flv
+fate-acodec-adpcm-yamaha-trellis:  FMT = wav
+
 FATE_ACODEC-$(call ENCDEC, MP2, MP2 MP3) += fate-acodec-mp2
 fate-acodec-mp2: FMT = mp2
 fate-acodec-mp2: CMP_SHIFT = -1924
+fate-acodec-mp2: ENCOPTS = -b:a 128k
+
+FATE_ACODEC-$(call ENCDEC, MP2FIXED MP2 , MP2 MP3) += fate-acodec-mp2fixed
+fate-acodec-mp2fixed: FMT = mp2
+fate-acodec-mp2fixed: CMP_SHIFT = -1924
 
 FATE_ACODEC-$(call ENCDEC, ALAC, MOV) += fate-acodec-alac
 fate-acodec-alac: FMT = mov
@@ -77,15 +103,15 @@ fate-acodec-dca: tests/data/asynth-44100-2.wav
 fate-acodec-dca: SRC = tests/data/asynth-44100-2.wav
 fate-acodec-dca: CMD = md5 -i $(TARGET_PATH)/$(SRC) -c:a dca -strict -2 -f dts -flags +bitexact
 fate-acodec-dca: CMP = oneline
-fate-acodec-dca: REF = 66bd0e602be7fb97dc19151554c0ee29
+fate-acodec-dca: REF = fe28cef432ed88de4ee01b87537fd2bd
 
 FATE_ACODEC-$(call ENCDEC, DCA, WAV) += fate-acodec-dca2
 fate-acodec-dca2: CMD = enc_dec_pcm dts wav s16le $(SRC) -c:a dca -strict -2 -flags +bitexact
 fate-acodec-dca2: REF = $(SRC)
 fate-acodec-dca2: CMP = stddev
-fate-acodec-dca2: CMP_SHIFT = -1920
-fate-acodec-dca2: CMP_TARGET = 2424
-fate-acodec-dca2: SIZE_TOLERANCE = 544
+fate-acodec-dca2: CMP_SHIFT = -2048
+fate-acodec-dca2: CMP_TARGET = 527
+fate-acodec-dca2: SIZE_TOLERANCE = 1632
 
 FATE_ACODEC-$(call ENCDEC, FLAC, FLAC) += fate-acodec-flac
 fate-acodec-flac: FMT = flac

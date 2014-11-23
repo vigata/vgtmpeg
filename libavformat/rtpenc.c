@@ -28,8 +28,6 @@
 
 #include "rtpenc.h"
 
-//#define DEBUG
-
 static const AVOption options[] = {
     FF_RTP_FLAG_OPTS(RTPMuxContext, flags),
     { "payload_type", "Specify RTP payload type", offsetof(RTPMuxContext, payload_type), AV_OPT_TYPE_INT, {.i64 = -1 }, -1, 127, AV_OPT_FLAG_ENCODING_PARAM },
@@ -51,9 +49,11 @@ static const AVClass rtp_muxer_class = {
 static int is_supported(enum AVCodecID id)
 {
     switch(id) {
+    case AV_CODEC_ID_H261:
     case AV_CODEC_ID_H263:
     case AV_CODEC_ID_H263P:
     case AV_CODEC_ID_H264:
+    case AV_CODEC_ID_HEVC:
     case AV_CODEC_ID_MPEG1VIDEO:
     case AV_CODEC_ID_MPEG2VIDEO:
     case AV_CODEC_ID_MPEG4:
@@ -121,7 +121,7 @@ static int rtp_write_header(AVFormatContext *s1)
         s->ssrc = av_get_random_seed();
     s->first_packet = 1;
     s->first_rtcp_ntp_time = ff_ntp_time();
-    if (s1->start_time_realtime)
+    if (s1->start_time_realtime != 0  &&  s1->start_time_realtime != AV_NOPTS_VALUE)
         /* Round the NTP time to whole milliseconds. */
         s->first_rtcp_ntp_time = (s1->start_time_realtime / 1000) * 1000 +
                                  NTP_OFFSET_US;
@@ -129,7 +129,7 @@ static int rtp_write_header(AVFormatContext *s1)
     // available range, so that any wraparound doesn't happen immediately.
     // (Immediate wraparound would be an issue for SRTP.)
     if (s->seq < 0) {
-        if (st->codec->flags & CODEC_FLAG_BITEXACT) {
+        if (s1->flags & AVFMT_FLAG_BITEXACT) {
             s->seq = 0;
         } else
             s->seq = av_get_random_seed() & 0x0fff;
@@ -147,7 +147,7 @@ static int rtp_write_header(AVFormatContext *s1)
         return AVERROR(EIO);
     }
     s->buf = av_malloc(s1->packet_size);
-    if (s->buf == NULL) {
+    if (!s->buf) {
         return AVERROR(ENOMEM);
     }
     s->max_payload_size = s1->packet_size - 12;
@@ -170,7 +170,12 @@ static int rtp_write_header(AVFormatContext *s1)
         }
         if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             /* FIXME: We should round down here... */
-            s->max_frames_per_packet = av_rescale_q(s1->max_delay, (AVRational){1, 1000000}, st->codec->time_base);
+            if (st->avg_frame_rate.num > 0 && st->avg_frame_rate.den > 0) {
+                s->max_frames_per_packet = av_rescale_q(s1->max_delay,
+                                                        (AVRational){1, 1000000},
+                                                        av_inv_q(st->avg_frame_rate));
+            } else
+                s->max_frames_per_packet = 1;
         }
     }
 
@@ -194,6 +199,15 @@ static int rtp_write_header(AVFormatContext *s1)
         /* check for H.264 MP4 syntax */
         if (st->codec->extradata_size > 4 && st->codec->extradata[0] == 1) {
             s->nal_length_size = (st->codec->extradata[4] & 0x03) + 1;
+        }
+        break;
+    case AV_CODEC_ID_HEVC:
+        /* Only check for the standardized hvcC version of extradata, keeping
+         * things simple and similar to the avcC/H264 case above, instead
+         * of trying to handle the pre-standardization versions (as in
+         * libavcodec/hevc.c). */
+        if (st->codec->extradata_size > 21 && st->codec->extradata[0] == 1) {
+            s->nal_length_size = (st->codec->extradata[21] & 0x03) + 1;
         }
         break;
     case AV_CODEC_ID_VORBIS:
@@ -264,7 +278,7 @@ fail:
 }
 
 /* send an rtcp sender report packet */
-static void rtcp_send_sr(AVFormatContext *s1, int64_t ntp_time)
+static void rtcp_send_sr(AVFormatContext *s1, int64_t ntp_time, int bye)
 {
     RTPMuxContext *s = s1->priv_data;
     uint32_t rtp_ts;
@@ -274,12 +288,11 @@ static void rtcp_send_sr(AVFormatContext *s1, int64_t ntp_time)
     s->last_rtcp_ntp_time = ntp_time;
     rtp_ts = av_rescale_q(ntp_time - s->first_rtcp_ntp_time, (AVRational){1, 1000000},
                           s1->streams[0]->time_base) + s->base_timestamp;
-    avio_w8(s1->pb, (RTP_VERSION << 6));
+    avio_w8(s1->pb, RTP_VERSION << 6);
     avio_w8(s1->pb, RTCP_SR);
     avio_wb16(s1->pb, 6); /* length in words - 1 */
     avio_wb32(s1->pb, s->ssrc);
-    avio_wb32(s1->pb, ntp_time / 1000000);
-    avio_wb32(s1->pb, ((ntp_time % 1000000) << 32) / 1000000);
+    avio_wb64(s1->pb, NTP_TO_RTP_FORMAT(ntp_time));
     avio_wb32(s1->pb, rtp_ts);
     avio_wb32(s1->pb, s->packet_count);
     avio_wb32(s1->pb, s->octet_count);
@@ -299,6 +312,13 @@ static void rtcp_send_sr(AVFormatContext *s1, int64_t ntp_time)
             avio_w8(s1->pb, 0);
     }
 
+    if (bye) {
+        avio_w8(s1->pb, (RTP_VERSION << 6) | 1);
+        avio_w8(s1->pb, RTCP_BYE);
+        avio_wb16(s1->pb, 1); /* length in words - 1 */
+        avio_wb32(s1->pb, s->ssrc);
+    }
+
     avio_flush(s1->pb);
 }
 
@@ -311,7 +331,7 @@ void ff_rtp_send_data(AVFormatContext *s1, const uint8_t *buf1, int len, int m)
     av_dlog(s1, "rtp_send_data size=%d\n", len);
 
     /* build the RTP header */
-    avio_w8(s1->pb, (RTP_VERSION << 6));
+    avio_w8(s1->pb, RTP_VERSION << 6);
     avio_w8(s1->pb, (s->payload_type & 0x7f) | ((m & 0x01) << 7));
     avio_wb16(s1->pb, s->seq);
     avio_wb32(s1->pb, s->timestamp);
@@ -497,7 +517,7 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
     if ((s->first_packet || ((rtcp_bytes >= RTCP_SR_SIZE) &&
                             (ff_ntp_time() - s->last_rtcp_ntp_time > 5000000))) &&
         !(s->flags & FF_RTP_FLAG_SKIP_RTCP)) {
-        rtcp_send_sr(s1, ff_ntp_time());
+        rtcp_send_sr(s1, ff_ntp_time(), 0);
         s->last_octet_count = s->octet_count;
         s->first_packet = 0;
     }
@@ -547,18 +567,28 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
     case AV_CODEC_ID_H264:
         ff_rtp_send_h264(s1, pkt->data, size);
         break;
+    case AV_CODEC_ID_H261:
+        ff_rtp_send_h261(s1, pkt->data, size);
+        break;
     case AV_CODEC_ID_H263:
         if (s->flags & FF_RTP_FLAG_RFC2190) {
             int mb_info_size = 0;
             const uint8_t *mb_info =
                 av_packet_get_side_data(pkt, AV_PKT_DATA_H263_MB_INFO,
                                         &mb_info_size);
+            if (!mb_info) {
+                av_log(s1, AV_LOG_ERROR, "failed to allocate side data\n");
+                return AVERROR(ENOMEM);
+            }
             ff_rtp_send_h263_rfc2190(s1, pkt->data, size, mb_info, mb_info_size);
             break;
         }
         /* Fallthrough */
     case AV_CODEC_ID_H263P:
         ff_rtp_send_h263(s1, pkt->data, size);
+        break;
+    case AV_CODEC_ID_HEVC:
+        ff_rtp_send_hevc(s1, pkt->data, size);
         break;
     case AV_CODEC_ID_VORBIS:
     case AV_CODEC_ID_THEORA:
@@ -593,6 +623,10 @@ static int rtp_write_trailer(AVFormatContext *s1)
 {
     RTPMuxContext *s = s1->priv_data;
 
+    /* If the caller closes and recreates ->pb, this might actually
+     * be NULL here even if it was successfully allocated at the start. */
+    if (s1->pb && (s->flags & FF_RTP_FLAG_SEND_BYE))
+        rtcp_send_sr(s1, ff_ntp_time(), 1);
     av_freep(&s->buf);
 
     return 0;

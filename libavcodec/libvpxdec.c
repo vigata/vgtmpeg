@@ -31,6 +31,7 @@
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "internal.h"
+#include "libvpx.h"
 
 typedef struct VP8DecoderContext {
     struct vpx_codec_ctx decoder;
@@ -55,8 +56,60 @@ static av_cold int vpx_init(AVCodecContext *avctx,
         return AVERROR(EINVAL);
     }
 
-    avctx->pix_fmt = AV_PIX_FMT_YUV420P;
     return 0;
+}
+
+// returns 0 on success, AVERROR_INVALIDDATA otherwise
+static int set_pix_fmt(AVCodecContext *avctx, struct vpx_image *img) {
+    if (avctx->codec_id == AV_CODEC_ID_VP8 && img->fmt != VPX_IMG_FMT_I420)
+        return AVERROR_INVALIDDATA;
+    switch (img->fmt) {
+        case VPX_IMG_FMT_I420:
+            avctx->pix_fmt = AV_PIX_FMT_YUV420P;
+            return 0;
+#if CONFIG_LIBVPX_VP9_DECODER
+        case VPX_IMG_FMT_I422:
+            avctx->pix_fmt = AV_PIX_FMT_YUV422P;
+            return 0;
+        case VPX_IMG_FMT_I444:
+            avctx->pix_fmt = AV_PIX_FMT_YUV444P;
+            return 0;
+#ifdef VPX_IMG_FMT_HIGHBITDEPTH
+        case VPX_IMG_FMT_I42016:
+            if (img->bit_depth == 10) {
+                avctx->pix_fmt = AV_PIX_FMT_YUV420P10LE;
+                return 0;
+            } else if (img->bit_depth == 12) {
+                avctx->pix_fmt = AV_PIX_FMT_YUV420P12LE;
+                return 0;
+            } else {
+                return AVERROR_INVALIDDATA;
+            }
+        case VPX_IMG_FMT_I42216:
+            if (img->bit_depth == 10) {
+                avctx->pix_fmt = AV_PIX_FMT_YUV422P10LE;
+                return 0;
+            } else if (img->bit_depth == 12) {
+                avctx->pix_fmt = AV_PIX_FMT_YUV422P12LE;
+                return 0;
+            } else {
+                return AVERROR_INVALIDDATA;
+            }
+        case VPX_IMG_FMT_I44416:
+            if (img->bit_depth == 10) {
+                avctx->pix_fmt = AV_PIX_FMT_YUV444P10LE;
+                return 0;
+            } else if (img->bit_depth == 12) {
+                avctx->pix_fmt = AV_PIX_FMT_YUV444P12LE;
+                return 0;
+            } else {
+                return AVERROR_INVALIDDATA;
+            }
+#endif
+#endif
+        default:
+            return AVERROR_INVALIDDATA;
+    }
 }
 
 static int vp8_decode(AVCodecContext *avctx,
@@ -81,22 +134,27 @@ static int vp8_decode(AVCodecContext *avctx,
     }
 
     if ((img = vpx_codec_get_frame(&ctx->decoder, &iter))) {
-        if (img->fmt != VPX_IMG_FMT_I420) {
-            av_log(avctx, AV_LOG_ERROR, "Unsupported output colorspace (%d)\n",
-                   img->fmt);
-            return AVERROR_INVALIDDATA;
+        if ((ret = set_pix_fmt(avctx, img)) < 0) {
+#ifdef VPX_IMG_FMT_HIGHBITDEPTH
+            av_log(avctx, AV_LOG_ERROR, "Unsupported output colorspace (%d) / bit_depth (%d)\n",
+                   img->fmt, img->bit_depth);
+#else
+            av_log(avctx, AV_LOG_ERROR, "Unsupported output colorspace (%d) / bit_depth (%d)\n",
+                   img->fmt, 8);
+#endif
+            return ret;
         }
 
         if ((int) img->d_w != avctx->width || (int) img->d_h != avctx->height) {
             av_log(avctx, AV_LOG_INFO, "dimension change! %dx%d -> %dx%d\n",
                    avctx->width, avctx->height, img->d_w, img->d_h);
-            if (av_image_check_size(img->d_w, img->d_h, 0, avctx))
-                return AVERROR_INVALIDDATA;
-            avcodec_set_dimensions(avctx, img->d_w, img->d_h);
+            ret = ff_set_dimensions(avctx, img->d_w, img->d_h);
+            if (ret < 0)
+                return ret;
         }
         if ((ret = ff_get_buffer(avctx, picture, 0)) < 0)
             return ret;
-        av_image_copy(picture->data, picture->linesize, img->planes,
+        av_image_copy(picture->data, picture->linesize, (const uint8_t **)img->planes,
                       img->stride, avctx->pix_fmt, img->d_w, img->d_h);
         *got_frame           = 1;
     }
@@ -118,6 +176,7 @@ static av_cold int vp8_init(AVCodecContext *avctx)
 
 AVCodec ff_libvpx_vp8_decoder = {
     .name           = "libvpx",
+    .long_name      = NULL_IF_CONFIG_SMALL("libvpx VP8"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_VP8,
     .priv_data_size = sizeof(VP8Context),
@@ -125,7 +184,6 @@ AVCodec ff_libvpx_vp8_decoder = {
     .close          = vp8_free,
     .decode         = vp8_decode,
     .capabilities   = CODEC_CAP_AUTO_THREADS | CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("libvpx VP8"),
 };
 #endif /* CONFIG_LIBVPX_VP8_DECODER */
 
@@ -137,13 +195,14 @@ static av_cold int vp9_init(AVCodecContext *avctx)
 
 AVCodec ff_libvpx_vp9_decoder = {
     .name           = "libvpx-vp9",
+    .long_name      = NULL_IF_CONFIG_SMALL("libvpx VP9"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_VP9,
     .priv_data_size = sizeof(VP8Context),
     .init           = vp9_init,
     .close          = vp8_free,
     .decode         = vp8_decode,
-    .capabilities   = CODEC_CAP_AUTO_THREADS | CODEC_CAP_EXPERIMENTAL,
-    .long_name      = NULL_IF_CONFIG_SMALL("libvpx VP9"),
+    .capabilities   = CODEC_CAP_AUTO_THREADS | CODEC_CAP_DR1,
+    .init_static_data = ff_vp9_init_static,
 };
 #endif /* CONFIG_LIBVPX_VP9_DECODER */
