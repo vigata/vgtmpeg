@@ -321,6 +321,20 @@ static unsigned int get_ff_program_id_from_sid(MpegTSContext *ts, unsigned int s
 }
 /* << vgtmpeg */
 
+
+
+
+static struct Program * get_program(MpegTSContext *ts, unsigned int programid)
+{
+    int i;
+    for (i = 0; i < ts->nb_prg; i++) {
+        if (ts->prg[i].id == programid) {
+            return &ts->prg[i];
+        }
+    }
+    return NULL;
+}
+
 static void clear_avprogram(MpegTSContext *ts, unsigned int programid)
 {
     AVProgram *prg = NULL;
@@ -2089,7 +2103,7 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
             for (i = 0; i < ts->nb_prg; i++)
                 if (ts->prg[i].id == ts->stream->programs[j]->id)
                     break;
-            if (i==ts->nb_prg)
+            if (i==ts->nb_prg && !ts->skip_clear)
                 clear_avprogram(ts, ts->stream->programs[j]->id);
         }
     }

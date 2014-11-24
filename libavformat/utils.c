@@ -2293,10 +2293,12 @@ static void fill_all_stream_timings(AVFormatContext *ic)
     for (i = 0; i < ic->nb_streams; i++) {
         st = ic->streams[i];
         if (st->start_time == AV_NOPTS_VALUE) {
-            if(ic->start_time != AV_NOPTS_VALUE)
-                st->start_time = av_rescale_q(ic->start_time, AV_TIME_BASE_Q, st->time_base);
-            if(ic->duration != AV_NOPTS_VALUE)
-                st->duration = av_rescale_q(ic->duration, AV_TIME_BASE_Q, st->time_base);
+            if (ic->start_time != AV_NOPTS_VALUE)
+                st->start_time = av_rescale_q(ic->start_time, AV_TIME_BASE_Q,
+                                              st->time_base);
+            if (ic->duration != AV_NOPTS_VALUE)
+                st->duration = av_rescale_q(ic->duration, AV_TIME_BASE_Q,
+                                            st->time_base);
         }
     }
 }
@@ -2387,35 +2389,45 @@ static void estimate_timings_from_pts(AVFormatContext *ic, int64_t old_offset)
     /* estimate the end time (duration) */
     /* XXX: may need to support wrapping */
     filesize = ic->pb ? avio_size(ic->pb) : 0;
-    end_time = AV_NOPTS_VALUE;
-    do{
-        offset = filesize - (DURATION_MAX_READ_SIZE<<retry);
+    do {
+        is_end = found_duration;
+        offset = filesize - (DURATION_MAX_READ_SIZE << retry);
         if (offset < 0)
             offset = 0;
 
         avio_seek(ic->pb, offset, SEEK_SET);
         read_size = 0;
-        for(;;) {
-            if (read_size >= DURATION_MAX_READ_SIZE<<(FFMAX(retry-1,0)))
+        for (;;) {
+            if (read_size >= DURATION_MAX_READ_SIZE << (FFMAX(retry - 1, 0)))
                 break;
 
             do {
                 ret = ff_read_packet(ic, pkt);
-            } while(ret == AVERROR(EAGAIN));
+            } while (ret == AVERROR(EAGAIN));
             if (ret != 0)
                 break;
             read_size += pkt->size;
-            st = ic->streams[pkt->stream_index];
+            st         = ic->streams[pkt->stream_index];
             if (pkt->pts != AV_NOPTS_VALUE &&
                 (st->start_time != AV_NOPTS_VALUE ||
                  st->first_dts  != AV_NOPTS_VALUE)) {
-                duration = end_time = pkt->pts;
+                if (pkt->duration == 0) {
+                    ff_compute_frame_duration(ic, &num, &den, st, st->parser, pkt);
+                    if (den && num) {
+                        pkt->duration = av_rescale_rnd(1,
+                                           num * (int64_t) st->time_base.den,
+                                           den * (int64_t) st->time_base.num,
+                                           AV_ROUND_DOWN);
+                    }
+                }
+                duration = pkt->pts + pkt->duration;
+                found_duration = 1;
                 if (st->start_time != AV_NOPTS_VALUE)
                     duration -= st->start_time;
                 else
                     duration -= st->first_dts;
                 if (duration > 0) {
-                    if (st->duration == AV_NOPTS_VALUE || st->info->last_duration<=0 ||
+                    if (st->duration == AV_NOPTS_VALUE || st->info->last_duration<= 0 ||
                         (st->duration < duration && FFABS(duration - st->info->last_duration) < 60LL*st->time_base.den / st->time_base.num))
                         st->duration = duration;
                     st->info->last_duration = duration;
@@ -2423,9 +2435,6 @@ static void estimate_timings_from_pts(AVFormatContext *ic, int64_t old_offset)
             }
             av_free_packet(pkt);
         }
-    }while(   end_time==AV_NOPTS_VALUE
-           && filesize > (DURATION_MAX_READ_SIZE<<retry)
-           && ++retry <= DURATION_MAX_RETRY);
 
         /* check if all audio/video streams have valid duration */
         if (!is_end) {

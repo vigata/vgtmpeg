@@ -49,6 +49,10 @@ static int           is_nav_pack( unsigned char *buf );
 
 static int gloglevel = HB_LOG_VERBOSE; 
 
+#if __GNUC__
+#pragma GCC diagnostic ignored "-Wformat-security"
+#endif
+
 static void dvdread_logger(const char *log){
 	av_log(NULL, gloglevel,  log );
 	return;
