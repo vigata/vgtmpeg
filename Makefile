@@ -26,7 +26,7 @@ AVPROGS    := $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 INSTPROGS   = $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 PROGS      += $(AVPROGS)
 
-AVBASENAMES  = ffmpeg ffplay ffprobe ffserver
+AVBASENAMES  = ffmpeg ffplay ffprobe ffserver vgtmpeg
 ALLAVPROGS   = $(AVBASENAMES:%=%$(PROGSSUF)$(EXESUF))
 ALLAVPROGS_G = $(AVBASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
 
@@ -34,8 +34,8 @@ $(foreach prog,$(AVBASENAMES),$(eval OBJS-$(prog) += cmdutils.o))
 $(foreach prog,$(AVBASENAMES),$(eval OBJS-$(prog)-$(CONFIG_OPENCL) += cmdutils_opencl.o))
 
 # -- vgtmpeg
-OBJS-ffmpeg = ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
-OBJS-vgtmpeg = ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
+OBJS-ffmpeg += ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
+OBJS-vgtmpeg += ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o 
 # -- vgtmpeg
 
 OBJS-ffmpeg-$(HAVE_VDPAU_X11) += ffmpeg_vdpau.o
