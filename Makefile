@@ -11,38 +11,48 @@ vpath %.rc   $(SRC_PATH)
 vpath %.v    $(SRC_PATH)
 vpath %.texi $(SRC_PATH)
 vpath %/fate_config.sh.template $(SRC_PATH)
-# -- vgtmpeg
-PROGS-yes	+= vgtmpeg
-# -- vgtmpeg
+
 
 AVPROGS-$(CONFIG_FFMPEG)   += ffmpeg
 AVPROGS-$(CONFIG_FFPLAY)   += ffplay
 AVPROGS-$(CONFIG_FFPROBE)  += ffprobe
 AVPROGS-$(CONFIG_FFSERVER) += ffserver
+# -- vgtmpeg
+AVPROGS-yes	+= vgtmpeg
+# -- vgtmpeg
+
 
 AVPROGS    := $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 INSTPROGS   = $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 PROGS      += $(AVPROGS)
 
-OBJS        = cmdutils.o $(EXEOBJS)
+AVBASENAMES  = ffmpeg ffplay ffprobe ffserver
+ALLAVPROGS   = $(AVBASENAMES:%=%$(PROGSSUF)$(EXESUF))
+ALLAVPROGS_G = $(AVBASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
+
+$(foreach prog,$(AVBASENAMES),$(eval OBJS-$(prog) += cmdutils.o))
+$(foreach prog,$(AVBASENAMES),$(eval OBJS-$(prog)-$(CONFIG_OPENCL) += cmdutils_opencl.o))
+
 # -- vgtmpeg
 OBJS-ffmpeg = ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
 OBJS-vgtmpeg = ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
 # -- vgtmpeg
 
-TESTTOOLS   = audiogen videogen rotozoom tiny_psnr base64
+OBJS-ffmpeg-$(HAVE_VDPAU_X11) += ffmpeg_vdpau.o
+OBJS-ffmpeg-$(HAVE_DXVA2_LIB) += ffmpeg_dxva2.o
+OBJS-ffmpeg-$(CONFIG_VDA)     += ffmpeg_vda.o
+OBJS-ffserver                 += ffserver_config.o
+
+TESTTOOLS   = audiogen videogen rotozoom tiny_psnr tiny_ssim base64
 HOSTPROGS  := $(TESTTOOLS:%=tests/%) doc/print_options
 TOOLS       = qt-faststart trasher uncoded_frame
 TOOLS-$(CONFIG_ZLIB) += cws2fws
 
-BASENAMES   = ffmpeg ffplay ffprobe ffserver
-ALLPROGS    = $(BASENAMES:%=%$(PROGSSUF)$(EXESUF))
-ALLPROGS_G  = $(BASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
-ALLMANPAGES = $(BASENAMES:%=%.1)
-
-FFLIBS-$(CONFIG_AVDEVICE) += avdevice
-FFLIBS-$(CONFIG_AVFILTER) += avfilter
-FFLIBS-$(CONFIG_AVFORMAT) += avformat
+# $(FFLIBS-yes) needs to be in linking order
+FFLIBS-$(CONFIG_AVDEVICE)   += avdevice
+FFLIBS-$(CONFIG_AVFILTER)   += avfilter
+FFLIBS-$(CONFIG_AVFORMAT)   += avformat
+FFLIBS-$(CONFIG_AVCODEC)    += avcodec
 FFLIBS-$(CONFIG_AVRESAMPLE) += avresample
 FFLIBS-$(CONFIG_POSTPROC)   += postproc
 FFLIBS-$(CONFIG_SWRESAMPLE) += swresample
