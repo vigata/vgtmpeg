@@ -4071,7 +4071,6 @@ int main(int argc, char **argv)
         run_as_daemon = 1;
     }
 
-    term_init();
     /* --vgtmpeg */
 
 
