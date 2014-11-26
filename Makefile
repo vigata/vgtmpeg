@@ -36,11 +36,16 @@ $(foreach prog,$(AVBASENAMES),$(eval OBJS-$(prog)-$(CONFIG_OPENCL) += cmdutils_o
 # -- vgtmpeg
 OBJS-ffmpeg += ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
 OBJS-vgtmpeg += ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o 
-# -- vgtmpeg
 
 OBJS-ffmpeg-$(HAVE_VDPAU_X11) += ffmpeg_vdpau.o
 OBJS-ffmpeg-$(HAVE_DXVA2_LIB) += ffmpeg_dxva2.o
 OBJS-ffmpeg-$(CONFIG_VDA)     += ffmpeg_vda.o
+
+OBJS-vgtmpeg-$(HAVE_VDPAU_X11) += ffmpeg_vdpau.o
+OBJS-vgtmpeg-$(HAVE_DXVA2_LIB) += ffmpeg_dxva2.o
+OBJS-vgtmpeg-$(CONFIG_VDA)     += ffmpeg_vda.o
+# -- vgtmpeg
+
 OBJS-ffserver                 += ffserver_config.o
 
 TESTTOOLS   = audiogen videogen rotozoom tiny_psnr tiny_ssim base64
