@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2013 Alberto Vigata
+ * Copyright (C) 2010-2015 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -965,7 +965,7 @@ static void output_nlpicmsg(AVFrame *pic) {
 	}
 
 	if( picmsgSws && picmsg_srcw==pic->width && picmsg_srch==pic->height && picmsg_srcf==pic->format) {
-		sws_scale(picmsgSws, pic->data, pic->linesize, 0, pic->height, picmsgsrc, picmsgstride);
+		sws_scale(picmsgSws, (const uint8_t * const *)pic->data, pic->linesize, 0, pic->height, picmsgsrc, picmsgstride);
 
 #if 0
 		FILE *o = fopen("out.bin","wb");

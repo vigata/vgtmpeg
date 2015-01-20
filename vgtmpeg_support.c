@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2013 Alberto Vigata
+ * Copyright (C) 2010-2015 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -293,7 +293,68 @@ void show_formats_json(void) {
    );
 }
 
+/**
+ * Given an avoption returns the default in double format.
+ * This is useful to transform default value to a 80bit double for JSON output.
+ * Returns 0 if it was not possible to coalesce value
+ */
+static double show_avoptions_get_double_default(const AVOption *opt)
+{
+	double dblval = 0;
 
+    /* flatten numeric value to a double */
+	switch (opt->type) {
+	case AV_OPT_TYPE_FLAGS:
+	case AV_OPT_TYPE_DURATION:
+	case AV_OPT_TYPE_CHANNEL_LAYOUT:
+	case AV_OPT_TYPE_CONST:
+	case AV_OPT_TYPE_INT:
+	case AV_OPT_TYPE_INT64:
+	case AV_OPT_TYPE_PIXEL_FMT:
+	case AV_OPT_TYPE_SAMPLE_FMT:
+		dblval = (double) opt->default_val.i64;
+		break;
+	case AV_OPT_TYPE_DOUBLE:
+	case AV_OPT_TYPE_FLOAT:
+		dblval = opt->default_val.dbl;
+		break;
+	case AV_OPT_TYPE_RATIONAL:
+		dblval = (double) opt->default_val.q.num
+				/ (double) opt->default_val.q.den;
+		break;
+	case AV_OPT_TYPE_STRING:
+	case AV_OPT_TYPE_BINARY:
+	case AV_OPT_TYPE_COLOR:
+	case AV_OPT_TYPE_IMAGE_SIZE:
+	case AV_OPT_TYPE_VIDEO_RATE:
+		break;
+	}
+
+	return dblval;
+}
+
+/**
+ * Give an avoption returns the default in string format.
+ * returns "" if not relevant
+ */
+static const char * show_avoptions_get_string_default(const AVOption *opt)
+{
+	const char *ret = "";
+
+	switch(opt->type) {
+	case AV_OPT_TYPE_COLOR:
+	case AV_OPT_TYPE_IMAGE_SIZE:
+	case AV_OPT_TYPE_STRING:
+	case AV_OPT_TYPE_VIDEO_RATE:
+		ret = opt->default_val.str;
+		break;
+	default:
+		ret = "";
+		break;
+	}
+
+	return ret;
+}
 static void show_avoptions_opt_list_enum(void *obj,  const char *unit,
                      int req_flags, int rej_flags) {
     const AVOption *opt=NULL;
@@ -317,32 +378,7 @@ static void show_avoptions_opt_list_enum(void *obj,  const char *unit,
         else if (unit && opt->type==FF_OPT_TYPE_CONST && strcmp(unit, opt->unit))
             continue;
 
-        /* flatten numeric value to a double */
-        switch(opt->type) {
-        case     AV_OPT_TYPE_CONST:
-        case     AV_OPT_TYPE_INT:
-        case     AV_OPT_TYPE_INT64:
-        	dblval = (double)opt->default_val.i64;
-        	break;
-        case     AV_OPT_TYPE_DOUBLE:
-        case     AV_OPT_TYPE_FLOAT:
-        	dblval = opt->default_val.dbl;
-        	break;
-        case     AV_OPT_TYPE_RATIONAL:
-        	dblval = (double)opt->default_val.q.num / (double)opt->default_val.q.den;
-        	break;
-        case     AV_OPT_TYPE_FLAGS:
-        case     AV_OPT_TYPE_STRING:
-        case     AV_OPT_TYPE_BINARY:
-
-        case     AV_OPT_TYPE_IMAGE_SIZE:
-        case     AV_OPT_TYPE_PIXEL_FMT:
-        case     AV_OPT_TYPE_SAMPLE_FMT:
-        case     AV_OPT_TYPE_VIDEO_RATE:
-        case     AV_OPT_TYPE_DURATION:
-        	break;
-        }
-
+        dblval = show_avoptions_get_double_default(opt);
 
         JSON_ARRAY_ITEM( first, 
                 JSON_OBJECT( 
@@ -374,11 +410,11 @@ static void show_avoptions_json(void *obj, int req_flags, int rej_flags, const c
          * Don't print anything but CONST's on level two.
          * Only print items from the requested unit.
          */
-        if (!unit && opt->type==FF_OPT_TYPE_CONST)
+        if (!unit && opt->type==AV_OPT_TYPE_CONST)
             continue;
-        else if (unit && opt->type!=FF_OPT_TYPE_CONST)
+        else if (unit && opt->type!=AV_OPT_TYPE_CONST)
             continue;
-        else if (unit && opt->type==FF_OPT_TYPE_CONST && strcmp(unit, opt->unit))
+        else if (unit && opt->type==AV_OPT_TYPE_CONST && strcmp(unit, opt->unit))
             continue;
         /* else if (unit && opt->type == FF_OPT_TYPE_CONST) */
             /* av_log(av_log_obj, AV_LOG_INFO, "   %-15s ", opt->name); */
@@ -386,34 +422,56 @@ static void show_avoptions_json(void *obj, int req_flags, int rej_flags, const c
             /* av_log(av_log_obj, AV_LOG_INFO, "-%-17s ", opt->name); */
 
         switch (opt->type) {
-            case FF_OPT_TYPE_FLAGS:
+            case AV_OPT_TYPE_FLAGS:
                 type = "flags";
                 break;
-            case FF_OPT_TYPE_INT:
+            case AV_OPT_TYPE_INT:
                 type = "int";
                 break;
-            case FF_OPT_TYPE_INT64:
+            case AV_OPT_TYPE_INT64:
                 type = "int64";
                 break;
-            case FF_OPT_TYPE_DOUBLE:
+            case AV_OPT_TYPE_DOUBLE:
                 type = "double";
                 break;
-            case FF_OPT_TYPE_FLOAT:
+            case AV_OPT_TYPE_FLOAT:
                 type = "float";
                 break;
-            case FF_OPT_TYPE_STRING:
+            case AV_OPT_TYPE_STRING:
                 type = "string";
                 break;
-            case FF_OPT_TYPE_RATIONAL:
+            case AV_OPT_TYPE_RATIONAL:
                 type = "rational";
                 break;
-            case FF_OPT_TYPE_BINARY:
+            case AV_OPT_TYPE_BINARY:
                 type = "binary";
                 break;
-            case FF_OPT_TYPE_CONST:
+            case AV_OPT_TYPE_IMAGE_SIZE:
+                type = "image_size";
+                break;
+            case AV_OPT_TYPE_VIDEO_RATE:
+                type = "video_rate";
+                break;
+            case AV_OPT_TYPE_PIXEL_FMT:
+                type = "pixel_fmt";
+                break;
+            case AV_OPT_TYPE_SAMPLE_FMT:
+                type = "sample_fmt";
+                break;
+            case AV_OPT_TYPE_DURATION:
+                type = "duration";
+                break;
+            case AV_OPT_TYPE_COLOR:
+                type = "color";
+                break;
+            case AV_OPT_TYPE_CHANNEL_LAYOUT:
+                type = "channel_layout";
+                break;
+            case AV_OPT_TYPE_CONST:
                 type = "const";
+                break;
             default:
-                type = "uknown";
+                type = "unknown";
                 break;
         }
 
@@ -425,27 +483,14 @@ static void show_avoptions_json(void *obj, int req_flags, int rej_flags, const c
             JSON_PROPERTY( 0, name, JSON_STRING_C(opt->name) );
             JSON_PROPERTY( 0, type, JSON_STRING_C(type) );
             JSON_PROPERTY( 0, typeint, JSON_INT_C(opt->type) );
-            JSON_PROPERTY( 0, def, JSON_DOUBLE_C(opt->default_val.dbl) );
-            /* JSON_PROPERTY( 0, encode, JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_ENCODING_PARAM ) ); */
-            /* JSON_PROPERTY( 0, decode, JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_DECODING_PARAM ) ); */
-            /* JSON_PROPERTY( 0, video,  JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_VIDEO_PARAM ) ); */
-            /* JSON_PROPERTY( 0, audio,    JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_AUDIO_PARAM ) ); */
-            /* JSON_PROPERTY( 0, subtitle, JSON_BOOLEAN_C( opt->flags & AV_OPT_FLAG_SUBTITLE_PARAM ) ); */
+            JSON_PROPERTY( 0, def, JSON_DOUBLE_C( show_avoptions_get_double_default(opt)) );
+            JSON_PROPERTY( 0, defstr,JSON_STRING_C( show_avoptions_get_string_default(opt)) );
+
+
             if( opt->help ) JSON_PROPERTY( 0, help, JSON_STRING_C(opt->help) );
-           
-
-        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_ENCODING_PARAM) ? 'E' : '.'); */
-        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_DECODING_PARAM) ? 'D' : '.'); */
-        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_VIDEO_PARAM   ) ? 'V' : '.'); */
-        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_AUDIO_PARAM   ) ? 'A' : '.'); */
-        /* av_log(av_log_obj, AV_LOG_INFO, "%c", (opt->flags & AV_OPT_FLAG_SUBTITLE_PARAM) ? 'S' : '.'); */
-
-        /* if (opt->help) */
-            /* av_log(av_log_obj, AV_LOG_INFO, " %s", opt->help); */
-        /* av_log(av_log_obj, AV_LOG_INFO, "\n"); */
 
             {
-                int has_enum = opt->unit && opt->type!=FF_OPT_TYPE_CONST;
+                int has_enum = opt->unit && opt->type!=AV_OPT_TYPE_CONST;
                 JSON_PROPERTY( 0, has_enum, JSON_BOOLEAN_C(has_enum) );
 
                 if ( has_enum ) {
@@ -493,15 +538,22 @@ static void avcontext_typedef(void) {
     JSON_OBJECT(
             JSON_PROPERTY( 1, name, JSON_STRING_C("avtype") );
             JSON_PROPERTY( 0, def,  JSON_OBJECT(
-                    JSON_PROPERTY(1, FF_OPT_TYPE_FLAGS, JSON_INT_C(FF_OPT_TYPE_FLAGS));
-                    JSON_PROPERTY(0, FF_OPT_TYPE_INT, JSON_INT_C(FF_OPT_TYPE_INT));
-                    JSON_PROPERTY(0, FF_OPT_TYPE_INT64, JSON_INT_C(FF_OPT_TYPE_INT64));
-                    JSON_PROPERTY(0, FF_OPT_TYPE_DOUBLE, JSON_INT_C(FF_OPT_TYPE_DOUBLE));
-                    JSON_PROPERTY(0, FF_OPT_TYPE_FLOAT, JSON_INT_C(FF_OPT_TYPE_FLOAT));
-                    JSON_PROPERTY(0, FF_OPT_TYPE_STRING, JSON_INT_C(FF_OPT_TYPE_STRING));
-                    JSON_PROPERTY(0, FF_OPT_TYPE_RATIONAL, JSON_INT_C(FF_OPT_TYPE_RATIONAL));
-                    JSON_PROPERTY(0, FF_OPT_TYPE_BINARY, JSON_INT_C(FF_OPT_TYPE_BINARY));
-                    JSON_PROPERTY(0, FF_OPT_TYPE_CONST, JSON_INT_C(FF_OPT_TYPE_CONST));
+                    JSON_PROPERTY(1, AV_OPT_TYPE_FLAGS, JSON_INT_C(AV_OPT_TYPE_FLAGS));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_INT, JSON_INT_C(AV_OPT_TYPE_INT));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_INT64, JSON_INT_C(AV_OPT_TYPE_INT64));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_DOUBLE, JSON_INT_C(AV_OPT_TYPE_DOUBLE));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_FLOAT, JSON_INT_C(AV_OPT_TYPE_FLOAT));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_STRING, JSON_INT_C(AV_OPT_TYPE_STRING));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_RATIONAL, JSON_INT_C(AV_OPT_TYPE_RATIONAL));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_BINARY, JSON_INT_C(AV_OPT_TYPE_BINARY));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_CONST, JSON_INT_C(AV_OPT_TYPE_CONST));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_IMAGE_SIZE, JSON_INT_C(AV_OPT_TYPE_IMAGE_SIZE));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_PIXEL_FMT, JSON_INT_C(AV_OPT_TYPE_PIXEL_FMT));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_SAMPLE_FMT, JSON_INT_C(AV_OPT_TYPE_SAMPLE_FMT));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_VIDEO_RATE, JSON_INT_C(AV_OPT_TYPE_VIDEO_RATE));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_DURATION, JSON_INT_C(AV_OPT_TYPE_DURATION));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_COLOR, JSON_INT_C(AV_OPT_TYPE_COLOR));
+                    JSON_PROPERTY(0, AV_OPT_TYPE_CHANNEL_LAYOUT, JSON_INT_C(AV_OPT_TYPE_CHANNEL_LAYOUT));
                     ));
             )
 }  
@@ -521,6 +573,13 @@ static void show_help_options_json_flagdef(void) {
                     JSON_PROPERTY(0, OPT_INT64  ,JSON_INT_C(OPT_INT64));
                     JSON_PROPERTY(0, OPT_EXIT   ,JSON_INT_C(OPT_EXIT));
                     JSON_PROPERTY(0, OPT_DATA   ,JSON_INT_C(OPT_DATA));
+                    JSON_PROPERTY(0, OPT_PERFILE   ,JSON_INT_C(OPT_PERFILE));
+                    JSON_PROPERTY(0, OPT_OFFSET   ,JSON_INT_C(OPT_OFFSET));
+                    JSON_PROPERTY(0, OPT_SPEC   ,JSON_INT_C(OPT_SPEC));
+                    JSON_PROPERTY(0, OPT_TIME   ,JSON_INT_C(OPT_TIME));
+                    JSON_PROPERTY(0, OPT_DOUBLE   ,JSON_INT_C(OPT_DOUBLE));
+                    JSON_PROPERTY(0, OPT_INPUT   ,JSON_INT_C(OPT_INPUT));
+                    JSON_PROPERTY(0, OPT_OUTPUT   ,JSON_INT_C(OPT_OUTPUT));
                     ));
             )
 }
@@ -563,6 +622,12 @@ static void show_options_children(const AVClass *class, int flags, int addflags,
         show_options_children(child, flags, addflags, child->class_name );
 }
 
+/**
+ * show_options_json()
+ *
+ * shows all the available options for vgtmpeg on stdout
+ *
+ */
 void show_options_json(void) {
     /* general options  */
     const OptionDef *po;
@@ -620,7 +685,6 @@ void show_options_json(void) {
 /****************************************************************/
 /* nldump format                                                */
 /****************************************************************/
-
 static int get_bit_rate(AVCodecContext *ctx)
 {
     int bit_rate;
