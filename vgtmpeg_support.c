@@ -66,8 +66,8 @@ char *xescape(char *buf, char *s) {
 			*o++ = '&'; *o++ = 'a'; *o++ = 'm'; *o++ = 'p'; *o++ = ';';
 			break;        
 		default:
-            /* ignore not allowed xml characters */
-            if( ((unsigned char)(*s)) >= 0x20 ) *o++ = *s;
+            /* ignore not ascii characters */
+            if( (((unsigned char)(*s)) >= 0x20) && (((unsigned char)(*s)) <= 0x7f )  ) *o++ = *s;
 			break;
 		}
 		s++;
