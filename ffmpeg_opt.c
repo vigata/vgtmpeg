@@ -1925,7 +1925,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
                 if (ist->st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
                     new_area > area 
                     /* --vgtmpeg */
-                    && ist->st->discard != AVDISCARD_ALL  ) {
+){ //                    && ist->st->discard != AVDISCARD_ALL  ) {
 	                /* --vgtmpeg */
                     if((qcr==MKTAG('A', 'P', 'I', 'C')) && !(ist->st->disposition & AV_DISPOSITION_ATTACHED_PIC))
                         continue;
@@ -1945,7 +1945,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
                 if (ist->st->codec->codec_type == AVMEDIA_TYPE_AUDIO &&
                     ist->st->codec->channels > channels
                     /* --vgtmpeg */
-                    && ist->st->discard != AVDISCARD_ALL  ) {
+){//                    && ist->st->discard != AVDISCARD_ALL  ) {
 	                /* --vgtmpeg */
                     channels = ist->st->codec->channels;
                     idx = i;
@@ -1961,7 +1961,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
             for (i = 0; i < nb_input_streams; i++)
                 if (input_streams[i]->st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE
                   	/* --vgtmpeg */
-                       && input_streams[i]->st->discard!=AVDISCARD_ALL   ) {
+ ){//                       && input_streams[i]->st->discard!=AVDISCARD_ALL   ) {
    	                /* --vgtmpeg */
                     AVCodecDescriptor const *input_descriptor =
                         avcodec_descriptor_get(input_streams[i]->st->codec->codec_id);
