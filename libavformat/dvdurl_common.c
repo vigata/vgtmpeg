@@ -1483,9 +1483,10 @@ int url_parse(const char *proto, const char *filename, const char **urlpath, int
     const char *protourl = av_asprintf("%s://",proto);
 
     if( av_strstart(filename, protourl, &pathstart) ) {
+    	const char *path;
+    	char *query, *tq;
         av_free(protourl);
-        const char *path = strdup(pathstart);
-        char *query,*tq;
+        path = strdup(pathstart);
 
         /* remove query from path */
         tq = strchr(path, '?');

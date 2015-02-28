@@ -709,9 +709,9 @@ int hb_rgb2yuv(int rgb);
 const char * hb_subsource_name( int source );
 
 // x264 preset/tune/profile helpers
-const char * const * hb_x264_presets();
-const char * const * hb_x264_tunes();
-const char * const * hb_x264_profiles();
+const char * const * hb_x264_presets(void);
+const char * const * hb_x264_tunes(void);
+const char * const * hb_x264_profiles(void);
 
 /************************************************************************
  * DVD utils
@@ -821,12 +821,12 @@ int fragmented_read(void *ctx, fragread_t read, hb_buffer_t **cur_read_buffer, u
 
 #define hb_log_level(level,fmt,...) { av_log(NULL, level,  fmt"\n", ##__VA_ARGS__ ); }
 #define hb_log(fmt,...)  hb_log_level( HB_LOG_INFO, fmt, ##__VA_ARGS__ )
-#define hb_error(fmt,...) hb_log_level( HB_LOG_ERROR, fmt, ##__VA_ARGS__ )
+#define hb_error(fmt,...) hb_log_level( HB_LOG_VERBOSE, fmt, ##__VA_ARGS__ )
 
 #else
 
 #define hb_log(...) { av_log(NULL, AV_LOG_INFO,  "\n"__VA_ARGS__ ); }
-#define hb_error(...){av_log(NULL, AV_LOG_ERROR, "\n"__VA_ARGS__ ); }
+#define hb_error(...){av_log(NULL, AV_LOG_VERBOSE, "\n"__VA_ARGS__ ); }
 
 #endif
 

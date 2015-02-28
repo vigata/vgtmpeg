@@ -801,7 +801,7 @@ static int parse_input_file(OptionsContext *o, const char *opt, const char *file
     AVInputFormat *file_iformat = NULL;
     int err, i, ret;
     int64_t timestamp;
-    uint8_t buf[128];
+    //uint8_t buf[128];
     AVDictionary **opts;
     AVDictionary *unused_opts = NULL;
     AVDictionaryEntry *e = NULL;
@@ -1032,7 +1032,7 @@ static ff_input_func_t ff_input_funcs = {
 
 static int open_input_file(OptionsContext *o, const char *filename) {
 #if CONFIG_DVD_PROTOCOL || CONFIG_BD_PROTOCOL
-	if (parse_optmedia_path(o, "open input file", filename, &ff_input_funcs)) {
+	if (parse_optmedia_path(o, (char *)"open input file", filename, &ff_input_funcs)) {
 		return 1;
 	}
 #endif
@@ -1790,6 +1790,31 @@ static int configure_complex_filters(void)
     return 0;
 }
 
+
+/* --vgtmpeg start*/
+/* returns the program id that this stream belongs to or -1 if the 
+ * stream doesn't belong to any program */
+static int get_programid_from_stream(InputStream *is) {
+    for( int k=0; k<nb_input_files; k++) {
+        AVFormatContext *ic = input_files[k]->ctx;
+        int i, j;
+
+        for(i=0; i<ic->nb_programs; i++){
+            AVProgram *p= ic->programs[i];
+            for(j=0; j<p->nb_stream_indexes; j++){
+                AVStream *st = ic->streams[p->stream_index[j]];
+                if( is->file_index==k && st->id == is->st->id && st->index == is->st->index ) {
+                    av_log(NULL,AV_LOG_VERBOSE, "stream %d:%d(%X) belongs to program %d (default: %d)\n", is->file_index, st->index, st->id, p->id, default_program_id);
+                    return p->id;
+                }
+            }
+        }
+    }
+    av_log(NULL,AV_LOG_VERBOSE, "stream %d:%d(%X) doesn't belong to any program  (default: %d)\n", is->file_index, is->st->index, is->st->id, default_program_id);
+    return -1;
+}
+/* --vgtmpeg stop */
+
 static int open_output_file(OptionsContext *o, const char *filename)
 {
     AVFormatContext *oc;
@@ -1912,6 +1937,18 @@ static int open_output_file(OptionsContext *o, const char *filename)
         char *subtitle_codec_name = NULL;
         /* pick the "best" stream of each type */
 
+        /* --vgtmpeg
+         * This is the path that open_output_file takes when there are no explicit mappings of streams.
+         *
+         * vgtmpeg uses the 'default_program_id' if set (if != -1) to force selection of those streams
+         * as the default for the output. 'default_program_id' is usually set by the dvd and bluray libraries.
+         *
+         * note that if no 'default_program_id' is selected its value is -1. Using the method get_programid_from_stream()
+         * returns -1 if stream is not contained into a program, effectively coaercing all orphaned streams into the default
+         * program and ready for selection. This is the common path when 'default_program_id' is not set.
+         *
+         * --vgtmpeg */
+
         /* video: highest resolution */
         if (!o->video_disable && av_guess_codec(oc->oformat, NULL, filename, NULL, AVMEDIA_TYPE_VIDEO) != AV_CODEC_ID_NONE) {
             int area = 0, idx = -1;
@@ -1925,7 +1962,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
                 if (ist->st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
                     new_area > area 
                     /* --vgtmpeg */
-){ //                    && ist->st->discard != AVDISCARD_ALL  ) {
+                    && default_program_id == get_programid_from_stream(ist) ) {
 	                /* --vgtmpeg */
                     if((qcr==MKTAG('A', 'P', 'I', 'C')) && !(ist->st->disposition & AV_DISPOSITION_ATTACHED_PIC))
                         continue;
@@ -1945,7 +1982,7 @@ static int open_output_file(OptionsContext *o, const char *filename)
                 if (ist->st->codec->codec_type == AVMEDIA_TYPE_AUDIO &&
                     ist->st->codec->channels > channels
                     /* --vgtmpeg */
-){//                    && ist->st->discard != AVDISCARD_ALL  ) {
+                    && default_program_id == get_programid_from_stream(ist) ) {
 	                /* --vgtmpeg */
                     channels = ist->st->codec->channels;
                     idx = i;
@@ -1960,9 +1997,9 @@ static int open_output_file(OptionsContext *o, const char *filename)
         if (!o->subtitle_disable && (avcodec_find_encoder(oc->oformat->subtitle_codec) || subtitle_codec_name)) {
             for (i = 0; i < nb_input_streams; i++)
                 if (input_streams[i]->st->codec->codec_type == AVMEDIA_TYPE_SUBTITLE
-                  	/* --vgtmpeg */
- ){//                       && input_streams[i]->st->discard!=AVDISCARD_ALL   ) {
-   	                /* --vgtmpeg */
+                    /* --vgtmpeg */
+                    && default_program_id == get_programid_from_stream(ist) ) {
+	                /* --vgtmpeg */
                     AVCodecDescriptor const *input_descriptor =
                         avcodec_descriptor_get(input_streams[i]->st->codec->codec_id);
                     AVCodecDescriptor const *output_descriptor = NULL;

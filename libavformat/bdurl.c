@@ -32,6 +32,11 @@
 
 static int gloglevel = HB_LOG_VERBOSE;
 
+#ifdef __GNUC__
+#define BDNOT_USED __attribute__ ((unused))
+#else
+#define BDNOT_USED
+#endif
 
 /***********************************************************************
  * Local prototypes
@@ -116,7 +121,8 @@ int hb_bd_title_count( hb_bd_t * d )
 static void add_audio(int track, hb_list_t *list_audio, BLURAY_STREAM_INFO *bdaudio, int substream_type, uint32_t codec, uint32_t codec_param)
 {
     hb_audio_t * audio;
-    iso639_lang_t * lang;
+    const iso639_lang_t * lang;
+    int stream_type;
 
     audio = av_mallocz( sizeof( hb_audio_t ) );
 
@@ -129,7 +135,7 @@ static void add_audio(int track, hb_list_t *list_audio, BLURAY_STREAM_INFO *bdau
 
     lang = lang_for_code2( (char*)bdaudio->lang );
 
-    int stream_type = bdaudio->coding_type;
+    stream_type = bdaudio->coding_type;
     snprintf( audio->config.lang.description, 
         sizeof( audio->config.lang.description ), "%s (%s)",
         strlen(lang->native_name) ? lang->native_name : lang->eng_name,
@@ -205,6 +211,10 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
     hb_chapter_t * chapter;
     int            ii, jj;
     BLURAY_TITLE_INFO * ti = NULL;
+    BLURAY_STREAM_INFO * bdvideo;
+    char * p_cur, * p_last;
+    uint64_t pkt_count;
+
 
     hb_log_level(gloglevel, "bd: scanning title %d", tt );
 
@@ -213,7 +223,7 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
     title->type = HB_BD_TYPE;
     title->reg_desc = STR4_TO_UINT32("HDMV");
 
-    char * p_cur, * p_last = d->path;
+    p_last = d->path;
     for( p_cur = d->path; *p_cur; p_cur++ )
     {
         if( p_cur[0] == '/' && p_cur[1] )
@@ -248,7 +258,7 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
     hb_log_level(gloglevel, "bd: playlist %05d.MPLS", ti->playlist );
     title->playlist = ti->playlist;
 
-    uint64_t pkt_count = 0;
+    pkt_count = 0;
     for ( ii = 0; ii < ti->clip_count; ii++ )
     {
         pkt_count += ti->clips[ii].pkt_count;
@@ -275,7 +285,7 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
         goto fail;
     }
 
-    BLURAY_STREAM_INFO * bdvideo = &ti->clips[0].video_streams[0];
+    bdvideo = &ti->clips[0].video_streams[0];
 
     title->video_id = bdvideo->pid;
     title->video_stream_type = bdvideo->coding_type;
@@ -351,96 +361,95 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
     // So find the clip that has the most other clips with the 
     // matching audio.
     // Max primary BD audios is 32
-    int matches;
-    int most_audio = 0;
-    int audio_clip_index = 0;
-    for ( ii = 0; ii < ti->clip_count; ii++ )
-    {
-        matches = 0;
-        for ( jj = 0; jj < ti->clip_count; jj++ )
-        {
-            if ( bd_audio_equal( &ti->clips[ii], &ti->clips[jj] ) )
-            {
-                matches++;
-            }
-        }
-        if ( matches > most_audio )
-        {
-            most_audio = matches;
-            audio_clip_index = ii;
-        }
-    }
+	{
+		int matches;
+		int most_audio = 0;
+		int audio_clip_index = 0;
+		for (ii = 0; ii < ti->clip_count; ii++) {
+			matches = 0;
+			for (jj = 0; jj < ti->clip_count; jj++) {
+				if (bd_audio_equal(&ti->clips[ii], &ti->clips[jj])) {
+					matches++;
+				}
+			}
+			if (matches > most_audio) {
+				most_audio = matches;
+				audio_clip_index = ii;
+			}
+		}
 
-    // Add all the audios found in the above clip.
-    for ( ii = 0; ii < ti->clips[audio_clip_index].audio_stream_count; ii++ )
-    {
-        BLURAY_STREAM_INFO * bdaudio;
+		// Add all the audios found in the above clip.
+		for (ii = 0; ii < ti->clips[audio_clip_index].audio_stream_count;
+				ii++) {
+			BLURAY_STREAM_INFO * bdaudio;
 
-        bdaudio = &ti->clips[audio_clip_index].audio_streams[ii];
+			bdaudio = &ti->clips[audio_clip_index].audio_streams[ii];
 
-        switch( bdaudio->coding_type )
-        {
-            case BLURAY_STREAM_TYPE_AUDIO_TRUHD:
-                // Add 2 audio tracks.  One for TrueHD and one for AC-3
-                add_audio(ii, title->list_audio, bdaudio, 
-                          HB_SUBSTREAM_BD_AC3, HB_ACODEC_AC3, 0);
-                add_audio(ii, title->list_audio, bdaudio, 
-                    HB_SUBSTREAM_BD_TRUEHD, HB_ACODEC_FFMPEG, CODEC_ID_TRUEHD);
-                break;
+			switch (bdaudio->coding_type) {
+			case BLURAY_STREAM_TYPE_AUDIO_TRUHD:
+				// Add 2 audio tracks.  One for TrueHD and one for AC-3
+				add_audio(ii, title->list_audio, bdaudio,
+				HB_SUBSTREAM_BD_AC3, HB_ACODEC_AC3, 0);
+				add_audio(ii, title->list_audio, bdaudio,
+				HB_SUBSTREAM_BD_TRUEHD, HB_ACODEC_FFMPEG, CODEC_ID_TRUEHD);
+				break;
 
-            case BLURAY_STREAM_TYPE_AUDIO_DTS:
-                add_audio(ii, title->list_audio, bdaudio, 0, HB_ACODEC_DCA, 0);
-                break;
+			case BLURAY_STREAM_TYPE_AUDIO_DTS:
+				add_audio(ii, title->list_audio, bdaudio, 0, HB_ACODEC_DCA, 0);
+				break;
 
-            case BLURAY_STREAM_TYPE_AUDIO_MPEG2:
-            case BLURAY_STREAM_TYPE_AUDIO_MPEG1:
-                add_audio(ii, title->list_audio, bdaudio, 0, 
-                          HB_ACODEC_FFMPEG, CODEC_ID_MP2);
-                break;
+			case BLURAY_STREAM_TYPE_AUDIO_MPEG2:
+			case BLURAY_STREAM_TYPE_AUDIO_MPEG1:
+				add_audio(ii, title->list_audio, bdaudio, 0,
+				HB_ACODEC_FFMPEG, CODEC_ID_MP2);
+				break;
 
-            case BLURAY_STREAM_TYPE_AUDIO_AC3PLUS:
-                add_audio(ii, title->list_audio, bdaudio, 0, 
-                          HB_ACODEC_FFMPEG, CODEC_ID_EAC3);
-                break;
+			case BLURAY_STREAM_TYPE_AUDIO_AC3PLUS:
+				add_audio(ii, title->list_audio, bdaudio, 0,
+				HB_ACODEC_FFMPEG, CODEC_ID_EAC3);
+				break;
 
-            case BLURAY_STREAM_TYPE_AUDIO_LPCM:
-                add_audio(ii, title->list_audio, bdaudio, 0, 
-                          HB_ACODEC_FFMPEG, CODEC_ID_PCM_BLURAY);
-                break;
+			case BLURAY_STREAM_TYPE_AUDIO_LPCM:
+				add_audio(ii, title->list_audio, bdaudio, 0,
+				HB_ACODEC_FFMPEG, CODEC_ID_PCM_BLURAY);
+				break;
 
-            case BLURAY_STREAM_TYPE_AUDIO_AC3:
-                add_audio(ii, title->list_audio, bdaudio, 0, HB_ACODEC_AC3, 0);
-                break;
+			case BLURAY_STREAM_TYPE_AUDIO_AC3:
+				add_audio(ii, title->list_audio, bdaudio, 0, HB_ACODEC_AC3, 0);
+				break;
 
-            case BLURAY_STREAM_TYPE_AUDIO_DTSHD_MASTER:
-            case BLURAY_STREAM_TYPE_AUDIO_DTSHD:
-                // Add 2 audio tracks.  One for DTS-HD and one for DTS
-                add_audio(ii, title->list_audio, bdaudio, HB_SUBSTREAM_BD_DTS, 
-                          HB_ACODEC_DCA, 0);
-                // DTS-HD is special.  The substreams must be concatinated
-                // DTS-core followed by DTS-hd-extensions.  Setting
-                // a substream id of 0 says use all substreams.
-                add_audio(ii, title->list_audio, bdaudio, 0,
-                          HB_ACODEC_DCA_HD, CODEC_ID_DTS);
-                break;
+			case BLURAY_STREAM_TYPE_AUDIO_DTSHD_MASTER:
+			case BLURAY_STREAM_TYPE_AUDIO_DTSHD:
+				// Add 2 audio tracks.  One for DTS-HD and one for DTS
+				add_audio(ii, title->list_audio, bdaudio, HB_SUBSTREAM_BD_DTS,
+				HB_ACODEC_DCA, 0);
+				// DTS-HD is special.  The substreams must be concatinated
+				// DTS-core followed by DTS-hd-extensions.  Setting
+				// a substream id of 0 says use all substreams.
+				add_audio(ii, title->list_audio, bdaudio, 0,
+				HB_ACODEC_DCA_HD, CODEC_ID_DTS);
+				break;
 
-            default:
-                hb_log_level(gloglevel, "scan: unknown audio pid 0x%x codec 0x%x",
-                        bdaudio->pid, bdaudio->coding_type );
-                break;
-        }
-    }
+			default:
+				hb_log_level(gloglevel,
+						"scan: unknown audio pid 0x%x codec 0x%x", bdaudio->pid,
+						bdaudio->coding_type)
+				;
+				break;
+			}
+		}
+	}
 
     /* Chapters */
     for ( ii = 0; ii < ti->chapter_count; ii++ )
     {
+    	int seconds;
         chapter = av_mallocz( sizeof( hb_chapter_t ) );
 
         chapter->index = ii + 1;
         chapter->duration = ti->chapters[ii].duration;
         chapter->block_start = ti->chapters[ii].offset;
 
-        int seconds;
         seconds            = ( chapter->duration + 45000 ) / 90000;
         chapter->hours     = seconds / 3600;
         chapter->minutes   = ( seconds % 3600 ) / 60;
@@ -543,7 +552,7 @@ int hb_bd_start( hb_bd_t * d, hb_title_t *title )
  ***********************************************************************
  *
  **********************************************************************/
-void hb_bd_stop( hb_bd_t * d )
+void BDNOT_USED hb_bd_stop( hb_bd_t * d )
 {
     //if( d->stream ) hb_stream_close( &d->stream );
 }
@@ -553,7 +562,7 @@ void hb_bd_stop( hb_bd_t * d )
  ***********************************************************************
  *
  **********************************************************************/
-int hb_bd_seek( hb_bd_t * d, float f )
+int BDNOT_USED hb_bd_seek( hb_bd_t * d, float f )
 {
     uint64_t packet = f * d->pkt_count;
 
@@ -563,7 +572,7 @@ int hb_bd_seek( hb_bd_t * d, float f )
     return 1;
 }
 
-int hb_bd_seek_pts( hb_bd_t * d, uint64_t pts )
+int BDNOT_USED hb_bd_seek_pts( hb_bd_t * d, uint64_t pts )
 {
     bd_seek_time(d->bd, pts);
     d->next_chap = bd_get_current_chapter( d->bd ) + 1;
@@ -571,11 +580,10 @@ int hb_bd_seek_pts( hb_bd_t * d, uint64_t pts )
     return 1;
 }
 
-int hb_bd_seek_chapter( hb_bd_t * d, int c )
+int  BDNOT_USED hb_bd_seek_chapter( hb_bd_t * d, int c )
 {
-    int64_t pos;
     d->next_chap = c;
-    pos = bd_seek_chapter( d->bd, c - 1 );
+    bd_seek_chapter( d->bd, c - 1 );
     //hb_ts_stream_reset(d->stream);
     return 1;
 }
@@ -592,7 +600,6 @@ hb_buffer_t * hb_bd_read( hb_bd_t * d )
     //uint8_t buf[192];
     BD_EVENT event;
     uint64_t pos;
-    hb_buffer_t * b;
     uint8_t discontinuity;
     int new_chap = 0;
 
@@ -669,7 +676,7 @@ hb_buffer_t * hb_bd_read( hb_bd_t * d )
  * Returns in which chapter the next block to be read is.
  * Chapter numbers start at 1.
  **********************************************************************/
-int hb_bd_chapter( hb_bd_t * d )
+int  BDNOT_USED hb_bd_chapter( hb_bd_t * d )
 {
     return d->next_chap;
 }
@@ -708,7 +715,7 @@ void hb_bd_close( hb_bd_t ** _d )
  ***********************************************************************
  * Sets the angle to read
  **********************************************************************/
-void hb_bd_set_angle( hb_bd_t * d, int angle )
+void  BDNOT_USED hb_bd_set_angle( hb_bd_t * d, int angle )
 {
 
     if ( !bd_select_angle( d->bd, angle) )
@@ -793,6 +800,7 @@ static uint64_t align_to_next_packet(BLURAY *bd, uint8_t *pkt)
 static int next_packet( BLURAY *bd, uint8_t *pkt )
 {
     int result;
+    uint64_t pos,pos2;
 
     while ( 1 )
     {
@@ -811,8 +819,8 @@ static int next_packet( BLURAY *bd, uint8_t *pkt )
             return 1;
         }
         // lost sync - back up to where we started then try to re-establish.
-        uint64_t pos = bd_tell(bd);
-        uint64_t pos2 = align_to_next_packet(bd, pkt);
+        pos = bd_tell(bd);
+        pos2 = align_to_next_packet(bd, pkt);
         if ( pos2 == 0 )
         {
             hb_log_level(gloglevel, "next_packet: eof while re-establishing sync @ %"PRId64, pos );
@@ -847,7 +855,7 @@ static int64_t hb_bd_seek_bytes( hb_bd_t *e, int64_t off, int mode ) {
 }
 
 /* optmedia exports */
-static om_handle_t    * __hb_bd_init( char * path ) { return hb_bd_init(path); }
+static om_handle_t    * __hb_bd_init( char * path ) { return (om_handle_t *) hb_bd_init(path); }
 static void     __hb_bd_close( om_handle_t  ** _d ) { hb_bd_close((hb_bd_t **)_d); }
 static int           __hb_bd_title_count( om_handle_t *d ) { return hb_bd_title_count((hb_bd_t *)d); }
 static hb_title_t  * __hb_bd_title_scan( om_handle_t * d, int t, uint64_t min_duration ) { return hb_bd_title_scan((hb_bd_t *)d,t,min_duration); }
@@ -895,7 +903,7 @@ static int bdurl_read(URLContext *h, unsigned char *buf, int size){
     return fragmented_read(ctx->hb_bd, bd_fragread, &ctx->cur_read_buffer, buf, size);
 }
 
-static int bdurl_readnew(URLContext *h, unsigned char *buf, int size)
+static int  BDNOT_USED bdurl_readnew(URLContext *h, unsigned char *buf, int size)
 {
     bdurl_t *ctx = (bdurl_t *)h->priv_data;
 
@@ -944,8 +952,8 @@ static int bdurl_get_handle(URLContext *h)
 
 static int bdurl_check(URLContext *h, int mask)
 {
-    hb_error("bd_check: mask %d",  mask);
     int ret = mask&AVIO_FLAG_READ;
+    hb_error("bd_check: mask %d",  mask);
     return ret;
 }
 
@@ -958,6 +966,7 @@ static int bdurl_open(URLContext *h, const char *filename, int flags)
     int64_t min_title_duration = 0*90000;
     int urltitle = 0;
     int loglevel =  gloglevel;
+    hb_title_t *t;
 
 
     //ctx = av_malloc( sizeof(bdurl_t) );
@@ -971,7 +980,7 @@ static int bdurl_open(URLContext *h, const char *filename, int flags)
     url_parse("bd",filename, &bdpath, &urltitle );
 
 
-    ctx->hb_bd = hb_bd_init(bdpath);
+    ctx->hb_bd = hb_bd_init((char *)bdpath);
     if(!ctx->hb_bd) {
         hb_log_level(loglevel, "bd_open: couldn't initialize bdread");
         return -1;
@@ -980,7 +989,7 @@ static int bdurl_open(URLContext *h, const char *filename, int flags)
     title_count = hb_bd_title_count(ctx->hb_bd);
     if( urltitle>0 && urltitle<=title_count ) {
         hb_log_level(loglevel,"bd_open: opening title %d ", urltitle);
-        hb_title_t *t= hb_bd_title_scan(ctx->hb_bd, urltitle, min_title_duration );
+        t= hb_bd_title_scan(ctx->hb_bd, urltitle, min_title_duration );
         if(t) {
             ctx->selected_title = t;
         } else {
@@ -990,7 +999,7 @@ static int bdurl_open(URLContext *h, const char *filename, int flags)
     	int selected_title_idx;
         hb_log_level(loglevel,"bd_open: bd image has %d titles", title_count);
         for (i = 0; i < title_count; i++) {
-            hb_title_t *t = hb_bd_title_scan(ctx->hb_bd, i + 1, min_title_duration);
+            t = hb_bd_title_scan(ctx->hb_bd, i + 1, min_title_duration);
             if (t) {
                 ctx->selected_title = t;
                 hb_list_add(ctx->list_title, t);
