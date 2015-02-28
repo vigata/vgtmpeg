@@ -35,7 +35,9 @@ test "$revision" || revision=$(cd "$1" && cat RELEASE 2> /dev/null)
 test "$revision" && test "$git_hash" && revision="$revision-$git_hash"
 
 # releases extract the version number from the VERSION file
-version=$(cd "$1" && cat VERSION 2> /dev/null)
+vgtmpeg_version=$(cd "$1" && cat VERSION 2> /dev/null)
+VGTMPEG_REVISION="#define VGTMPEG_VERSION \"$vgtmpeg_version\""
+
 test "$version" || version=$revision
 
 test -n "$3" && version=$version-$3
@@ -57,6 +59,7 @@ if test "$NEW_REVISION" != "$OLD_REVISION"; then
 #ifndef $GUARD
 #define $GUARD
 $NEW_REVISION
+$VGTMPEG_REVISION
 #endif /* $GUARD */
 EOF
 fi
