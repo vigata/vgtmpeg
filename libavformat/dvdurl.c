@@ -93,7 +93,7 @@ static int hb_dvdread_main_feature( hb_dvd_t * e, hb_list_t * list_title )
     }
 }
 
-static char * hb_dvdread_name( char * path )
+static OPTMEDIA_NOT_USED char * hb_dvdread_name( char * path )
 {
     static char name[1024];
     unsigned char unused[1024];
@@ -495,10 +495,7 @@ static hb_title_t * hb_dvdread_title_scan( hb_dvd_t * e, int t, uint64_t min_dur
         lang = lang_for_code( vts->vtsi_mat->vts_audio_attr[i].lang_code );
 
         snprintf( audio->config.lang.description, sizeof( audio->config.lang.description ), "%s",
-            strlen(lang->native_name) ? lang->native_name : lang->eng_name,
-            audio->config.in.codec == HB_ACODEC_AC3 ? "AC3" : ( audio->config.in.codec ==
-                HB_ACODEC_DCA ? "DTS" : ( audio->config.in.codec ==
-                HB_ACODEC_FFMPEG ? "MPEG" : "LPCM" ) ) );
+            strlen(lang->native_name) ? lang->native_name : lang->eng_name);
         snprintf( audio->config.lang.simple, sizeof( audio->config.lang.simple ), "%s",
                   strlen(lang->native_name) ? lang->native_name : lang->eng_name );
         snprintf( audio->config.lang.iso639_2, sizeof( audio->config.lang.iso639_2 ), "%s",
@@ -822,7 +819,7 @@ static int hb_dvdread_start( hb_dvd_t * e, hb_title_t *title, int chapter )
  ***********************************************************************
  *
  **********************************************************************/
-static void hb_dvdread_stop( hb_dvd_t * e )
+static void OPTMEDIA_NOT_USED hb_dvdread_stop( hb_dvd_t * e )
 {
     hb_dvdread_t *d = &(e->dvdread);
     if( d->ifo )
@@ -918,7 +915,7 @@ static int64_t hb_dvdread_seek_bytes( hb_dvd_t *e, int64_t off, int mode ) {
  ***********************************************************************
  *
  **********************************************************************/
-static int hb_dvdread_seek( hb_dvd_t * e, float f )
+static int OPTMEDIA_NOT_USED  hb_dvdread_seek( hb_dvd_t * e, float f )
 {
     hb_dvdread_t *d = &(e->dvdread);
     int count, sizeCell;
@@ -1288,7 +1285,7 @@ static hb_buffer_t * hb_dvdread_read( hb_dvd_t * e )
  * Returns in which chapter the next block to be read is.
  * Chapter numbers start at 1.
  **********************************************************************/
-static int hb_dvdread_chapter( hb_dvd_t * e )
+static  OPTMEDIA_NOT_USED int hb_dvdread_chapter( hb_dvd_t * e )
 {
     hb_dvdread_t *d = &(e->dvdread);
     int     i;
@@ -1386,7 +1383,7 @@ static void hb_dvdread_close( hb_dvd_t ** _d )
  * Returns the number of angles supported.  We do not support angles
  * with dvdread
  **********************************************************************/
-static int hb_dvdread_angle_count( hb_dvd_t * d )
+static OPTMEDIA_NOT_USED  int hb_dvdread_angle_count( hb_dvd_t * d )
 {
     return 1;
 }
@@ -1396,7 +1393,7 @@ static int hb_dvdread_angle_count( hb_dvd_t * d )
  ***********************************************************************
  * Sets the angle to read.  Not supported with dvdread
  **********************************************************************/
-static void hb_dvdread_set_angle( hb_dvd_t * d, int angle )
+static OPTMEDIA_NOT_USED  void hb_dvdread_set_angle( hb_dvd_t * d, int angle )
 {
 }
 
@@ -1454,7 +1451,7 @@ static int dvdtime2msec(dvd_time_t * dt)
 }
 
 /* optmedia exports */
-static om_handle_t    * __hb_dvdread_init( char * path ) { return hb_dvdread_init(path); }
+static om_handle_t    * __hb_dvdread_init( char * path ) { return (om_handle_t *)hb_dvdread_init(path); }
 static void     __hb_dvdread_close( om_handle_t  ** _d ) { hb_dvdread_close((hb_dvd_t **)_d); }
 static int           __hb_dvdread_title_count( om_handle_t *d ) { return hb_dvdread_title_count((hb_dvd_t *)d); }
 static hb_title_t  * __hb_dvdread_title_scan( om_handle_t * d, int t, uint64_t min_duration ) { return hb_dvdread_title_scan((hb_dvd_t *)d,t,min_duration); }
@@ -1475,9 +1472,9 @@ hb_optmedia_func_t *hb_optmedia_dvd_methods(void) {
 
 /* libavformat glue */
 static const AVOption options[] = {
-    { "wide_support", "enable wide support", offsetof(dvdurl_t, wide_support), FF_OPT_TYPE_INT, 1, -1, 1, AV_OPT_FLAG_DECODING_PARAM},
-    { "min_title_duration", "minimum duration in ms to select a DVD title", offsetof(dvdurl_t, min_title_duration), FF_OPT_TYPE_INT, 0, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
-    { NULL }
+    { "wide_support", "enable wide support", offsetof(dvdurl_t, wide_support), FF_OPT_TYPE_INT, {1}, -1, 1, AV_OPT_FLAG_DECODING_PARAM},
+    { "min_title_duration", "minimum duration in ms to select a DVD title", offsetof(dvdurl_t, min_title_duration), FF_OPT_TYPE_INT, {0}, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
+    {0}
 };
 
 static const AVClass dvdurl_class = {
@@ -1539,8 +1536,8 @@ static int dvd_get_handle(URLContext *h)
 
 static int dvd_check(URLContext *h, int mask)
 {
-    hb_error("dvd_check: mask %d",  mask);
     int ret = mask&AVIO_FLAG_READ;
+    hb_error("dvd_check: mask %d",  mask);
     return ret;
 }
 
@@ -1567,7 +1564,7 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
     url_parse("dvd",filename, &dvdpath, &urltitle );
 
 
-    ctx->hb_dvd = hb_dvdread_init(dvdpath);
+    ctx->hb_dvd = hb_dvdread_init((char *)dvdpath);
     if(!ctx->hb_dvd) {
         hb_log_level(loglevel, "dvd_open: couldn't initialize dvdread");
         return -1;
@@ -1575,8 +1572,8 @@ static int dvd_open(URLContext *h, const char *filename, int flags)
 
     title_count = hb_dvdread_title_count(ctx->hb_dvd);
     if( urltitle>0 && urltitle<=title_count ) {
-        hb_log_level(loglevel,"dvd_open: opening title %d ", urltitle);
         hb_title_t *t= hb_dvdread_title_scan(ctx->hb_dvd, urltitle, min_title_duration );
+        hb_log_level(loglevel,"dvd_open: opening title %d ", urltitle);
         if(t) {
             ctx->selected_title = t;
             ctx->selected_title_idx = t->index;

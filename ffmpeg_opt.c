@@ -794,14 +794,13 @@ static void dump_attachment(AVStream *st, const char *filename)
  * parse_input_file is the original opt_input_file from ffmpeg. 
  *
  **/
-static int parse_input_file(OptionsContext *o, const char *opt, const char *filename)
+static int parse_input_file(OptionsContext *o, const char *filename)
 {
     InputFile *f;
     AVFormatContext *ic;
     AVInputFormat *file_iformat = NULL;
     int err, i, ret;
     int64_t timestamp;
-    //uint8_t buf[128];
     AVDictionary **opts;
     AVDictionary *unused_opts = NULL;
     AVDictionaryEntry *e = NULL;
@@ -1021,8 +1020,8 @@ static void select_default_program(int programid) {
 }
 
 /* A veneer function to parse_input_file */
-static int parse_file_veneer(void *ctx, char *opt, char *filename) {
-    return parse_input_file((OptionsContext *)ctx, opt, filename);
+static int parse_file_veneer(void *ctx, char *filename) {
+    return parse_input_file((OptionsContext *)ctx, filename);
 }
 
 static ff_input_func_t ff_input_funcs = {
@@ -1032,11 +1031,11 @@ static ff_input_func_t ff_input_funcs = {
 
 static int open_input_file(OptionsContext *o, const char *filename) {
 #if CONFIG_DVD_PROTOCOL || CONFIG_BD_PROTOCOL
-	if (parse_optmedia_path(o, (char *)"open input file", filename, &ff_input_funcs)) {
+	if (parse_optmedia_path(o, filename, &ff_input_funcs)) {
 		return 1;
 	}
 #endif
-	return parse_input_file(o, "open input file", filename);
+	return parse_input_file(o, filename);
 }
 /* --vgtmpeg end */
 
@@ -1187,8 +1186,11 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
 
     MATCH_PER_STREAM_OPT(bitstream_filters, str, bsf, oc, st);
     while (bsf) {
+        char *arg = NULL;
         if (next = strchr(bsf, ','))
             *next++ = 0;
+        if (arg = strchr(bsf, '='))
+            *arg++ = 0;
         if (!(bsfc = av_bitstream_filter_init(bsf))) {
             av_log(NULL, AV_LOG_FATAL, "Unknown bitstream filter %s\n", bsf);
             exit_program(1);
@@ -1197,6 +1199,7 @@ static OutputStream *new_output_stream(OptionsContext *o, AVFormatContext *oc, e
             bsfc_prev->next = bsfc;
         else
             ost->bitstream_filters = bsfc;
+        av_dict_set(&ost->bsf_args, bsfc->filter->name, arg, 0);
 
         bsfc_prev = bsfc;
         bsf       = next;
@@ -1666,31 +1669,6 @@ static int copy_chapters(InputFile *ifile, OutputFile *ofile, int copy_metadata)
     return 0;
 }
 
-static int ffserver_streams_copy_context(AVCodecContext *dest, const AVCodecContext *src,
-                                         const char *configuration)
-{
-    int ret;
-    if ((ret = avcodec_copy_context(dest, src)) < 0)
-        return ret;
-    dest->codec = avcodec_find_encoder(src->codec_id);
-    if (!dest->codec)
-        return AVERROR(EINVAL);
-    if (!dest->codec->priv_class || !dest->codec->priv_data_size)
-        return 0;
-    if (!dest->priv_data) {
-        dest->priv_data = av_mallocz(dest->codec->priv_data_size);
-        if (!dest->priv_data)
-            return AVERROR(ENOMEM);
-        *(const AVClass**)dest->priv_data = dest->codec->priv_class;
-    }
-    av_opt_set_defaults(dest->priv_data);
-    if (av_set_options_string(dest->priv_data, configuration, "=", ",") < 0) {
-        av_log(dest, AV_LOG_WARNING, "Cannot copy private codec options. Using defaults.\n");
-        av_opt_set_defaults(dest->priv_data);
-    }
-    return 0;
-}
-
 static int read_ffserver_streams(OptionsContext *o, AVFormatContext *s, const char *filename)
 {
     int i, err;
@@ -1705,6 +1683,7 @@ static int read_ffserver_streams(OptionsContext *o, AVFormatContext *s, const ch
         AVStream *st;
         OutputStream *ost;
         AVCodec *codec;
+        const char *enc_config;
 
         codec = avcodec_find_encoder(ic->streams[i]->codec->codec_id);
         if (!codec) {
@@ -1718,15 +1697,22 @@ static int read_ffserver_streams(OptionsContext *o, AVFormatContext *s, const ch
         ost   = new_output_stream(o, s, codec->type, -1);
         st    = ost->st;
 
-        ffserver_streams_copy_context(st->codec, ic->streams[i]->codec,
-                                      av_stream_get_recommended_encoder_configuration(ic->streams[i]));
+        avcodec_get_context_defaults3(st->codec, codec);
+        enc_config = av_stream_get_recommended_encoder_configuration(ic->streams[i]);
+        if (enc_config) {
+            AVDictionary *opts = NULL;
+            av_dict_parse_string(&opts, enc_config, "=", ",", 0);
+            av_opt_set_dict2(st->codec, &opts, AV_OPT_SEARCH_CHILDREN);
+            av_dict_free(&opts);
+        }
 
         if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO && !ost->stream_copy)
             choose_sample_fmt(st, codec);
         else if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO && !ost->stream_copy)
             choose_pixel_fmt(st, st->codec, codec, st->codec->pix_fmt);
-        ffserver_streams_copy_context(ost->enc_ctx, st->codec,
-                                      av_stream_get_recommended_encoder_configuration(ic->streams[i]));
+        avcodec_copy_context(ost->enc_ctx, st->codec);
+        if (enc_config)
+            av_dict_parse_string(&ost->encoder_opts, enc_config, "=", ",", 0);
     }
 
     avformat_close_input(&ic);

@@ -807,8 +807,8 @@ extern int hb_global_verbosity_level;
 /* parses a 'filename' that can be a dvd://.. , bd:// ..a file://... url or a file name
  * and returns the decoded path to the resource, and optionally a title
  */
-char *url_encode(char *str);
-char *url_decode(char *str);
+char *url_encode(const char *str);
+char *url_decode(const char *str);
 int url_parse(const char *proto, const char *filename, const char **urlpath, int *title );
 
 typedef hb_buffer_t* (* fragread_t)(void *ctx);

@@ -390,7 +390,7 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream,
     FLVContext *flv = s->priv_data;
     AVIOContext *ioc;
     AMFDataType amf_type;
-    char str_val[256];
+    char str_val[1024];
     double num_val;
 
     num_val  = 0;
@@ -459,11 +459,11 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream,
     }
 
     if (key) {
+        acodec = astream ? astream->codec : NULL;
+        vcodec = vstream ? vstream->codec : NULL;
+
         // stream info doesn't live any deeper than the first object
         if (depth == 1) {
-            acodec = astream ? astream->codec : NULL;
-            vcodec = vstream ? vstream->codec : NULL;
-
             if (amf_type == AMF_DATA_TYPE_NUMBER ||
                 amf_type == AMF_DATA_TYPE_BOOL) {
                 if (!strcmp(key, "duration"))
@@ -558,13 +558,13 @@ static int flv_read_metabody(AVFormatContext *s, int64_t next_pos)
     type = avio_r8(ioc);
     if (type != AMF_DATA_TYPE_STRING ||
         amf_get_string(ioc, buffer, sizeof(buffer)) < 0)
-        return -1;
+        return 2;
 
     if (!strcmp(buffer, "onTextData"))
         return 1;
 
     if (strcmp(buffer, "onMetaData") && strcmp(buffer, "onCuePoint"))
-        return -1;
+        return 2;
 
     // find the streams now so that amf_parse_object doesn't need to do
     // the lookup every time it is called.
@@ -623,7 +623,7 @@ static int flv_read_close(AVFormatContext *s)
 
 static int flv_get_extradata(AVFormatContext *s, AVStream *st, int size)
 {
-    av_free(st->codec->extradata);
+    av_freep(&st->codec->extradata);
     if (ff_get_extradata(st->codec, s->pb, size) < 0)
         return AVERROR(ENOMEM);
     return 0;
@@ -822,7 +822,7 @@ static int flv_read_packet(AVFormatContext *s, AVPacket *pkt)
             stream_type=FLV_STREAM_TYPE_DATA;
             if (size > 13 + 1 + 4 && dts == 0) { // Header-type metadata stuff
                 meta_pos = avio_tell(s->pb);
-                if (flv_read_metabody(s, next) == 0) {
+                if (flv_read_metabody(s, next) <= 0) {
                     goto skip;
                 }
                 avio_seek(s->pb, meta_pos, SEEK_SET);

@@ -292,7 +292,6 @@ static void bdurl_program_init(MpegTSContext *ts) {
     }
 	if(bdurl && bdurl->selected_title ) {
 	    hb_title_t *title = bdurl->selected_title;
-		uint64_t duration = title->duration;
 		int j=0;
 
 

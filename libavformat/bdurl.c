@@ -876,8 +876,8 @@ hb_optmedia_func_t *hb_optmedia_bd_methods(void) {
 
 /* libavformat glue */
 static const AVOption options[] = {
-    { "wide_support", "enable wide support", offsetof(bdurl_t, wide_support), FF_OPT_TYPE_INT, 1, -1, 1, AV_OPT_FLAG_DECODING_PARAM},
-    { "min_title_duration", "minimum duration in ms to select a BD title", offsetof(bdurl_t, min_title_duration), FF_OPT_TYPE_INT, 0, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
+    { "wide_support", "enable wide support", offsetof(bdurl_t, wide_support), FF_OPT_TYPE_INT, {1}, -1, 1, AV_OPT_FLAG_DECODING_PARAM},
+    { "min_title_duration", "minimum duration in ms to select a BD title", offsetof(bdurl_t, min_title_duration), FF_OPT_TYPE_INT, {0}, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
     { NULL }
 };
 

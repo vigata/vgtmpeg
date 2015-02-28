@@ -1436,10 +1436,10 @@ static char to_hex(char code) {
   return hex[code & 15];
 }
 
-/* Returns a url-encoded version of str */
+/* Returns a url-encoded version of str */ 
 /* IMPORTANT: be sure to free() the returned string after use */
-char *url_encode(char *str) {
-  char *pstr = str, *buf = av_malloc(strlen(str) * 3 + 1), *pbuf = buf;
+char *url_encode(const char *str) {
+  char *pstr = (char *)str, *buf = av_malloc(strlen(str) * 3 + 1), *pbuf = buf;
   while (*pstr) {
     if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~' || *pstr == '/' || *pstr == '#')
       *pbuf++ = *pstr;
@@ -1455,8 +1455,8 @@ char *url_encode(char *str) {
 
 /* Returns a url-decoded version of str */
 /* IMPORTANT: be sure to free() the returned string after use */
-char *url_decode(char *str) {
-  char *pstr = str, *buf = av_malloc(strlen(str) + 1), *pbuf = buf;
+char *url_decode(const char *str) {
+  char *pstr = (char *)str, *buf = av_malloc(strlen(str) + 1), *pbuf = buf;
   while (*pstr) {
     if (*pstr == '%') {
       if (pstr[1] && pstr[2]) {
@@ -1479,8 +1479,8 @@ char *url_decode(char *str) {
  */
 int url_parse(const char *proto, const char *filename, const char **urlpath, int *title ) {
     const char *pathstart;
+    char *protourl = av_asprintf("%s://",proto);
     *title = 0;
-    const char *protourl = av_asprintf("%s://",proto);
 
     if( av_strstart(filename, protourl, &pathstart) ) {
     	const char *path;
@@ -1551,7 +1551,7 @@ int fragmented_read(void *ctx, fragread_t read, hb_buffer_t **cur_read_buffer, u
     return bufptr - buf;
 }
 
-static int __parse_optmedia_path(const char *proto, void *ctx, char *opt, const char *path, ff_input_func_t *ff ){
+static int __parse_optmedia_path(const char *proto, void *ctx, const char *path, ff_input_func_t *ff ){
 	om_handle_t *c;
     int min_title_duration = 25*90000;
     //const char *fpath;
@@ -1571,7 +1571,7 @@ static int __parse_optmedia_path(const char *proto, void *ctx, char *opt, const 
     if(!url_parse(proto, path, &urlpath, &urltitle))
         return 0;
 
-    c = om->init(urlpath);
+    c = om->init((char *)urlpath);
     if(c) {
         int tc = om->title_count(c);
         int i;
@@ -1617,7 +1617,7 @@ static int __parse_optmedia_path(const char *proto, void *ctx, char *opt, const 
                 //av_strlcat(dfname, "dvd://", 7);
                 //av_strlcat(dfname, efilename, 2048 - 7);
                 //av_strlcatf(dfname, 2048, "?title=%d", t->index);
-                ff->parse_file(ctx, opt, ppf );
+                ff->parse_file(ctx, ppf );
                 av_free(ppf);
             }
             av_free(efilename);
@@ -1634,9 +1634,9 @@ static int __parse_optmedia_path(const char *proto, void *ctx, char *opt, const 
     return 0;
 }
 
-int parse_optmedia_path(void *ctx, char *opt, const char *path, ff_input_func_t *ff ){
-	if(!__parse_optmedia_path("dvd",ctx,opt,path,ff) &&
-			!__parse_optmedia_path("bd",ctx,opt,path,ff) ) {
+int parse_optmedia_path(void *ctx, const char *path, ff_input_func_t *ff ){
+	if(!__parse_optmedia_path("dvd",ctx,path,ff) &&
+			!__parse_optmedia_path("bd",ctx,path,ff) ) {
 		return 0;
 	}
 	return 1;

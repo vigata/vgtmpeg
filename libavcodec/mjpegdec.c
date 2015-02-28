@@ -244,7 +244,8 @@ int ff_mjpeg_decode_dht(MJpegDecodeContext *s)
 
 int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
 {
-    int len, nb_components, i, width, height, bits, pix_fmt_id, ret;
+    int len, nb_components, i, width, height, bits, ret;
+    unsigned pix_fmt_id;
     int h_count[MAX_COMPONENTS];
     int v_count[MAX_COMPONENTS];
 
@@ -383,7 +384,7 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
         else if (!s->lossless)
             s->rgb = 0;
     /* XXX: not complete test ! */
-    pix_fmt_id = (s->h_count[0] << 28) | (s->v_count[0] << 24) |
+    pix_fmt_id = ((unsigned)s->h_count[0] << 28) | (s->v_count[0] << 24) |
                  (s->h_count[1] << 20) | (s->v_count[1] << 16) |
                  (s->h_count[2] << 12) | (s->v_count[2] <<  8) |
                  (s->h_count[3] <<  4) |  s->v_count[3];
@@ -560,9 +561,12 @@ unk_pixfmt:
     }
     if (s->ls) {
         s->upscale_h = s->upscale_v = 0;
-        if (s->nb_components > 1)
+        if (s->nb_components == 3) {
             s->avctx->pix_fmt = AV_PIX_FMT_RGB24;
-        else if (s->palette_index && s->bits <= 8)
+        } else if (s->nb_components != 1) {
+            av_log(s->avctx, AV_LOG_ERROR, "Unsupported number of components %d\n", s->nb_components);
+            return AVERROR_PATCHWELCOME;
+        } else if (s->palette_index && s->bits <= 8)
             s->avctx->pix_fmt = AV_PIX_FMT_PAL8;
         else if (s->bits <= 8)
             s->avctx->pix_fmt = AV_PIX_FMT_GRAY8;
@@ -1247,13 +1251,18 @@ static int mjpeg_decode_scan(MJpegDecodeContext *s, int nb_components, int Ah,
 
                     if (s->interlaced && s->bottom_field)
                         block_offset += linesize[c] >> 1;
-                    ptr = data[c] + block_offset;
+                    if (   8*(h * mb_x + x) < s->width
+                        && 8*(v * mb_y + y) < s->height) {
+                        ptr = data[c] + block_offset;
+                    } else
+                        ptr = NULL;
                     if (!s->progressive) {
-                        if (copy_mb)
-                            mjpeg_copy_block(s, ptr, reference_data[c] + block_offset,
-                                             linesize[c], s->avctx->lowres);
+                        if (copy_mb) {
+                            if (ptr)
+                                mjpeg_copy_block(s, ptr, reference_data[c] + block_offset,
+                                                linesize[c], s->avctx->lowres);
 
-                        else {
+                        } else {
                             s->bdsp.clear_block(s->block);
                             if (decode_block(s, s->block, i,
                                              s->dc_index[i], s->ac_index[i],
@@ -1262,9 +1271,11 @@ static int mjpeg_decode_scan(MJpegDecodeContext *s, int nb_components, int Ah,
                                        "error y=%d x=%d\n", mb_y, mb_x);
                                 return AVERROR_INVALIDDATA;
                             }
-                            s->idsp.idct_put(ptr, linesize[c], s->block);
-                            if (s->bits & 7)
-                                shift_output(s, ptr, linesize[c]);
+                            if (ptr) {
+                                s->idsp.idct_put(ptr, linesize[c], s->block);
+                                if (s->bits & 7)
+                                    shift_output(s, ptr, linesize[c]);
+                            }
                         }
                     } else {
                         int block_idx  = s->block_stride[c] * (v * mb_y + y) +
@@ -1620,6 +1631,8 @@ static int mjpeg_decode_app(MJpegDecodeContext *s)
     }
 
     if (id == AV_RB32("LJIF")) {
+        int rgb = s->rgb;
+        int pegasus_rct = s->pegasus_rct;
         if (s->avctx->debug & FF_DEBUG_PICT_INFO)
             av_log(s->avctx, AV_LOG_INFO,
                    "Pegasus lossless jpeg header found\n");
@@ -1629,17 +1642,27 @@ static int mjpeg_decode_app(MJpegDecodeContext *s)
         skip_bits(&s->gb, 16); /* unknown always 0? */
         switch (i=get_bits(&s->gb, 8)) {
         case 1:
-            s->rgb         = 1;
-            s->pegasus_rct = 0;
+            rgb         = 1;
+            pegasus_rct = 0;
             break;
         case 2:
-            s->rgb         = 1;
-            s->pegasus_rct = 1;
+            rgb         = 1;
+            pegasus_rct = 1;
             break;
         default:
             av_log(s->avctx, AV_LOG_ERROR, "unknown colorspace %d\n", i);
         }
+
         len -= 9;
+        if (s->got_picture)
+            if (rgb != s->rgb || pegasus_rct != s->pegasus_rct) {
+                av_log(s->avctx, AV_LOG_WARNING, "Mismatching LJIF tag\n");
+                goto out;
+            }
+
+        s->rgb = rgb;
+        s->pegasus_rct = pegasus_rct;
+
         goto out;
     }
     if (id == AV_RL32("colr") && len > 0) {
@@ -1891,6 +1914,10 @@ int ff_mjpeg_find_marker(MJpegDecodeContext *s,
             put_bits(&pb, 8, x);
             if (x == 0xFF) {
                 x = src[b++];
+                if (x & 0x80) {
+                    av_log(s->avctx, AV_LOG_WARNING, "Invalid escape sequence\n");
+                    x &= 0x7f;
+                }
                 put_bits(&pb, 7, x);
                 bit_count--;
             }

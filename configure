@@ -1203,11 +1203,15 @@ require_cpp(){
     check_lib_cpp "$headers" "$classes" "$@" || die "ERROR: $name not found"
 }
 
-require_pkg_config(){
+use_pkg_config(){
     pkg="$1"
-    check_pkg_config "$@" || die "ERROR: $pkg not found"
+    check_pkg_config "$@" || return 1
     add_cflags    $(get_safe ${pkg}_cflags)
     add_extralibs $(get_safe ${pkg}_libs)
+}
+
+require_pkg_config(){
+    use_pkg_config "$@" || die "ERROR: $pkg not found using pkg-config$pkg_config_fail_message"
 }
 
 require_libfreetype(){
@@ -1634,7 +1638,6 @@ HEADERS_LIST="
     asm_types_h
     cdio_paranoia_h
     cdio_paranoia_paranoia_h
-    CL_cl_h
     dev_bktr_ioctl_bt848_h
     dev_bktr_ioctl_meteor_h
     dev_ic_bt8xx_h
@@ -1735,6 +1738,7 @@ SYSTEM_FUNCS="
     lzo1x_999_compress
     mach_absolute_time
     MapViewOfFile
+    MoveFileExA
     memalign
     mkstemp
     mmap
@@ -2572,16 +2576,13 @@ drawtext_filter_deps="libfreetype"
 ebur128_filter_deps="gpl"
 flite_filter_deps="libflite"
 frei0r_filter_deps="frei0r dlopen"
-frei0r_filter_extralibs='$ldl'
 frei0r_src_filter_deps="frei0r dlopen"
-frei0r_src_filter_extralibs='$ldl'
 geq_filter_deps="gpl"
 histeq_filter_deps="gpl"
 hqdn3d_filter_deps="gpl"
 interlace_filter_deps="gpl"
 kerndeint_filter_deps="gpl"
 ladspa_filter_deps="ladspa dlopen"
-ladspa_filter_extralibs='$ldl'
 mcdeint_filter_deps="avcodec gpl"
 movie_filter_deps="avcodec avformat"
 mp_filter_deps="gpl avcodec swscale"
@@ -3071,9 +3072,13 @@ set_default arch cc cxx doxygen pkg_config ranlib strip sysinclude \
 enabled cross_compile || host_cc_default=$cc
 set_default host_cc
 
+pkg_config_fail_message=""
 if ! $pkg_config --version >/dev/null 2>&1; then
     warn "$pkg_config not found, library detection may fail."
     pkg_config=false
+elif is_in -static $cc $LDFLAGS && ! is_in --static $pkg_config $pkg_config_flags; then
+    pkg_config_fail_message="
+Note: When building a static binary, add --pkg-config-flags=\"--static\"."
 fi
 
 if test $doxygen != $doxygen_default && \
@@ -4410,7 +4415,7 @@ unsigned int endian = 'B' << 24 | 'I' << 16 | 'G' << 8 | 'E';
 EOF
 od -t x1 $TMPO | grep -q '42 *49 *47 *45' && enable bigendian
 
-if  [ "$cpu" = "power7" ] || [ "$cpu" = "power8" ] ;then
+if  [ "$cpu" = "power7" ] || [ "$cpu" = "power8" ] || enabled ppc64; then
     if ! enabled bigendian && enabled altivec ;then
         enable vsx
     fi
@@ -4653,6 +4658,10 @@ elif check_func dlopen -ldl; then
     ldl=-ldl
 fi
 
+frei0r_filter_extralibs='$ldl'
+frei0r_src_filter_extralibs='$ldl'
+ladspa_filter_extralibs='$ldl'
+
 if ! disabled network; then
     check_func getaddrinfo $network_extralibs
     check_func getservbyport $network_extralibs
@@ -4739,6 +4748,7 @@ check_func_headers windows.h GetProcessAffinityMask
 check_func_headers windows.h GetProcessTimes
 check_func_headers windows.h GetSystemTimeAsFileTime
 check_func_headers windows.h MapViewOfFile
+check_func_headers windows.h MoveFileExA
 check_func_headers windows.h PeekNamedPipe
 check_func_headers windows.h SetConsoleTextAttribute
 check_func_headers windows.h Sleep
@@ -4748,7 +4758,6 @@ check_func_headers glob.h glob
 enabled xlib &&
     check_func_headers "X11/Xlib.h X11/extensions/Xvlib.h" XvGetPortAttribute -lXv -lX11 -lXext
 
-check_header cl/cl.h
 check_header direct.h
 check_header dlfcn.h
 check_header dxva.h
@@ -4829,25 +4838,28 @@ for func in $MATH_FUNCS; do
 done
 
 # these are off by default, so fail if requested and not available
-enabled avisynth   && { { check_lib2 "windows.h" LoadLibrary; } ||
-                        { check_lib2 "dlfcn.h" dlopen -ldl; } ||
-                        die "ERROR: LoadLibrary/dlopen not found for avisynth"; }
-enabled fontconfig && require_pkg_config fontconfig "fontconfig/fontconfig.h" FcInit
-enabled frei0r     && { check_header frei0r.h || die "ERROR: frei0r.h header not found"; }
-enabled gnutls     && require_pkg_config gnutls gnutls/gnutls.h gnutls_global_init
-enabled libiec61883 && require libiec61883 libiec61883/iec61883.h iec61883_cmp_connect -lraw1394 -lavc1394 -lrom1394 -liec61883
-enabled libaacplus && require  "libaacplus >= 2.0.0" aacplus.h aacplusEncOpen -laacplus
-enabled libass     && require_pkg_config libass ass/ass.h ass_library_init
+enabled avfoundation_indev && { check_header_oc AVFoundation/AVFoundation.h || disable avfoundation_indev; }
+enabled avisynth          && { { check_lib2 "windows.h" LoadLibrary; } ||
+                               { check_lib2 "dlfcn.h" dlopen -ldl; } ||
+                               die "ERROR: LoadLibrary/dlopen not found for avisynth"; }
+enabled decklink          && { check_header DeckLinkAPI.h || die "ERROR: DeckLinkAPI.h header not found"; }
+enabled frei0r            && { check_header frei0r.h || die "ERROR: frei0r.h header not found"; }
+enabled gnutls            && require_pkg_config gnutls gnutls/gnutls.h gnutls_global_init
+enabled ladspa            && { check_header ladspa.h || die "ERROR: ladspa.h header not found"; }
+enabled libiec61883       && require libiec61883 libiec61883/iec61883.h iec61883_cmp_connect -lraw1394 -lavc1394 -lrom1394 -liec61883
+enabled libaacplus        && require "libaacplus >= 2.0.0" aacplus.h aacplusEncOpen -laacplus
+enabled libass            && require_pkg_config libass ass/ass.h ass_library_init
 #>>vgtmpeg 
 # adding $ldl so libbluray presence checks pass during configure even if build is static 
 enabled libbluray  && require libbluray libbluray/bluray.h bd_open -lbluray $ldl
 #<<vgtmpeg 
-enabled libcelt    && require libcelt celt/celt.h celt_decode -lcelt0 &&
-                      { check_lib celt/celt.h celt_decoder_create_custom -lcelt0 ||
-                        die "ERROR: libcelt must be installed and version must be >= 0.11.0."; }
-enabled libcaca    && require_pkg_config caca caca.h caca_create_canvas
-enabled libfaac    && require2 libfaac "stdint.h faac.h" faacEncGetVersion -lfaac
-enabled libfdk_aac && require  libfdk_aac fdk-aac/aacenc_lib.h aacEncOpen -lfdk-aac
+enabled libbs2b           && require_pkg_config libbs2b bs2b.h bs2b_open
+enabled libcelt           && require libcelt celt/celt.h celt_decode -lcelt0 &&
+                             { check_lib celt/celt.h celt_decoder_create_custom -lcelt0 ||
+                               die "ERROR: libcelt must be installed and version must be >= 0.11.0."; }
+enabled libcaca           && require_pkg_config caca caca.h caca_create_canvas
+enabled libfaac           && require2 libfaac "stdint.h faac.h" faacEncGetVersion -lfaac
+enabled libfdk_aac        && require libfdk_aac fdk-aac/aacenc_lib.h aacEncOpen -lfdk-aac
 flite_libs="-lflite_cmu_time_awb -lflite_cmu_us_awb -lflite_cmu_us_kal -lflite_cmu_us_kal16 -lflite_cmu_us_rms -lflite_cmu_us_slt -lflite_usenglish -lflite_cmulex -lflite"
 enabled libflite          && require2 libflite "flite/flite.h" flite_init $flite_libs
 enabled fontconfig        && enable libfontconfig
@@ -4875,9 +4887,8 @@ enabled libquvi           && require_pkg_config libquvi quvi/quvi.h quvi_init
 enabled librtmp           && require_pkg_config librtmp librtmp/rtmp.h RTMP_Socket
 enabled libschroedinger   && require_pkg_config schroedinger-1.0 schroedinger/schro.h schro_init
 enabled libshine          && require_pkg_config shine shine/layer3.h shine_encode_buffer
-enabled libsmbclient      && { { check_pkg_config smbclient libsmbclient.h smbc_init &&
-                                 require_pkg_config smbclient libsmbclient.h smbc_init; } ||
-                                 require smbclient libsmbclient.h smbc_init -lsmbclient; }
+enabled libsmbclient      && { use_pkg_config smbclient libsmbclient.h smbc_init ||
+                               require smbclient libsmbclient.h smbc_init -lsmbclient; }
 enabled libsoxr           && require libsoxr soxr.h soxr_create -lsoxr
 enabled libssh            && require_pkg_config libssh libssh/sftp.h sftp_init
 enabled libspeex          && require_pkg_config speex speex/speex.h speex_decoder_init -lspeex
@@ -4903,8 +4914,7 @@ enabled libvpx            && {
     enabled libvpx_vp9_encoder && { check_lib2 "vpx/vpx_encoder.h vpx/vp8cx.h" "vpx_codec_vp9_cx VP9E_SET_AQ_MODE" -lvpx || disable libvpx_vp9_encoder; } }
 enabled libwavpack        && require libwavpack wavpack/wavpack.h WavpackOpenFileOutput  -lwavpack
 enabled libwebp           && require_pkg_config "libwebp >= 0.2.0" webp/encode.h WebPGetEncoderVersion
-enabled libx264           && { { check_pkg_config x264 "stdint.h x264.h" x264_encoder_encode &&
-                                 require_pkg_config x264 "stdint.h x264.h" x264_encoder_encode; } ||
+enabled libx264           && { use_pkg_config x264 "stdint.h x264.h" x264_encoder_encode ||
                                { require libx264 x264.h x264_encoder_encode -lx264 &&
                                  warn "using libx264 without pkg-config"; } } &&
                              { check_cpp_condition x264.h "X264_BUILD >= 118" ||
@@ -5684,7 +5694,7 @@ cat > $TMPH <<EOF
 #define FFMPEG_CONFIG_H
 #define FFMPEG_CONFIGURATION "$(c_escape $FFMPEG_CONFIGURATION)"
 #define FFMPEG_LICENSE "$(c_escape $license)"
-#define CONFIG_THIS_YEAR 2014
+#define CONFIG_THIS_YEAR 2015
 #define FFMPEG_DATADIR "$(eval c_escape $datadir)"
 #define AVCONV_DATADIR "$(eval c_escape $datadir)"
 #define CC_IDENT "$(c_escape ${cc_ident:-Unknown compiler})"
@@ -5712,6 +5722,7 @@ enabled getenv || echo "#define getenv(x) NULL" >> $TMPH
 
 
 mkdir -p doc
+mkdir -p tests
 echo "@c auto-generated by configure" > doc/config.texi
 
 print_config ARCH_   "$config_files" $ARCH_LIST

@@ -53,6 +53,9 @@
 #include "riff.h"
 #include "url.h"
 
+#include "libavutil/ffversion.h"
+const char av_format_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
+
 /**
  * @file
  * various utility functions for use within FFmpeg
@@ -594,6 +597,8 @@ static int update_wrap_reference(AVFormatContext *s, AVStream *st, int stream_in
         int default_stream_index = av_find_default_stream_index(s);
         if (s->streams[default_stream_index]->pts_wrap_reference == AV_NOPTS_VALUE) {
             for (i = 0; i < s->nb_streams; i++) {
+                if (av_find_program_from_stream(s, NULL, i))
+                    continue;
                 s->streams[i]->pts_wrap_reference = pts_wrap_reference;
                 s->streams[i]->pts_wrap_behavior = pts_wrap_behavior;
             }
@@ -2815,8 +2820,8 @@ static int get_std_framerate(int i)
  * And there are "variable" fps files this needs to detect as well. */
 static int tb_unreliable(AVCodecContext *c)
 {
-    if (c->time_base.den >= 101L * c->time_base.num ||
-        c->time_base.den <    5L * c->time_base.num ||
+    if (c->time_base.den >= 101LL * c->time_base.num ||
+        c->time_base.den <    5LL * c->time_base.num ||
         // c->codec_tag == AV_RL32("DIVX") ||
         // c->codec_tag == AV_RL32("XVID") ||
         c->codec_tag == AV_RL32("mp4v") ||
@@ -2832,6 +2837,7 @@ int ff_alloc_extradata(AVCodecContext *avctx, int size)
     int ret;
 
     if (size < 0 || size >= INT32_MAX - FF_INPUT_BUFFER_PADDING_SIZE) {
+        avctx->extradata = NULL;
         avctx->extradata_size = 0;
         return AVERROR(EINVAL);
     }
@@ -2997,6 +3003,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
     int orig_nb_streams = ic->nb_streams;
     int flush_codecs;
     int64_t max_analyze_duration = ic->max_analyze_duration2;
+    int64_t max_stream_analyze_duration;
     int64_t probesize = ic->probesize2;
 
     if (!max_analyze_duration)
@@ -3007,11 +3014,12 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
 
     av_opt_set(ic, "skip_clear", "1", AV_OPT_SEARCH_CHILDREN);
 
+    max_stream_analyze_duration = max_analyze_duration;
     if (!max_analyze_duration) {
-        if (!strcmp(ic->iformat->name, "flv") && !(ic->ctx_flags & AVFMTCTX_NOHEADER)) {
-            max_analyze_duration = 10*AV_TIME_BASE;
-        } else
-            max_analyze_duration = 5*AV_TIME_BASE;
+        max_stream_analyze_duration =
+        max_analyze_duration        = 5*AV_TIME_BASE;
+        if (!strcmp(ic->iformat->name, "flv"))
+            max_stream_analyze_duration = 30*AV_TIME_BASE;
     }
 
     if (ic->pb)
@@ -3084,6 +3092,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
     count     = 0;
     read_size = 0;
     for (;;) {
+        int analyzed_all_streams;
         if (ff_check_interrupt(&ic->interrupt_callback)) {
             ret = AVERROR_EXIT;
             av_log(ic, AV_LOG_DEBUG, "interrupted\n");
@@ -3123,7 +3132,9 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
                  st->codec->codec_type == AVMEDIA_TYPE_AUDIO))
                 break;
         }
+        analyzed_all_streams = 0;
         if (i == ic->nb_streams) {
+            analyzed_all_streams = 1;
             /* NOTE: If the format has no header, then we need to read some
              * packets to get most of the streams, so we cannot stop here. */
             if (!(ic->ctx_flags & AVFMTCTX_NOHEADER)) {
@@ -3231,7 +3242,7 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
                 && st->info->fps_last_dts  != AV_NOPTS_VALUE)
                 t = FFMAX(t, av_rescale_q(st->info->fps_last_dts - st->info->fps_first_dts, st->time_base, AV_TIME_BASE_Q));
 
-            if (t >= max_analyze_duration) {
+            if (t >= (analyzed_all_streams ? max_analyze_duration : max_stream_analyze_duration)) {
                 av_log(ic, AV_LOG_VERBOSE, "max_analyze_duration %"PRId64" reached at %"PRId64" microseconds\n",
                        max_analyze_duration,
                        t);
@@ -3647,6 +3658,11 @@ AVStream *avformat_new_stream(AVFormatContext *s, const AVCodec *c)
     st->info->last_dts = AV_NOPTS_VALUE;
 
     st->codec = avcodec_alloc_context3(c);
+    if (!st->codec) {
+        av_free(st->info);
+        av_free(st);
+        return NULL;
+    }
     if (s->iformat) {
         /* no default bitrate if decoding */
         st->codec->bit_rate = 0;

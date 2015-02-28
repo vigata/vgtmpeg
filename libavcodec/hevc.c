@@ -108,7 +108,7 @@ static int pic_arrays_init(HEVCContext *s, const HEVCSPS *sps)
     if (!s->tab_ipm || !s->cbf_luma || !s->is_pcm)
         goto fail;
 
-    s->filter_slice_edges = av_malloc(ctb_count);
+    s->filter_slice_edges = av_mallocz(ctb_count);
     s->tab_slice_address  = av_malloc_array(pic_size_in_ctb,
                                       sizeof(*s->tab_slice_address));
     s->qp_y_tab           = av_malloc_array(pic_size_in_ctb,
@@ -144,7 +144,7 @@ static void pred_weight_table(HEVCContext *s, GetBitContext *gb)
     uint8_t luma_weight_l1_flag[16];
     uint8_t chroma_weight_l1_flag[16];
 
-    s->sh.luma_log2_weight_denom = get_ue_golomb_long(gb);
+    s->sh.luma_log2_weight_denom = av_clip_c(get_ue_golomb_long(gb), 0, 7);
     if (s->sps->chroma_format_idc != 0) {
         int delta = get_se_golomb(gb);
         s->sh.chroma_log2_weight_denom = av_clip(s->sh.luma_log2_weight_denom + delta, 0, 7);
@@ -2870,17 +2870,30 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
 
         if (s->nals_allocated < s->nb_nals + 1) {
             int new_size = s->nals_allocated + 1;
-            HEVCNAL *tmp = av_realloc_array(s->nals, new_size, sizeof(*tmp));
+            void *tmp = av_realloc_array(s->nals, new_size, sizeof(*s->nals));
+            ret = AVERROR(ENOMEM);
             if (!tmp) {
-                ret = AVERROR(ENOMEM);
                 goto fail;
             }
             s->nals = tmp;
             memset(s->nals + s->nals_allocated, 0,
-                   (new_size - s->nals_allocated) * sizeof(*tmp));
-            av_reallocp_array(&s->skipped_bytes_nal, new_size, sizeof(*s->skipped_bytes_nal));
-            av_reallocp_array(&s->skipped_bytes_pos_size_nal, new_size, sizeof(*s->skipped_bytes_pos_size_nal));
-            av_reallocp_array(&s->skipped_bytes_pos_nal, new_size, sizeof(*s->skipped_bytes_pos_nal));
+                   (new_size - s->nals_allocated) * sizeof(*s->nals));
+
+            tmp = av_realloc_array(s->skipped_bytes_nal, new_size, sizeof(*s->skipped_bytes_nal));
+            if (!tmp)
+                goto fail;
+            s->skipped_bytes_nal = tmp;
+
+            tmp = av_realloc_array(s->skipped_bytes_pos_size_nal, new_size, sizeof(*s->skipped_bytes_pos_size_nal));
+            if (!tmp)
+                goto fail;
+            s->skipped_bytes_pos_size_nal = tmp;
+
+            tmp = av_realloc_array(s->skipped_bytes_pos_nal, new_size, sizeof(*s->skipped_bytes_pos_nal));
+            if (!tmp)
+                goto fail;
+            s->skipped_bytes_pos_nal = tmp;
+
             s->skipped_bytes_pos_size_nal[s->nals_allocated] = 1024; // initial buffer size
             s->skipped_bytes_pos_nal[s->nals_allocated] = av_malloc_array(s->skipped_bytes_pos_size_nal[s->nals_allocated], sizeof(*s->skipped_bytes_pos));
             s->nals_allocated = new_size;

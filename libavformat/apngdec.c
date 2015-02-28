@@ -32,6 +32,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
+#include "libavcodec/apng.h"
 #include "libavcodec/png.h"
 #include "libavcodec/bytestream.h"
 
@@ -42,6 +43,9 @@ typedef struct APNGDemuxContext {
 
     int max_fps;
     int default_fps;
+
+    int64_t pkt_pts;
+    int pkt_duration;
 
     int is_key_frame;
 
@@ -83,7 +87,7 @@ static int apng_probe(AVProbeData *p)
         /* we don't check IDAT size, as this is the last tag
          * we check, and it may be larger than the probe buffer */
         if (tag != MKTAG('I', 'D', 'A', 'T') &&
-            len > bytestream2_get_bytes_left(&gb))
+            len + 4 > bytestream2_get_bytes_left(&gb))
             return 0;
 
         switch (tag) {
@@ -162,6 +166,9 @@ static int apng_read_header(AVFormatContext *s)
     if (!st)
         return AVERROR(ENOMEM);
 
+    /* set the timebase to something large enough (1/100,000 of second)
+     * to hopefully cope with all sane frame durations */
+    avpriv_set_pts_info(st, 64, 1, 100000);
     st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     st->codec->codec_id   = AV_CODEC_ID_APNG;
     st->codec->width      = avio_rb32(pb);
@@ -265,9 +272,9 @@ static int decode_fctl_chunk(AVFormatContext *s, APNGDemuxContext *ctx, AVPacket
         delay_num = 1;
         delay_den = ctx->default_fps;
     }
-    s->streams[0]->r_frame_rate.num = delay_den;
-    s->streams[0]->r_frame_rate.den = delay_num;
-    pkt->duration = 1;
+    ctx->pkt_duration = av_rescale_q(delay_num,
+                                     (AVRational){ 1, delay_den },
+                                     s->streams[0]->time_base);
 
     av_log(s, AV_LOG_DEBUG, "%s: "
             "sequence_number: %"PRId32", "
@@ -294,11 +301,18 @@ static int decode_fctl_chunk(AVFormatContext *s, APNGDemuxContext *ctx, AVPacket
         height != s->streams[0]->codec->height ||
         x_offset != 0 ||
         y_offset != 0) {
-        if (sequence_number == 0)
+        if (sequence_number == 0 ||
+            x_offset >= s->streams[0]->codec->width ||
+            width > s->streams[0]->codec->width - x_offset ||
+            y_offset >= s->streams[0]->codec->height ||
+            height > s->streams[0]->codec->height - y_offset)
             return AVERROR_INVALIDDATA;
         ctx->is_key_frame = 0;
     } else {
-        ctx->is_key_frame = 1;
+        if (sequence_number == 0 && dispose_op == APNG_DISPOSE_OP_PREVIOUS)
+            dispose_op = APNG_DISPOSE_OP_BACKGROUND;
+        ctx->is_key_frame = dispose_op == APNG_DISPOSE_OP_BACKGROUND ||
+                            blend_op   == APNG_BLEND_OP_SOURCE;
     }
 
     return 0;
@@ -375,6 +389,9 @@ static int apng_read_packet(AVFormatContext *s, AVPacket *pkt)
 
         if (ctx->is_key_frame)
             pkt->flags |= AV_PKT_FLAG_KEY;
+        pkt->pts = ctx->pkt_pts;
+        pkt->duration = ctx->pkt_duration;
+        ctx->pkt_pts += ctx->pkt_duration;
         return ret;
     case MKTAG('I', 'E', 'N', 'D'):
         ctx->cur_loop++;
@@ -387,7 +404,7 @@ static int apng_read_packet(AVFormatContext *s, AVPacket *pkt)
         return 0;
     default:
         {
-        char tag_buf[5];
+        char tag_buf[32];
 
         av_get_codec_tag_string(tag_buf, sizeof(tag_buf), tag);
         avpriv_request_sample(s, "In-stream tag=%s (0x%08X) len=%"PRIu32, tag_buf, tag, len);

@@ -84,6 +84,9 @@ int ff_get_wav_header(AVIOContext *pb, AVCodecContext *codec, int size)
 {
     int id;
 
+    if (size < 14)
+        avpriv_request_sample(codec, "wav header size < 14");
+
     id                 = avio_rl16(pb);
     codec->codec_type  = AVMEDIA_TYPE_AUDIO;
     codec->channels    = avio_rl16(pb);
@@ -111,7 +114,7 @@ int ff_get_wav_header(AVIOContext *pb, AVCodecContext *codec, int size)
             size   -= 22;
         }
         if (cbSize > 0) {
-            av_free(codec->extradata);
+            av_freep(&codec->extradata);
             if (ff_get_extradata(codec, pb, cbSize) < 0)
                 return AVERROR(ENOMEM);
             size -= cbSize;

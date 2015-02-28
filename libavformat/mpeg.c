@@ -24,7 +24,7 @@
 #include "mpeg.h"
 
 /* -- vgtmpeg */
-#include "dvdurl.h";
+#include "dvdurl.h"
 #include "libavutil/dict.h"
 /* -- vgtmpeg */
 
@@ -76,20 +76,23 @@ static int mpegps_probe(AVProbeData *p)
     int i;
     int sys = 0, pspack = 0, priv1 = 0, vid = 0;
     int audio = 0, invalid = 0, score = 0;
+    int endpes = 0;
 
     for (i = 0; i < p->buf_size; i++) {
         code = (code << 8) + p->buf[i];
         if ((code & 0xffffff00) == 0x100) {
             int len  = p->buf[i + 1] << 8 | p->buf[i + 2];
-            int pes  = check_pes(p->buf + i, p->buf + p->buf_size);
+            int pes  = endpes <= i && check_pes(p->buf + i, p->buf + p->buf_size);
             int pack = check_pack_header(p->buf + i);
 
             if (code == SYSTEM_HEADER_START_CODE)
                 sys++;
             else if (code == PACK_START_CODE && pack)
                 pspack++;
-            else if ((code & 0xf0) == VIDEO_ID && pes)
+            else if ((code & 0xf0) == VIDEO_ID && pes) {
+                endpes = i + len;
                 vid++;
+            }
             // skip pes payload to avoid start code emulation for private
             // and audio streams
             else if ((code & 0xe0) == AUDIO_ID &&  pes) {audio++; i+=len;}
@@ -275,16 +278,13 @@ static uint32_t get_current_privateid(AVFormatContext *s, uint32_t startcode) {
 /* if source is a dvd creates all the streams available in the DVD for all titles */
 static void dvd_create_streams(AVFormatContext *s) {
 	dvdurl_t *ctx = get_dvdurl_ctx(s);
-	int i;
 	AVStream *st;
+    int64_t start;
 	if(!ctx) return;
 	
 	/* iterate through the title list and add all the streams contained */
-	//for( i=0; i<hb_list_count(ctx->list_title); i++) {
 	{
-		//hb_title_t *title = hb_list_item(ctx->list_title,i);
 	    hb_title_t *title = ctx->selected_title;
-		AVProgram *program = av_new_program(s, title->index);
 		uint64_t duration = title->duration;
 		int j;
 
@@ -317,11 +317,12 @@ static void dvd_create_streams(AVFormatContext *s) {
 
 		/* add subtitle streams */
 		/* add chapters */
-		int64_t start = 0;
+		start = 0;
 		for( j=0; j<hb_list_count(title->list_chapter); j++ ) {
+            int64_t end;
 			hb_chapter_t *c = hb_list_item(title->list_chapter,j);
 
-			int64_t end = start + c->duration;
+			end = start + c->duration;
 			avpriv_new_chapter(s,j, (AVRational){1,90000}, start, end, NULL );
 			start = end;
 		}
@@ -347,8 +348,7 @@ static int mpegps_read_header(AVFormatContext *s)
        avio_seek(s->pb, last_pos, SEEK_SET);
 
 /* -- vgtmpeg */
-    int dvdurl = is_dvdurl(s);
-    if(dvdurl) {
+    if(is_dvdurl(s)) {
         av_dict_set(&s->metadata, "source_type", "dvd", 0);
     }
     dvd_create_streams(s);

@@ -377,7 +377,7 @@ OBJS-$(CONFIG_RTP_MUXER)                 += rtp.o         \
                                             rtpenc_h264.o \
                                             rtpenc_vp8.o  \
                                             rtpenc_xiph.o \
-                                            avc.o
+                                            avc.o hevc.o
 OBJS-$(CONFIG_RTSP_DEMUXER)              += rtsp.o rtspdec.o httpauth.o \
                                             urldecode.o
 OBJS-$(CONFIG_RTSP_MUXER)                += rtsp.o rtspenc.o httpauth.o \
@@ -518,6 +518,9 @@ OBJS-$(CONFIG_UDP_PROTOCOL)              += udp.o
 OBJS-$(CONFIG_UNIX_PROTOCOL)             += unix.o
 
 OBJS-$(HAVE_LIBC_MSVCRT)                 += file_open.o
+
+# libavdevice dependencies
+OBJS-$(CONFIG_IEC61883_INDEV)            += dv.o
 
 # Windows resource file
 SLIBOBJS-$(HAVE_GNU_WINDRES)             += avformatres.o

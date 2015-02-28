@@ -27,7 +27,7 @@
 /* public functions of optical media protocols */
 struct ff_input_func_s
 {
-	int (* parse_file)(void *ctx, char *opt, char *filename);
+	int (* parse_file)(void *ctx, char *filename);
 	void (* select_default_program)(int programid);
 };
 
@@ -38,7 +38,16 @@ typedef struct ff_input_func_s ff_input_func_t;
  *
  * It will also call select_default_program
  * */
-int parse_optmedia_path( void *ctx, char *opt, const char *path, ff_input_func_t *ff_input_func );
+int parse_optmedia_path( void *ctx, const char *path, ff_input_func_t *ff_input_func );
+
+#ifdef __GNUC__
+#define BDNOT_USED __attribute__ ((unused))
+#else
+#define BDNOT_USED
+#endif
+
+#define OPTMEDIA_NOT_USED BDNOT_USED
+
 
 #endif //!OPTMEDIA_H
 

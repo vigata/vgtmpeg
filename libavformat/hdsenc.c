@@ -145,15 +145,15 @@ static void hds_free(AVFormatContext *s)
         if (os->ctx && os->ctx_inited)
             av_write_trailer(os->ctx);
         if (os->ctx && os->ctx->pb)
-            av_free(os->ctx->pb);
+            av_freep(&os->ctx->pb);
         if (os->ctx)
             avformat_free_context(os->ctx);
-        av_free(os->metadata);
+        av_freep(&os->metadata);
         for (j = 0; j < os->nb_extra_packets; j++)
-            av_free(os->extra_packets[j]);
+            av_freep(&os->extra_packets[j]);
         for (j = 0; j < os->nb_fragments; j++)
-            av_free(os->fragments[j]);
-        av_free(os->fragments);
+            av_freep(&os->fragments[j]);
+        av_freep(&os->fragments);
     }
     av_freep(&c->streams);
 }
@@ -163,7 +163,6 @@ static int write_manifest(AVFormatContext *s, int final)
     HDSContext *c = s->priv_data;
     AVIOContext *out;
     char filename[1024], temp_filename[1024];
-    const char *write_filename;
     int ret, i;
     float duration = 0;
 
@@ -172,11 +171,10 @@ static int write_manifest(AVFormatContext *s, int final)
 
     snprintf(filename, sizeof(filename), "%s/index.f4m", s->filename);
     snprintf(temp_filename, sizeof(temp_filename), "%s/index.f4m.tmp", s->filename);
-    write_filename = USE_RENAME_REPLACE ? temp_filename : filename;
-    ret = avio_open2(&out, write_filename, AVIO_FLAG_WRITE,
+    ret = avio_open2(&out, temp_filename, AVIO_FLAG_WRITE,
                      &s->interrupt_callback, NULL);
     if (ret < 0) {
-        av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", write_filename);
+        av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", temp_filename);
         return ret;
     }
     avio_printf(out, "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
@@ -206,7 +204,7 @@ static int write_manifest(AVFormatContext *s, int final)
     avio_printf(out, "</manifest>\n");
     avio_flush(out);
     avio_close(out);
-    return USE_RENAME_REPLACE ? ff_rename(temp_filename, filename, s) : 0;
+    return ff_rename(temp_filename, filename, s);
 }
 
 static void update_size(AVIOContext *out, int64_t pos)
@@ -225,7 +223,6 @@ static int write_abst(AVFormatContext *s, OutputStream *os, int final)
     HDSContext *c = s->priv_data;
     AVIOContext *out;
     char filename[1024], temp_filename[1024];
-    const char *write_filename;
     int i, ret;
     int64_t asrt_pos, afrt_pos;
     int start = 0, fragments;
@@ -243,11 +240,10 @@ static int write_abst(AVFormatContext *s, OutputStream *os, int final)
              "%s/stream%d.abst", s->filename, index);
     snprintf(temp_filename, sizeof(temp_filename),
              "%s/stream%d.abst.tmp", s->filename, index);
-    write_filename = USE_RENAME_REPLACE ? temp_filename : filename;
-    ret = avio_open2(&out, write_filename, AVIO_FLAG_WRITE,
+    ret = avio_open2(&out, temp_filename, AVIO_FLAG_WRITE,
                      &s->interrupt_callback, NULL);
     if (ret < 0) {
-        av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", write_filename);
+        av_log(s, AV_LOG_ERROR, "Unable to open %s for writing\n", temp_filename);
         return ret;
     }
     avio_wb32(out, 0); // abst size
@@ -289,7 +285,7 @@ static int write_abst(AVFormatContext *s, OutputStream *os, int final)
     update_size(out, afrt_pos);
     update_size(out, 0);
     avio_close(out);
-    return USE_RENAME_REPLACE ? ff_rename(temp_filename, filename, s) : 0;
+    return ff_rename(temp_filename, filename, s);
 }
 
 static int init_file(AVFormatContext *s, OutputStream *os, int64_t start_ts)
@@ -503,7 +499,7 @@ static int hds_flush(AVFormatContext *s, OutputStream *os, int final,
         if (remove > 0) {
             for (i = 0; i < remove; i++) {
                 unlink(os->fragments[i]->file);
-                av_free(os->fragments[i]);
+                av_freep(&os->fragments[i]);
             }
             os->nb_fragments -= remove;
             memmove(os->fragments, os->fragments + remove,

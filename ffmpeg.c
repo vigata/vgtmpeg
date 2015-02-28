@@ -623,7 +623,11 @@ static void write_frame(AVFormatContext *s, AVPacket *pkt, OutputStream *ost)
 
     while (bsfc) {
         AVPacket new_pkt = *pkt;
-        int a = av_bitstream_filter_filter(bsfc, avctx, NULL,
+        AVDictionaryEntry *bsf_arg = av_dict_get(ost->bsf_args,
+                                                 bsfc->filter->name,
+                                                 NULL, 0);
+        int a = av_bitstream_filter_filter(bsfc, avctx,
+                                           bsf_arg ? bsf_arg->value : NULL,
                                            &new_pkt.data, &new_pkt.size,
                                            pkt->data, pkt->size,
                                            pkt->flags & AV_PKT_FLAG_KEY);
@@ -1014,10 +1018,8 @@ static void do_video_out(AVFormatContext *s,
         /* raw pictures are written as AVPicture structure to
            avoid any copies. We support temporarily the older
            method. */
-        mux_enc->coded_frame->interlaced_frame = in_picture->interlaced_frame;
-        mux_enc->coded_frame->top_field_first  = in_picture->top_field_first;
-        if (mux_enc->coded_frame->interlaced_frame)
-            mux_enc->field_order = mux_enc->coded_frame->top_field_first ? AV_FIELD_TB:AV_FIELD_BT;
+        if (in_picture->interlaced_frame)
+            mux_enc->field_order = in_picture->top_field_first ? AV_FIELD_TB:AV_FIELD_BT;
         else
             mux_enc->field_order = AV_FIELD_PROGRESSIVE;
         pkt.data   = (uint8_t *)in_picture;
@@ -1948,6 +1950,20 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output)
     if (*got_output || ret<0 || pkt->size)
         decode_error_stat[ret<0] ++;
 
+    if (*got_output && ret >= 0) {
+        if (ist->dec_ctx->width  != decoded_frame->width ||
+            ist->dec_ctx->height != decoded_frame->height ||
+            ist->dec_ctx->pix_fmt != decoded_frame->format) {
+            av_log(NULL, AV_LOG_DEBUG, "Frame parameters mismatch context %d,%d,%d != %d,%d,%d\n",
+                decoded_frame->width,
+                decoded_frame->height,
+                decoded_frame->format,
+                ist->dec_ctx->width,
+                ist->dec_ctx->height,
+                ist->dec_ctx->pix_fmt);
+        }
+    }
+
     if (!*got_output || ret < 0) {
         if (!pkt->size) {
             for (i = 0; i < ist->nb_filters; i++)
@@ -2505,7 +2521,7 @@ static int transcode_init(void)
     AVFormatContext *oc;
     OutputStream *ost;
     InputStream *ist;
-    char error[1024];
+    char error[1024] = {0};
     int want_sdp = 1;
 
     for (i = 0; i < nb_filtergraphs; i++) {
@@ -3820,6 +3836,7 @@ static int transcode(void)
                 av_dict_free(&ost->encoder_opts);
                 av_dict_free(&ost->swr_opts);
                 av_dict_free(&ost->resample_opts);
+                av_dict_free(&ost->bsf_args);
             }
         }
     }

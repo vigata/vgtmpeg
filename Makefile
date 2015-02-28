@@ -12,7 +12,6 @@ vpath %.v    $(SRC_PATH)
 vpath %.texi $(SRC_PATH)
 vpath %/fate_config.sh.template $(SRC_PATH)
 
-
 AVPROGS-$(CONFIG_FFMPEG)   += ffmpeg
 AVPROGS-$(CONFIG_FFPLAY)   += ffplay
 AVPROGS-$(CONFIG_FFPROBE)  += ffprobe
@@ -25,8 +24,9 @@ AVPROGS-yes	+= vgtmpeg
 AVPROGS    := $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 INSTPROGS   = $(AVPROGS-yes:%=%$(PROGSSUF)$(EXESUF))
 PROGS      += $(AVPROGS)
-
+# --vgtmpeg
 AVBASENAMES  = ffmpeg ffplay ffprobe ffserver vgtmpeg
+# --vgtmpeg
 ALLAVPROGS   = $(AVBASENAMES:%=%$(PROGSSUF)$(EXESUF))
 ALLAVPROGS_G = $(AVBASENAMES:%=%$(PROGSSUF)_g$(EXESUF))
 
@@ -40,6 +40,7 @@ OBJS-vgtmpeg += ffmpeg_opt.o ffmpeg_filter.o vgtmpeg_support.o
 OBJS-ffmpeg-$(HAVE_VDPAU_X11) += ffmpeg_vdpau.o
 OBJS-ffmpeg-$(HAVE_DXVA2_LIB) += ffmpeg_dxva2.o
 OBJS-ffmpeg-$(CONFIG_VDA)     += ffmpeg_vda.o
+OBJS-ffserver                 += ffserver_config.o
 
 OBJS-vgtmpeg-$(HAVE_VDPAU_X11) += ffmpeg_vdpau.o
 OBJS-vgtmpeg-$(HAVE_DXVA2_LIB) += ffmpeg_dxva2.o
@@ -126,7 +127,7 @@ endef
 
 $(foreach P,$(PROGS),$(eval $(call DOPROG,$(P:$(PROGSSUF)$(EXESUF)=))))
 
-ffprobe.o cmdutils.o : libavutil/ffversion.h
+ffprobe.o cmdutils.o libavcodec/utils.o libavformat/utils.o libavdevice/avdevice.o libavfilter/avfilter.o libavutil/utils.o libpostproc/postprocess.o libswresample/swresample.o libswscale/utils.o : libavutil/ffversion.h
 
 $(PROGS): %$(PROGSSUF)$(EXESUF): %$(PROGSSUF)_g$(EXESUF)
 	$(CP) $< $@
