@@ -1,3 +1,13 @@
+2.0.34
+- added h265 encoding support with x265 
+- added vp9 encoding support and libvpx-vp9 
+- vgtmpeg now comes with 384 codecs and 270 formats by default without extra libraries. see 'vgtmpeg -codecs' and 'vgtmpeg -formats' for actual list
+- this version is merged off ffmpeg version 2.5.4
+- now compatible ffmpeg version is reported in command line. System integrators can use this to gauge ffmpeg compatilibity.
+- vgtmpeg does no longer need explicit '-map' command line settings to map intput streams to output streams. Defaults are provided if not indicated.
+- updated libdvdread to 5.x series and released vgtmpeg version in github http://github.com/concalma/libdvdread-vgtmpeg
+- miscellaneous bugfixes
+
 1.4.63
 - fixes a bug that would end the transcode quickly if not using server mode (i.e. using command line)
 
