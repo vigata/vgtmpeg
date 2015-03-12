@@ -823,7 +823,7 @@ static int parse_input_file(OptionsContext *o, const char *filename)
     /* --vgtmpeg */
     stdin_interaction &= strncmp(filename, "pipe:", 5) &&
                          strcmp(filename, "/dev/stdin") && 
-                         server_mode;
+                         !server_mode;
 	/* --vgtmpeg */
 
 

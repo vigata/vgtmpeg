@@ -24,6 +24,12 @@ vgtmpeg is the underlying transcoding engine in all the native transcoding cloud
 
 --------
 
+## Compiling
+`vgtmpeg` uses most of the standard libraries like libx264 and libx265 as ffmpeg does, so building the source tree is mostly similar to that of ffmpeg.
+
+
+For DVD support though, `vgtmpeg` uses [libdvdread-vgtmpeg](http://github.com/concalma/libdvdread-vgtmpeg) and it must be installed in your build system.
+
 ## DVD/Bluray support
 vgtmpeg adds support for DVDs and BD in its version of libavformat. DVD/BD support is implemented by adding a new ‘dvdurl’ protocol that can parse DVD folders, DVD ISO files, DVD devices and more. The ‘bdurl’ protocol can parse bluray folders. All the regular features available in vgtmpeg/ffmpeg are still available when a dvd url or a bd url is used. From direct stream copy to all sorts of filtering and transcoding possibilities.
 
@@ -65,3 +71,4 @@ At the moment only Bluray folders are supported and you should point to the root
 
 vgtmpeg is available under the terms of the GNU General Public License, Version 2. Please note that
 under the GPL, there is absolutely no warranty of any kind, to the extent permitted by the law.
+

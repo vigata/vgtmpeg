@@ -1,3 +1,6 @@
+2.0.35
+- fixed bug that was disabling keyboard interaction while in ffmpeg mode
+
 2.0.34
 - added h265 encoding support with x265 
 - added vp9 encoding support and libvpx-vp9 
