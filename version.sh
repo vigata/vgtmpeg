@@ -11,6 +11,9 @@ if ! test "$revision"; then
     fi
 fi
 
+#vgtmpeg. just pick the latest 'n...' tag without extra info
+revision=$(cd "$1" && git describe --tags --match "n*" --abbrev=0 2> /dev/null)
+
 # Shallow Git clones (--depth) do not have the N tag:
 # use 'git-YYYY-MM-DD-hhhhhhh'.
 test "$revision" || revision=$(cd "$1" &&
