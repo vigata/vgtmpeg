@@ -4915,7 +4915,7 @@ enabled libaacplus        && require "libaacplus >= 2.0.0" aacplus.h aacplusEncO
 enabled libass            && require_pkg_config libass ass/ass.h ass_library_init
 #>>vgtmpeg 
 # adding $ldl so libbluray presence checks pass during configure even if build is static 
-enabled libbluray  && require pkg_config libbluray libbluray/bluray.h bd_open -lbluray $ldl
+enabled libbluray  && require_pkg_config libbluray libbluray/bluray.h bd_open -lbluray $ldl
 #<<vgtmpeg 
 enabled libbs2b           && require_pkg_config libbs2b bs2b.h bs2b_open
 enabled libcelt           && require libcelt celt/celt.h celt_decode -lcelt0 &&

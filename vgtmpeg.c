@@ -2415,6 +2415,8 @@ static void print_sdp(void)
 {
     char sdp[16384];
     int i;
+    int j;
+    AVIOContext *sdp_pb;
     AVFormatContext **avc = av_malloc_array(nb_output_files, sizeof(*avc));
 
     if (!avc)
