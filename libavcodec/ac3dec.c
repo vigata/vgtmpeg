@@ -485,7 +485,7 @@ static void calc_transform_coeffs_cpl(AC3DecodeContext *s)
 /**
  * Grouped mantissas for 3-level 5-level and 11-level quantization
  */
-typedef struct {
+typedef struct mant_groups {
     int b1_mant[2];
     int b2_mant[2];
     int b4_mant;
@@ -872,7 +872,7 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
                 start_subband += start_subband - 7;
             end_subband    = get_bits(gbc, 3) + 5;
 #if USE_FIXED
-            s->spx_dst_end_freq = end_freq_inv_tab[end_subband];
+            s->spx_dst_end_freq = end_freq_inv_tab[end_subband-5];
 #endif
             if (end_subband   > 7)
                 end_subband   += end_subband   - 7;
@@ -939,7 +939,7 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
                             nblend = 0;
                             sblend = 0x800000;
                         } else if (nratio > 0x7fffff) {
-                            nblend = 0x800000;
+                            nblend = 14529495; // sqrt(3) in FP.23
                             sblend = 0;
                         } else {
                             nblend = fixed_sqrt(nratio, 23);
@@ -1429,7 +1429,8 @@ static int ac3_decode_frame(AVCodecContext * avctx, void *data,
         memcpy(s->input_buffer, buf, FFMIN(buf_size, AC3_FRAME_BUFFER_SIZE));
     buf = s->input_buffer;
     /* initialize the GetBitContext with the start of valid AC-3 Frame */
-    init_get_bits(&s->gbc, buf, buf_size * 8);
+    if ((ret = init_get_bits8(&s->gbc, buf, buf_size)) < 0)
+        return ret;
 
     /* parse the syncinfo */
     err = parse_frame_header(s);

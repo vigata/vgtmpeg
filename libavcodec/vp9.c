@@ -279,7 +279,8 @@ static int vp9_alloc_frame(AVCodecContext *ctx, VP9Frame *f)
 
     // retain segmentation map if it doesn't update
     if (s->segmentation.enabled && !s->segmentation.update_map &&
-        !s->intraonly && !s->keyframe && !s->errorres) {
+        !s->intraonly && !s->keyframe && !s->errorres &&
+        ctx->active_thread_type != FF_THREAD_FRAME) {
         memcpy(f->segmentation_map, s->frames[LAST_FRAME].segmentation_map, sz);
     }
 
@@ -1351,9 +1352,18 @@ static void decode_mode(AVCodecContext *ctx)
 
             if (!s->last_uses_2pass)
                 ff_thread_await_progress(&s->frames[LAST_FRAME].tf, row >> 3, 0);
-            for (y = 0; y < h4; y++)
+            for (y = 0; y < h4; y++) {
+                int idx_base = (y + row) * 8 * s->sb_cols + col;
                 for (x = 0; x < w4; x++)
-                    pred = FFMIN(pred, refsegmap[(y + row) * 8 * s->sb_cols + x + col]);
+                    pred = FFMIN(pred, refsegmap[idx_base + x]);
+                if (!s->segmentation.update_map && ctx->active_thread_type == FF_THREAD_FRAME) {
+                    // FIXME maybe retain reference to previous frame as
+                    // segmap reference instead of copying the whole map
+                    // into a new buffer
+                    memcpy(&s->frames[CUR_FRAME].segmentation_map[idx_base],
+                           &refsegmap[idx_base], w4);
+                }
+            }
             av_assert1(pred < 8);
             b->seg_id = pred;
         } else {
@@ -2347,6 +2357,7 @@ static av_always_inline int check_intra_mode(VP9Context *s, int mode, uint8_t **
         uint8_t needs_top:1;
         uint8_t needs_topleft:1;
         uint8_t needs_topright:1;
+        uint8_t invert_left:1;
     } edges[N_INTRA_PRED_MODES] = {
         [VERT_PRED]            = { .needs_top  = 1 },
         [HOR_PRED]             = { .needs_left = 1 },
@@ -2356,7 +2367,7 @@ static av_always_inline int check_intra_mode(VP9Context *s, int mode, uint8_t **
         [VERT_RIGHT_PRED]      = { .needs_left = 1, .needs_top = 1, .needs_topleft = 1 },
         [HOR_DOWN_PRED]        = { .needs_left = 1, .needs_top = 1, .needs_topleft = 1 },
         [VERT_LEFT_PRED]       = { .needs_top  = 1, .needs_topright = 1 },
-        [HOR_UP_PRED]          = { .needs_left = 1 },
+        [HOR_UP_PRED]          = { .needs_left = 1, .invert_left = 1 },
         [TM_VP8_PRED]          = { .needs_left = 1, .needs_top = 1, .needs_topleft = 1 },
         [LEFT_DC_PRED]         = { .needs_left = 1 },
         [TOP_DC_PRED]          = { .needs_top  = 1 },
@@ -2429,13 +2440,24 @@ static av_always_inline int check_intra_mode(VP9Context *s, int mode, uint8_t **
             uint8_t *dst = x == 0 ? dst_edge : dst_inner;
             ptrdiff_t stride = x == 0 ? stride_edge : stride_inner;
 
-            if (n_px_need <= n_px_have) {
-                for (i = 0; i < n_px_need; i++)
-                    l[n_px_need - 1 - i] = dst[i * stride - 1];
+            if (edges[mode].invert_left) {
+                if (n_px_need <= n_px_have) {
+                    for (i = 0; i < n_px_need; i++)
+                        l[i] = dst[i * stride - 1];
+                } else {
+                    for (i = 0; i < n_px_have; i++)
+                        l[i] = dst[i * stride - 1];
+                    memset(&l[n_px_have], l[n_px_have - 1], n_px_need - n_px_have);
+                }
             } else {
-                for (i = 0; i < n_px_have; i++)
-                    l[n_px_need - 1 - i] = dst[i * stride - 1];
-                memset(l, l[n_px_need - n_px_have], n_px_need - n_px_have);
+                if (n_px_need <= n_px_have) {
+                    for (i = 0; i < n_px_need; i++)
+                        l[n_px_need - 1 - i] = dst[i * stride - 1];
+                } else {
+                    for (i = 0; i < n_px_have; i++)
+                        l[n_px_need - 1 - i] = dst[i * stride - 1];
+                    memset(l, l[n_px_need - n_px_have], n_px_need - n_px_have);
+                }
             }
         } else {
             memset(l, 129, 4 << tx);
@@ -3748,7 +3770,7 @@ static int vp9_decode_frame(AVCodecContext *ctx, void *frame,
         if ((res = av_frame_ref(frame, s->refs[ref].f)) < 0)
             return res;
         *got_frame = 1;
-        return 0;
+        return pkt->size;
     }
     data += res;
     size -= res;
@@ -3972,7 +3994,7 @@ static int vp9_decode_frame(AVCodecContext *ctx, void *frame,
         *got_frame = 1;
     }
 
-    return 0;
+    return pkt->size;
 }
 
 static void vp9_decode_flush(AVCodecContext *ctx)
