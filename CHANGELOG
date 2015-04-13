@@ -1,3 +1,7 @@
+2.2.38
+- Merge with ffmpeg 2.6.x series. In particular, this version is merged and compatible with 2.6.1
+- Download links to older versions are now provided on the site and should be used when compatibility with older versions is required
+
 2.0.35
 - fixed bug that was disabling keyboard interaction while in ffmpeg mode
 
