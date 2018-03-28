@@ -31,7 +31,7 @@ D(int16, mmx)
 D(int16, sse2)
 
 av_cold int swri_rematrix_init_x86(struct SwrContext *s){
-#if HAVE_YASM
+#if HAVE_X86ASM
     int mm_flags = av_get_cpu_flags();
     int nb_in  = av_get_channel_layout_nb_channels(s->in_ch_layout);
     int nb_out = av_get_channel_layout_nb_channels(s->out_ch_layout);
@@ -73,7 +73,7 @@ av_cold int swri_rematrix_init_x86(struct SwrContext *s){
             s->mix_1_1_simd = ff_mix_1_1_a_float_sse;
             s->mix_2_1_simd = ff_mix_2_1_a_float_sse;
         }
-        if(EXTERNAL_AVX(mm_flags)) {
+        if(EXTERNAL_AVX_FAST(mm_flags)) {
             s->mix_1_1_simd = ff_mix_1_1_a_float_avx;
             s->mix_2_1_simd = ff_mix_2_1_a_float_avx;
         }

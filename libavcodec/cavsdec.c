@@ -32,7 +32,6 @@
 #include "cavs.h"
 #include "internal.h"
 #include "mpeg12data.h"
-#include "mpegvideo.h"
 
 static const uint8_t mv_scan[4] = {
     MV_FWD_X0, MV_FWD_X1,
@@ -466,7 +465,7 @@ static inline void mv_pred_direct(AVSContext *h, cavs_vector *pmv_fw,
                                   cavs_vector *col_mv)
 {
     cavs_vector *pmv_bw = pmv_fw + MV_BWD_OFFS;
-    int den = h->direct_den[col_mv->ref];
+    unsigned den = h->direct_den[col_mv->ref];
     int m = FF_SIGNBIT(col_mv->x);
 
     pmv_fw->dist = h->dist[1];
@@ -546,7 +545,7 @@ static inline int dequant(AVSContext *h, int16_t *level_buf, uint8_t *run_buf,
  */
 static int decode_residual_block(AVSContext *h, GetBitContext *gb,
                                  const struct dec_2dvlc *r, int esc_golomb_order,
-                                 int qp, uint8_t *dst, int stride)
+                                 int qp, uint8_t *dst, ptrdiff_t stride)
 {
     int i, esc_code, level, mask, ret;
     unsigned int level_code, run;
@@ -563,6 +562,11 @@ static int decode_residual_block(AVSContext *h, GetBitContext *gb,
                 return AVERROR_INVALIDDATA;
             }
             esc_code = get_ue_code(gb, esc_golomb_order);
+            if (esc_code < 0 || esc_code > 32767) {
+                av_log(h->avctx, AV_LOG_ERROR, "esc_code invalid\n");
+                return AVERROR_INVALIDDATA;
+            }
+
             level    = esc_code + (run > r->max_run ? 1 : r->level_add[run]);
             while (level > r->inc_limit)
                 r++;
@@ -611,7 +615,7 @@ static inline int decode_residual_inter(AVSContext *h)
 
     /* get quantizer */
     if (h->cbp && !h->qp_fixed)
-        h->qp = (h->qp + get_se_golomb(&h->gb)) & 63;
+        h->qp = (h->qp + (unsigned)get_se_golomb(&h->gb)) & 63;
     for (block = 0; block < 4; block++)
         if (h->cbp & (1 << block))
             decode_residual_block(h, &h->gb, inter_dec, 0, h->qp,
@@ -680,7 +684,7 @@ static int decode_mb_i(AVSContext *h, int cbp_code)
     }
     h->cbp = cbp_tab[cbp_code][0];
     if (h->cbp && !h->qp_fixed)
-        h->qp = (h->qp + get_se_golomb(gb)) & 63; //qp_delta
+        h->qp = (h->qp + (unsigned)get_se_golomb(gb)) & 63; //qp_delta
 
     /* luma intra prediction interleaved with residual decode/transform/add */
     for (block = 0; block < 4; block++) {
@@ -1027,6 +1031,10 @@ static int decode_pic(AVSContext *h)
     h->scale_den[1] = h->dist[1] ? 512/h->dist[1] : 0;
     if (h->cur.f->pict_type == AV_PICTURE_TYPE_B) {
         h->sym_factor = h->dist[0] * h->scale_den[1];
+        if (FFABS(h->sym_factor) > 32768) {
+            av_log(h->avctx, AV_LOG_ERROR, "sym_factor %d too large\n", h->sym_factor);
+            return AVERROR_INVALIDDATA;
+        }
     } else {
         h->direct_den[0] = h->dist[0] ? 16384 / h->dist[0] : 0;
         h->direct_den[1] = h->dist[1] ? 16384 / h->dist[1] : 0;
@@ -1062,10 +1070,14 @@ static int decode_pic(AVSContext *h)
     } else {
         h->alpha_offset = h->beta_offset  = 0;
     }
+
+    ret = 0;
     if (h->cur.f->pict_type == AV_PICTURE_TYPE_I) {
         do {
             check_for_slice(h);
-            decode_mb_i(h, 0);
+            ret = decode_mb_i(h, 0);
+            if (ret < 0)
+                break;
         } while (ff_cavs_next_mb(h));
     } else if (h->cur.f->pict_type == AV_PICTURE_TYPE_P) {
         do {
@@ -1078,10 +1090,12 @@ static int decode_pic(AVSContext *h)
             } else {
                 mb_type = get_ue_golomb(&h->gb) + P_SKIP + h->skip_mode_flag;
                 if (mb_type > P_8X8)
-                    decode_mb_i(h, mb_type - P_8X8 - 1);
+                    ret = decode_mb_i(h, mb_type - P_8X8 - 1);
                 else
                     decode_mb_p(h, mb_type);
             }
+            if (ret < 0)
+                break;
         } while (ff_cavs_next_mb(h));
     } else { /* AV_PICTURE_TYPE_B */
         do {
@@ -1090,22 +1104,25 @@ static int decode_pic(AVSContext *h)
             if (h->skip_mode_flag && (skip_count < 0))
                 skip_count = get_ue_golomb(&h->gb);
             if (h->skip_mode_flag && skip_count--) {
-                decode_mb_b(h, B_SKIP);
+                ret = decode_mb_b(h, B_SKIP);
             } else {
                 mb_type = get_ue_golomb(&h->gb) + B_SKIP + h->skip_mode_flag;
                 if (mb_type > B_8X8)
-                    decode_mb_i(h, mb_type - B_8X8 - 1);
+                    ret = decode_mb_i(h, mb_type - B_8X8 - 1);
                 else
-                    decode_mb_b(h, mb_type);
+                    ret = decode_mb_b(h, mb_type);
             }
+            if (ret < 0)
+                break;
         } while (ff_cavs_next_mb(h));
     }
-    if (h->cur.f->pict_type != AV_PICTURE_TYPE_B) {
+    emms_c();
+    if (ret >= 0 && h->cur.f->pict_type != AV_PICTURE_TYPE_B) {
         av_frame_unref(h->DPB[1].f);
         FFSWAP(AVSFrame, h->cur, h->DPB[1]);
         FFSWAP(AVSFrame, h->DPB[0], h->DPB[1]);
     }
-    return 0;
+    return ret;
 }
 
 /*****************************************************************************
@@ -1118,6 +1135,7 @@ static int decode_seq_header(AVSContext *h)
 {
     int frame_rate_code;
     int width, height;
+    int ret;
 
     h->profile = get_bits(&h->gb, 8);
     h->level   = get_bits(&h->gb, 8);
@@ -1134,22 +1152,30 @@ static int decode_seq_header(AVSContext *h)
         av_log(h->avctx, AV_LOG_ERROR, "Dimensions invalid\n");
         return AVERROR_INVALIDDATA;
     }
-    h->width  = width;
-    h->height = height;
-
     skip_bits(&h->gb, 2); //chroma format
     skip_bits(&h->gb, 3); //sample_precision
     h->aspect_ratio = get_bits(&h->gb, 4);
     frame_rate_code = get_bits(&h->gb, 4);
+    if (frame_rate_code == 0 || frame_rate_code > 13) {
+        av_log(h->avctx, AV_LOG_WARNING,
+               "frame_rate_code %d is invalid\n", frame_rate_code);
+        frame_rate_code = 1;
+    }
+
     skip_bits(&h->gb, 18); //bit_rate_lower
     skip_bits1(&h->gb);    //marker_bit
     skip_bits(&h->gb, 12); //bit_rate_upper
     h->low_delay =  get_bits1(&h->gb);
+
+    ret = ff_set_dimensions(h->avctx, width, height);
+    if (ret < 0)
+        return ret;
+
+    h->width  = width;
+    h->height = height;
     h->mb_width  = (h->width  + 15) >> 4;
     h->mb_height = (h->height + 15) >> 4;
     h->avctx->framerate = ff_mpeg12_frame_rate_tab[frame_rate_code];
-    h->avctx->width  = h->width;
-    h->avctx->height = h->height;
     if (!h->top_qp)
         return ff_cavs_init_top_lines(h);
     return 0;
@@ -1204,6 +1230,8 @@ static int cavs_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                 h->got_keyframe = 1;
             }
         case PIC_PB_START_CODE:
+            if (*got_frame)
+                av_frame_unref(data);
             *got_frame = 0;
             if (!h->got_keyframe)
                 break;
@@ -1248,6 +1276,6 @@ AVCodec ff_cavs_decoder = {
     .init           = ff_cavs_init,
     .close          = ff_cavs_end,
     .decode         = cavs_decode_frame,
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
     .flush          = cavs_flush,
 };

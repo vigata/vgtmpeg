@@ -1,5 +1,5 @@
 /*
- * MPEG1/2 muxer
+ * MPEG-1/2 muxer
  * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
  *
  * This file is part of FFmpeg.
@@ -77,7 +77,7 @@ typedef struct MpegMuxContext {
     int is_dvd;
     int64_t last_scr; /* current system clock */
 
-    double vcd_padding_bitrate; // FIXME floats
+    int64_t vcd_padding_bitrate_num;
     int64_t vcd_padding_bytes_written;
 
     int preload;
@@ -151,7 +151,7 @@ static int put_system_header(AVFormatContext *ctx, uint8_t *buf,
         put_bits(&pb, 1, 1);
     } else {
         put_bits(&pb, 1, 0); /* variable bitrate */
-        put_bits(&pb, 1, 0); /* non constrainted bit stream */
+        put_bits(&pb, 1, 0); /* nonconstrained bitstream */
     }
 
     if (s->is_vcd || s->is_dvd) {
@@ -321,10 +321,10 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
     } else
         s->packet_size = 2048;
     if (ctx->max_delay < 0)     /* Not set by the caller */
-        ctx->max_delay = 0.7*AV_TIME_BASE;
+        ctx->max_delay = AV_TIME_BASE*7/10;
 
     s->vcd_padding_bytes_written = 0;
-    s->vcd_padding_bitrate       = 0;
+    s->vcd_padding_bitrate_num   = 0;
 
     s->audio_bound = 0;
     s->video_bound = 0;
@@ -338,6 +338,8 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
     lpcm_id = LPCM_ID;
 
     for (i = 0; i < ctx->nb_streams; i++) {
+        AVCPBProperties *props;
+
         st     = ctx->streams[i];
         stream = av_mallocz(sizeof(StreamInfo));
         if (!stream)
@@ -346,35 +348,35 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
 
         avpriv_set_pts_info(st, 64, 1, 90000);
 
-        switch (st->codec->codec_type) {
+        switch (st->codecpar->codec_type) {
         case AVMEDIA_TYPE_AUDIO:
             if (!s->is_mpeg2 &&
-                (st->codec->codec_id == AV_CODEC_ID_AC3 ||
-                 st->codec->codec_id == AV_CODEC_ID_DTS ||
-                 st->codec->codec_id == AV_CODEC_ID_PCM_S16BE))
+                (st->codecpar->codec_id == AV_CODEC_ID_AC3 ||
+                 st->codecpar->codec_id == AV_CODEC_ID_DTS ||
+                 st->codecpar->codec_id == AV_CODEC_ID_PCM_S16BE))
                  av_log(ctx, AV_LOG_WARNING,
                         "%s in MPEG-1 system streams is not widely supported, "
                         "consider using the vob or the dvd muxer "
                         "to force a MPEG-2 program stream.\n",
-                        avcodec_get_name(st->codec->codec_id));
-            if (st->codec->codec_id == AV_CODEC_ID_AC3) {
+                        avcodec_get_name(st->codecpar->codec_id));
+            if (st->codecpar->codec_id == AV_CODEC_ID_AC3) {
                 stream->id = ac3_id++;
-            } else if (st->codec->codec_id == AV_CODEC_ID_DTS) {
+            } else if (st->codecpar->codec_id == AV_CODEC_ID_DTS) {
                 stream->id = dts_id++;
-            } else if (st->codec->codec_id == AV_CODEC_ID_PCM_S16BE) {
+            } else if (st->codecpar->codec_id == AV_CODEC_ID_PCM_S16BE) {
                 stream->id = lpcm_id++;
                 for (j = 0; j < 4; j++) {
-                    if (lpcm_freq_tab[j] == st->codec->sample_rate)
+                    if (lpcm_freq_tab[j] == st->codecpar->sample_rate)
                         break;
                 }
                 if (j == 4)
                     goto fail;
-                if (st->codec->channels > 8)
+                if (st->codecpar->channels > 8)
                     return -1;
                 stream->lpcm_header[0] = 0x0c;
-                stream->lpcm_header[1] = (st->codec->channels - 1) | (j << 4);
+                stream->lpcm_header[1] = (st->codecpar->channels - 1) | (j << 4);
                 stream->lpcm_header[2] = 0x80;
-                stream->lpcm_align     = st->codec->channels * 2;
+                stream->lpcm_align     = st->codecpar->channels * 2;
             } else {
                 stream->id = mpa_id++;
             }
@@ -385,12 +387,14 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
             s->audio_bound++;
             break;
         case AVMEDIA_TYPE_VIDEO:
-            if (st->codec->codec_id == AV_CODEC_ID_H264)
+            if (st->codecpar->codec_id == AV_CODEC_ID_H264)
                 stream->id = h264_id++;
             else
                 stream->id = mpv_id++;
-            if (st->codec->rc_buffer_size)
-                stream->max_buffer_size = 6 * 1024 + st->codec->rc_buffer_size / 8;
+
+            props = (AVCPBProperties*)av_stream_get_side_data(st, AV_PKT_DATA_CPB_PROPERTIES, NULL);
+            if (props && props->buffer_size)
+                stream->max_buffer_size = 6 * 1024 + props->buffer_size / 8;
             else {
                 av_log(ctx, AV_LOG_WARNING,
                        "VBV buffer size not set, using default size of 130KB\n"
@@ -410,7 +414,9 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
             stream->max_buffer_size = 16 * 1024;
             break;
         default:
-            return -1;
+            av_log(ctx, AV_LOG_ERROR, "Invalid media type %s for output stream #%d\n",
+                   av_get_media_type_string(st->codecpar->codec_type), i);
+            return AVERROR(EINVAL);
         }
         stream->fifo = av_fifo_alloc(16);
         if (!stream->fifo)
@@ -420,15 +426,16 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
     audio_bitrate = 0;
     video_bitrate = 0;
     for (i = 0; i < ctx->nb_streams; i++) {
+        AVCPBProperties *props;
         int codec_rate;
         st     = ctx->streams[i];
         stream = (StreamInfo *)st->priv_data;
 
-        if (st->codec->rc_max_rate ||
-            st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
-            codec_rate = st->codec->rc_max_rate;
+        props = (AVCPBProperties*)av_stream_get_side_data(st, AV_PKT_DATA_CPB_PROPERTIES, NULL);
+        if (props)
+            codec_rate = props->max_bitrate;
         else
-            codec_rate = st->codec->bit_rate;
+            codec_rate = st->codecpar->bit_rate;
 
         if (!codec_rate)
             codec_rate = (1 << 21) * 8 * 50 / ctx->nb_streams;
@@ -437,7 +444,7 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
 
         if ((stream->id & 0xe0) == AUDIO_ID)
             audio_bitrate += codec_rate;
-        else if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+        else if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
             video_bitrate += codec_rate;
     }
 
@@ -456,7 +463,7 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
     }
 
     if (s->is_vcd) {
-        double overhead_rate;
+        int64_t overhead_rate;
 
         /* The VCD standard mandates that the mux_rate field is 3528
          * (see standard p. IV-6).
@@ -476,12 +483,12 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
 
         /* Add the header overhead to the data rate.
          * 2279 data bytes per audio pack, 2294 data bytes per video pack */
-        overhead_rate  = ((audio_bitrate / 8.0) / 2279) * (2324 - 2279);
-        overhead_rate += ((video_bitrate / 8.0) / 2294) * (2324 - 2294);
-        overhead_rate *= 8;
+        overhead_rate  = audio_bitrate * 2294LL * (2324 - 2279);
+        overhead_rate += video_bitrate * 2279LL * (2324 - 2294);
 
         /* Add padding so that the full bitrate is 2324*75 bytes/sec */
-        s->vcd_padding_bitrate = 2324 * 75 * 8 - (bitrate + overhead_rate);
+        s->vcd_padding_bitrate_num = (2324LL * 75 * 8 - bitrate) * 2279 * 2294 - overhead_rate;
+#define VCD_PADDING_BITRATE_DEN (2279 * 2294)
     }
 
     if (s->is_vcd || s->is_mpeg2)
@@ -534,12 +541,12 @@ static int get_vcd_padding_size(AVFormatContext *ctx, int64_t pts)
     MpegMuxContext *s = ctx->priv_data;
     int pad_bytes = 0;
 
-    if (s->vcd_padding_bitrate > 0 && pts != AV_NOPTS_VALUE) {
+    if (s->vcd_padding_bitrate_num > 0 && pts != AV_NOPTS_VALUE) {
         int64_t full_pad_bytes;
 
         // FIXME: this is wrong
         full_pad_bytes =
-            (int64_t)((s->vcd_padding_bitrate * (pts / 90000.0)) / 8.0);
+            av_rescale(s->vcd_padding_bitrate_num, pts, 90000LL * 8 * VCD_PADDING_BITRATE_DEN);
         pad_bytes = (int)(full_pad_bytes - s->vcd_padding_bytes_written);
 
         if (pad_bytes < 0)
@@ -604,7 +611,7 @@ static int flush_packet(AVFormatContext *ctx, int stream_index,
 
     id = stream->id;
 
-    av_dlog(ctx, "packet ID=%2x PTS=%0.3f\n", id, pts / 90000.0);
+    av_log(ctx, AV_LOG_TRACE, "packet ID=%2x PTS=%0.3f\n", id, pts / 90000.0);
 
     buf_ptr = buffer;
 
@@ -977,7 +984,7 @@ retry:
         /* for subtitle, a single PES packet must be generated,
          * so we flush after every single subtitle packet */
         if (s->packet_size > avail_data && !flush
-            && st->codec->codec_type != AVMEDIA_TYPE_SUBTITLE)
+            && st->codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE)
             return 0;
         if (avail_data == 0)
             continue;
@@ -1012,7 +1019,7 @@ retry:
         }
 
         if (best_dts < INT64_MAX) {
-            av_dlog(ctx, "bumping scr, scr:%f, dts:%f\n",
+            av_log(ctx, AV_LOG_TRACE, "bumping scr, scr:%f, dts:%f\n",
                     scr / 90000.0, best_dts / 90000.0);
 
             if (scr >= best_dts + 1 && !ignore_constraints) {
@@ -1052,7 +1059,7 @@ retry:
     }
 
     if (timestamp_packet) {
-        av_dlog(ctx, "dts:%f pts:%f scr:%f stream:%d\n",
+        av_log(ctx, AV_LOG_TRACE, "dts:%f pts:%f scr:%f stream:%d\n",
                 timestamp_packet->dts / 90000.0,
                 timestamp_packet->pts / 90000.0,
                 scr / 90000.0, best_i);
@@ -1108,7 +1115,7 @@ static int mpeg_mux_write_packet(AVFormatContext *ctx, AVPacket *pkt)
     int64_t pts, dts;
     PacketDesc *pkt_desc;
     int preload;
-    const int is_iframe = st->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+    const int is_iframe = st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
                           (pkt->flags & AV_PKT_FLAG_KEY);
 
     preload = av_rescale(s->preload, 90000, AV_TIME_BASE);
@@ -1132,13 +1139,15 @@ static int mpeg_mux_write_packet(AVFormatContext *ctx, AVPacket *pkt)
     if (dts != AV_NOPTS_VALUE) dts += preload;
     if (pts != AV_NOPTS_VALUE) pts += preload;
 
-    av_dlog(ctx, "dts:%f pts:%f flags:%d stream:%d nopts:%d\n",
+    av_log(ctx, AV_LOG_TRACE, "dts:%f pts:%f flags:%d stream:%d nopts:%d\n",
             dts / 90000.0, pts / 90000.0, pkt->flags,
             pkt->stream_index, pts != AV_NOPTS_VALUE);
     if (!stream->premux_packet)
         stream->next_packet = &stream->premux_packet;
     *stream->next_packet     =
     pkt_desc                 = av_mallocz(sizeof(PacketDesc));
+    if (!pkt_desc)
+        return AVERROR(ENOMEM);
     pkt_desc->pts            = pts;
     pkt_desc->dts            = dts;
     pkt_desc->unwritten_size =
@@ -1183,7 +1192,7 @@ static int mpeg_mux_end(AVFormatContext *ctx)
             break;
     }
 
-    /* End header according to MPEG1 systems standard. We do not write
+    /* End header according to MPEG-1 systems standard. We do not write
      * it as it is usually not needed by decoders and because it
      * complicates MPEG stream concatenation. */
     // avio_wb32(ctx->pb, ISO_11172_END_CODE);

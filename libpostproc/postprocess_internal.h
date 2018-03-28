@@ -99,7 +99,7 @@ typedef struct PPMode{
 
     int minAllowedY;                ///< for brightness correction
     int maxAllowedY;                ///< for brightness correction
-    float maxClippedThreshold;      ///< amount of "black" you are willing to lose to get a brightness-corrected picture
+    AVRational maxClippedThreshold; ///< amount of "black" you are willing to lose to get a brightness-corrected picture
 
     int maxTmpNoise[3];             ///< for Temporal Noise Reducing filter (Maximal sum of abs differences)
 
@@ -143,15 +143,21 @@ typedef struct PPContext{
     DECLARE_ALIGNED(8, uint64_t, pQPb);
     DECLARE_ALIGNED(8, uint64_t, pQPb2);
 
-    DECLARE_ALIGNED(8, uint64_t, mmxDcOffset)[64];
-    DECLARE_ALIGNED(8, uint64_t, mmxDcThreshold)[64];
+    DECLARE_ALIGNED(32, uint64_t, pQPb_block)[4];
+    DECLARE_ALIGNED(32, uint64_t, pQPb2_block)[4];
 
-    QP_STORE_T *stdQPTable;       ///< used to fix MPEG2 style qscale
-    QP_STORE_T *nonBQPTable;
-    QP_STORE_T *forcedQPTable;
+    DECLARE_ALIGNED(32, uint64_t, mmxDcOffset)[64];
+    DECLARE_ALIGNED(32, uint64_t, mmxDcThreshold)[64];
+
+    int8_t *stdQPTable;       ///< used to fix MPEG2 style qscale
+    int8_t *nonBQPTable;
+    int8_t *forcedQPTable;
 
     int QP;
     int nonBQP;
+
+    DECLARE_ALIGNED(32, int, QP_block)[4];
+    DECLARE_ALIGNED(32, int, nonBQP_block)[4];
 
     int frameNum;
 

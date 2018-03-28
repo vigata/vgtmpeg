@@ -102,7 +102,7 @@ const char ff_id3v2_3_tags[][4] = {
     { 0 },
 };
 
-const char *ff_id3v2_picture_types[21] = {
+const char * const ff_id3v2_picture_types[21] = {
     "Other",
     "32x32 pixels 'file icon'",
     "Other file icon",
@@ -205,7 +205,7 @@ static int check_tag(AVIOContext *s, int offset, unsigned int len)
 
     if (len > 4 ||
         avio_seek(s, offset, SEEK_SET) < 0 ||
-        avio_read(s, tag, len) < len)
+        avio_read(s, tag, len) < (int)len)
         return -1;
     else if (!AV_RB32(tag) || is_tag(tag, len))
         return 1;
@@ -400,6 +400,48 @@ error:
 }
 
 /**
+ * Parse a comment tag.
+ */
+static void read_comment(AVFormatContext *s, AVIOContext *pb, int taglen,
+                      AVDictionary **metadata)
+{
+    const char *key = "comment";
+    uint8_t *dst;
+    int encoding, dict_flags = AV_DICT_DONT_OVERWRITE | AV_DICT_DONT_STRDUP_VAL;
+    av_unused int language;
+
+    if (taglen < 4)
+        return;
+
+    encoding = avio_r8(pb);
+    language = avio_rl24(pb);
+    taglen -= 4;
+
+    if (decode_str(s, pb, encoding, &dst, &taglen) < 0) {
+        av_log(s, AV_LOG_ERROR, "Error reading comment frame, skipped\n");
+        return;
+    }
+
+    if (dst && !*dst)
+        av_freep(&dst);
+
+    if (dst) {
+        key = (const char *) dst;
+        dict_flags |= AV_DICT_DONT_STRDUP_KEY;
+    }
+
+    if (decode_str(s, pb, encoding, &dst, &taglen) < 0) {
+        av_log(s, AV_LOG_ERROR, "Error reading comment frame, skipped\n");
+        if (dict_flags & AV_DICT_DONT_STRDUP_KEY)
+            av_freep((void*)&key);
+        return;
+    }
+
+    if (dst)
+        av_dict_set(metadata, key, (const char *) dst, dict_flags);
+}
+
+/**
  * Parse GEOB tag into a ID3v2ExtraMetaGEOB struct.
  */
 static void read_geobtag(AVFormatContext *s, AVIOContext *pb, int taglen,
@@ -535,6 +577,13 @@ static void free_apic(void *obj)
     av_freep(&apic);
 }
 
+static void rstrip_spaces(char *buf)
+{
+    size_t len = strlen(buf);
+    while (len > 0 && buf[len - 1] == ' ')
+        buf[--len] = 0;
+}
+
 static void read_apic(AVFormatContext *s, AVIOContext *pb, int taglen,
                       const char *tag, ID3v2ExtraMeta **extra_meta,
                       int isv34)
@@ -598,15 +647,19 @@ static void read_apic(AVFormatContext *s, AVIOContext *pb, int taglen,
         goto fail;
     }
 
-    apic->buf = av_buffer_alloc(taglen + FF_INPUT_BUFFER_PADDING_SIZE);
+    apic->buf = av_buffer_alloc(taglen + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!apic->buf || !taglen || avio_read(pb, apic->buf->data, taglen) != taglen)
         goto fail;
-    memset(apic->buf->data + taglen, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+    memset(apic->buf->data + taglen, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
     new_extra->tag  = "APIC";
     new_extra->data = apic;
     new_extra->next = *extra_meta;
     *extra_meta     = new_extra;
+
+    // The description must be unique, and some ID3v2 tag writers add spaces
+    // to write several APIC entries with the same description.
+    rstrip_spaces(apic->description);
 
     return;
 
@@ -617,59 +670,68 @@ fail:
     avio_seek(pb, end, SEEK_SET);
 }
 
+static void free_chapter(void *obj)
+{
+    ID3v2ExtraMetaCHAP *chap = obj;
+    av_freep(&chap->element_id);
+    av_dict_free(&chap->meta);
+    av_freep(&chap);
+}
+
 static void read_chapter(AVFormatContext *s, AVIOContext *pb, int len, const char *ttag, ID3v2ExtraMeta **extra_meta, int isv34)
 {
-    AVRational time_base = {1, 1000};
-    uint32_t start, end;
-    AVChapter *chapter;
-    uint8_t *dst = NULL;
     int taglen;
     char tag[5];
+    ID3v2ExtraMeta *new_extra = NULL;
+    ID3v2ExtraMetaCHAP *chap  = NULL;
 
-    if (!s) {
-        /* We should probably just put the chapter data to extra_meta here
-         * and do the AVFormatContext-needing part in a separate
-         * ff_id3v2_parse_apic()-like function. */
-        av_log(NULL, AV_LOG_DEBUG, "No AVFormatContext, skipped ID3 chapter data\n");
-        return;
-    }
+    new_extra = av_mallocz(sizeof(*new_extra));
+    chap      = av_mallocz(sizeof(*chap));
 
-    if (decode_str(s, pb, 0, &dst, &len) < 0)
-        return;
+    if (!new_extra || !chap)
+        goto fail;
+
+    if (decode_str(s, pb, 0, &chap->element_id, &len) < 0)
+        goto fail;
+
     if (len < 16)
-        return;
+        goto fail;
 
-    start = avio_rb32(pb);
-    end   = avio_rb32(pb);
+    chap->start = avio_rb32(pb);
+    chap->end   = avio_rb32(pb);
     avio_skip(pb, 8);
-
-    chapter = avpriv_new_chapter(s, s->nb_chapters + 1, time_base, start, end, dst);
-    if (!chapter) {
-        av_free(dst);
-        return;
-    }
 
     len -= 16;
     while (len > 10) {
         if (avio_read(pb, tag, 4) < 4)
-            goto end;
+            goto fail;
         tag[4] = 0;
         taglen = avio_rb32(pb);
         avio_skip(pb, 2);
         len -= 10;
         if (taglen < 0 || taglen > len)
-            goto end;
+            goto fail;
         if (tag[0] == 'T')
-            read_ttag(s, pb, taglen, &chapter->metadata, tag);
+            read_ttag(s, pb, taglen, &chap->meta, tag);
         else
             avio_skip(pb, taglen);
         len -= taglen;
     }
 
-    ff_metadata_conv(&chapter->metadata, NULL, ff_id3v2_34_metadata_conv);
-    ff_metadata_conv(&chapter->metadata, NULL, ff_id3v2_4_metadata_conv);
-end:
-    av_free(dst);
+    ff_metadata_conv(&chap->meta, NULL, ff_id3v2_34_metadata_conv);
+    ff_metadata_conv(&chap->meta, NULL, ff_id3v2_4_metadata_conv);
+
+    new_extra->tag  = "CHAP";
+    new_extra->data = chap;
+    new_extra->next = *extra_meta;
+    *extra_meta     = new_extra;
+
+    return;
+
+fail:
+    if (chap)
+        free_chapter(chap);
+    av_freep(&new_extra);
 }
 
 static void free_priv(void *obj)
@@ -729,7 +791,7 @@ typedef struct ID3v2EMFunc {
 static const ID3v2EMFunc id3v2_extra_meta_funcs[] = {
     { "GEO", "GEOB", read_geobtag, free_geobtag },
     { "PIC", "APIC", read_apic,    free_apic    },
-    { "CHAP","CHAP", read_chapter, NULL         },
+    { "CHAP","CHAP", read_chapter, free_chapter },
     { "PRIV","PRIV", read_priv,    free_priv    },
     { NULL }
 };
@@ -770,6 +832,7 @@ static void id3v2_parse(AVIOContext *pb, AVDictionary **metadata,
     const ID3v2EMFunc *extra_func = NULL;
     unsigned char *uncompressed_buffer = NULL;
     av_unused int uncompressed_buffer_size = 0;
+    const char *comm_frame;
 
     av_log(s, AV_LOG_DEBUG, "id3v2 ver:%d flags:%02X len:%d\n", version, flags, len);
 
@@ -781,12 +844,14 @@ static void id3v2_parse(AVIOContext *pb, AVDictionary **metadata,
         }
         isv34     = 0;
         taghdrlen = 6;
+        comm_frame = "COM";
         break;
 
     case 3:
     case 4:
         isv34     = 1;
         taghdrlen = 10;
+        comm_frame = "COMM";
         break;
 
     default:
@@ -897,6 +962,7 @@ static void id3v2_parse(AVIOContext *pb, AVDictionary **metadata,
         /* check for text tag or supported special meta tag */
         } else if (tag[0] == 'T' ||
                    !memcmp(tag, "USLT", 4) ||
+                   !strcmp(tag, comm_frame) ||
                    (extra_meta &&
                     (extra_func = get_extra_meta_func(tag, isv34)))) {
             pbx = pb;
@@ -964,6 +1030,8 @@ static void id3v2_parse(AVIOContext *pb, AVDictionary **metadata,
                 read_ttag(s, pbx, tlen, metadata, tag);
             else if (!memcmp(tag, "USLT", 4))
                 read_uslt(s, pbx, tlen, metadata);
+            else if (!strcmp(tag, comm_frame))
+                read_comment(s, pbx, tlen, metadata);
             else
                 /* parse special meta tag */
                 extra_func->read(s, pbx, tlen, tag, extra_meta, isv34);
@@ -1013,7 +1081,9 @@ static void id3v2_read_internal(AVIOContext *pb, AVDictionary **metadata,
             break;
         }
 
-        ret = avio_read(pb, buf, ID3v2_HEADER_SIZE);
+        ret = ffio_ensure_seekback(pb, ID3v2_HEADER_SIZE);
+        if (ret >= 0)
+            ret = avio_read(pb, buf, ID3v2_HEADER_SIZE);
         if (ret != ID3v2_HEADER_SIZE) {
             avio_seek(pb, off, SEEK_SET);
             break;
@@ -1080,15 +1150,21 @@ int ff_id3v2_parse_apic(AVFormatContext *s, ID3v2ExtraMeta **extra_meta)
             return AVERROR(ENOMEM);
 
         st->disposition      |= AV_DISPOSITION_ATTACHED_PIC;
-        st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-        st->codec->codec_id   = apic->id;
-        av_dict_set(&st->metadata, "title",   apic->description, 0);
+        st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+        st->codecpar->codec_id   = apic->id;
+
+        if (AV_RB64(apic->buf->data) == 0x89504e470d0a1a0a)
+            st->codecpar->codec_id = AV_CODEC_ID_PNG;
+
+        if (apic->description[0])
+            av_dict_set(&st->metadata, "title", apic->description, 0);
+
         av_dict_set(&st->metadata, "comment", apic->type, 0);
 
         av_init_packet(&st->attached_pic);
         st->attached_pic.buf          = apic->buf;
         st->attached_pic.data         = apic->buf->data;
-        st->attached_pic.size         = apic->buf->size - FF_INPUT_BUFFER_PADDING_SIZE;
+        st->attached_pic.size         = apic->buf->size - AV_INPUT_BUFFER_PADDING_SIZE;
         st->attached_pic.stream_index = st->index;
         st->attached_pic.flags       |= AV_PKT_FLAG_KEY;
 
@@ -1096,4 +1172,55 @@ int ff_id3v2_parse_apic(AVFormatContext *s, ID3v2ExtraMeta **extra_meta)
     }
 
     return 0;
+}
+
+int ff_id3v2_parse_chapters(AVFormatContext *s, ID3v2ExtraMeta **extra_meta)
+{
+    int ret = 0;
+    ID3v2ExtraMeta *cur;
+    AVRational time_base = {1, 1000};
+    ID3v2ExtraMetaCHAP **chapters = NULL;
+    int num_chapters = 0;
+    int i;
+
+    // since extra_meta is a linked list where elements are prepended,
+    // we need to reverse the order of chapters
+    for (cur = *extra_meta; cur; cur = cur->next) {
+        ID3v2ExtraMetaCHAP *chap;
+
+        if (strcmp(cur->tag, "CHAP"))
+            continue;
+        chap = cur->data;
+
+        if ((ret = av_dynarray_add_nofree(&chapters, &num_chapters, chap)) < 0)
+            goto end;
+    }
+
+    for (i = 0; i < (num_chapters / 2); i++) {
+        ID3v2ExtraMetaCHAP *right;
+        int right_index;
+
+        right_index = (num_chapters - 1) - i;
+        right = chapters[right_index];
+
+        chapters[right_index] = chapters[i];
+        chapters[i] = right;
+    }
+
+    for (i = 0; i < num_chapters; i++) {
+        ID3v2ExtraMetaCHAP *chap;
+        AVChapter *chapter;
+
+        chap = chapters[i];
+        chapter = avpriv_new_chapter(s, i, time_base, chap->start, chap->end, chap->element_id);
+        if (!chapter)
+            continue;
+
+        if ((ret = av_dict_copy(&chapter->metadata, chap->meta, 0)) < 0)
+            goto end;
+    }
+
+end:
+    av_freep(&chapters);
+    return ret;
 }

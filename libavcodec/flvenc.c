@@ -20,7 +20,9 @@
 
 #include "flv.h"
 #include "h263.h"
+#include "h263data.h"
 #include "mpegvideo.h"
+#include "mpegvideodata.h"
 
 void ff_flv_encode_picture_header(MpegEncContext *s, int picture_number)
 {
@@ -29,7 +31,7 @@ void ff_flv_encode_picture_header(MpegEncContext *s, int picture_number)
     avpriv_align_put_bits(&s->pb);
 
     put_bits(&s->pb, 17, 1);
-    /* 0: h263 escape codes 1: 11-bit escape codes */
+    /* 0: H.263 escape codes 1: 11-bit escape codes */
     put_bits(&s->pb, 5, (s->h263_flv - 1));
     put_bits(&s->pb, 8,
              (((int64_t) s->picture_number * 30 * s->avctx->time_base.num) /   // FIXME use timestamp
@@ -89,7 +91,12 @@ void ff_flv2_encode_ac_esc(PutBitContext *pb, int slevel, int level,
     }
 }
 
-FF_MPV_GENERIC_CLASS(flv)
+static const AVClass flv_class = {
+    .class_name = "flv encoder",
+    .item_name  = av_default_item_name,
+    .option     = ff_mpv_generic_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 AVCodec ff_flv_encoder = {
     .name           = "flv",

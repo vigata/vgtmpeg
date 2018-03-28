@@ -80,8 +80,8 @@ static const int16_t low_inv_quant5[32] = {
 };
 
 static const int16_t * const low_inv_quants[3] = { ff_g722_low_inv_quant6,
-                                                    low_inv_quant5,
-                                            ff_g722_low_inv_quant4 };
+                                                           low_inv_quant5,
+                                                   ff_g722_low_inv_quant4 };
 
 static int g722_decode_frame(AVCodecContext *avctx, void *data,
                              int *got_frame_ptr, AVPacket *avpkt)
@@ -145,6 +145,6 @@ AVCodec ff_adpcm_g722_decoder = {
     .priv_data_size = sizeof(G722Context),
     .init           = g722_decode_init,
     .decode         = g722_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .priv_class     = &g722_decoder_class,
 };

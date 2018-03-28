@@ -21,15 +21,12 @@
  */
 
 #include "config.h"
-#if HAVE_ALTIVEC_H
-#include <altivec.h>
-#endif
 
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
 #include "libavutil/ppc/cpu.h"
-#include "libavutil/ppc/types_altivec.h"
 #include "libavutil/ppc/util_altivec.h"
+
 #include "libavcodec/avcodec.h"
 #include "libavcodec/mpegvideo.h"
 #include "libavcodec/me_cmp.h"
@@ -504,7 +501,7 @@ static int hadamard8_diff8x8_altivec(MpegEncContext *s, uint8_t *dst,
 }
 
 /*
- * 16x8 works with 16 elements; it allows to avoid replicating loads, and
+ * 16x8 works with 16 elements; it can avoid replicating loads, and
  * gives the compiler more room for scheduling. It's only used from
  * inside hadamard8_diff16_altivec.
  *

@@ -37,16 +37,19 @@
 #include <xcb/shape.h>
 #endif
 
-#include "libavformat/avformat.h"
-#include "libavformat/internal.h"
-
+#include "libavutil/internal.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/time.h"
 
+#include "libavformat/avformat.h"
+#include "libavformat/internal.h"
+
 typedef struct XCBGrabContext {
     const AVClass *class;
+
+    uint8_t *buffer;
 
     xcb_connection_t *conn;
     xcb_screen_t *screen;
@@ -149,13 +152,25 @@ static int xcbgrab_frame(AVFormatContext *s, AVPacket *pkt)
     xcb_get_image_cookie_t iq;
     xcb_get_image_reply_t *img;
     xcb_drawable_t drawable = c->screen->root;
+    xcb_generic_error_t *e = NULL;
     uint8_t *data;
     int length, ret;
 
     iq  = xcb_get_image(c->conn, XCB_IMAGE_FORMAT_Z_PIXMAP, drawable,
                         c->x, c->y, c->width, c->height, ~0);
 
-    img = xcb_get_image_reply(c->conn, iq, NULL);
+    img = xcb_get_image_reply(c->conn, iq, &e);
+
+    if (e) {
+        av_log(s, AV_LOG_ERROR,
+               "Cannot get the image data "
+               "event_error: response_type:%u error_code:%u "
+               "sequence:%u resource_id:%u minor_code:%u major_code:%u.\n",
+               e->response_type, e->error_code,
+               e->sequence, e->resource_id, e->minor_code, e->major_code);
+        return AVERROR(EACCES);
+    }
+
     if (!img)
         return AVERROR(EAGAIN);
 
@@ -206,22 +221,16 @@ static int check_shm(xcb_connection_t *conn)
     return 0;
 }
 
-static void dealloc_shm(void *unused, uint8_t *data)
-{
-    shmdt(data);
-}
-
-static int xcbgrab_frame_shm(AVFormatContext *s, AVPacket *pkt)
+static int allocate_shm(AVFormatContext *s)
 {
     XCBGrabContext *c = s->priv_data;
-    xcb_shm_get_image_cookie_t iq;
-    xcb_shm_get_image_reply_t *img;
-    xcb_drawable_t drawable = c->screen->root;
+    int size = c->frame_size + AV_INPUT_BUFFER_PADDING_SIZE;
     uint8_t *data;
-    int size = c->frame_size + FF_INPUT_BUFFER_PADDING_SIZE;
-    int id   = shmget(IPC_PRIVATE, size, IPC_CREAT | 0777);
-    xcb_generic_error_t *e = NULL;
+    int id;
 
+    if (c->buffer)
+        return 0;
+    id = shmget(IPC_PRIVATE, size, IPC_CREAT | 0777);
     if (id == -1) {
         char errbuf[1024];
         int err = AVERROR(errno);
@@ -230,15 +239,31 @@ static int xcbgrab_frame_shm(AVFormatContext *s, AVPacket *pkt)
                size, errbuf);
         return err;
     }
-
     xcb_shm_attach(c->conn, c->segment, id, 0);
+    data = shmat(id, NULL, 0);
+    shmctl(id, IPC_RMID, 0);
+    if ((intptr_t)data == -1 || !data)
+        return AVERROR(errno);
+    c->buffer = data;
+    return 0;
+}
+
+static int xcbgrab_frame_shm(AVFormatContext *s, AVPacket *pkt)
+{
+    XCBGrabContext *c = s->priv_data;
+    xcb_shm_get_image_cookie_t iq;
+    xcb_shm_get_image_reply_t *img;
+    xcb_drawable_t drawable = c->screen->root;
+    xcb_generic_error_t *e = NULL;
+    int ret;
+
+    ret = allocate_shm(s);
+    if (ret < 0)
+        return ret;
 
     iq = xcb_shm_get_image(c->conn, drawable,
                            c->x, c->y, c->width, c->height, ~0,
                            XCB_IMAGE_FORMAT_Z_PIXMAP, c->segment, 0);
-
-    xcb_shm_detach(c->conn, c->segment);
-
     img = xcb_shm_get_image_reply(c->conn, iq, &e);
 
     xcb_flush(c->conn);
@@ -251,25 +276,12 @@ static int xcbgrab_frame_shm(AVFormatContext *s, AVPacket *pkt)
                e->response_type, e->error_code,
                e->sequence, e->resource_id, e->minor_code, e->major_code);
 
-        shmctl(id, IPC_RMID, 0);
         return AVERROR(EACCES);
     }
 
     free(img);
 
-    data = shmat(id, NULL, 0);
-    shmctl(id, IPC_RMID, 0);
-
-    if ((intptr_t)data == -1)
-        return AVERROR(errno);
-
-    pkt->buf = av_buffer_create(data, size, dealloc_shm, NULL, 0);
-    if (!pkt->buf) {
-        shmdt(data);
-        return AVERROR(ENOMEM);
-    }
-
-    pkt->data = pkt->buf->data;
+    pkt->data = c->buffer;
     pkt->size = c->frame_size;
 
     return 0;
@@ -409,7 +421,7 @@ static int xcbgrab_read_packet(AVFormatContext *s, AVPacket *pkt)
         ret = xcbgrab_frame(s, pkt);
 
 #if CONFIG_LIBXCB_XFIXES
-    if (c->draw_mouse && p->same_screen)
+    if (ret >= 0 && c->draw_mouse && p->same_screen)
         xcbgrab_draw_mouse(s, pkt, p, geo);
 #endif
 
@@ -422,6 +434,12 @@ static int xcbgrab_read_packet(AVFormatContext *s, AVPacket *pkt)
 static av_cold int xcbgrab_read_close(AVFormatContext *s)
 {
     XCBGrabContext *ctx = s->priv_data;
+
+#if CONFIG_LIBXCB_SHM
+    if (ctx->buffer) {
+        shmdt(ctx->buffer);
+    }
+#endif
 
     xcb_disconnect(ctx->conn);
 
@@ -491,7 +509,7 @@ static int pixfmt_from_pixmap_format(AVFormatContext *s, int depth,
 
         fmt++;
     }
-    av_log(s, AV_LOG_ERROR, "Pixmap format not mappable.\n");
+    avpriv_report_missing_feature(s, "Mapping this pixmap format");
 
     return AVERROR_PATCHWELCOME;
 }
@@ -520,19 +538,27 @@ static int create_stream(AVFormatContext *s)
     gc  = xcb_get_geometry(c->conn, c->screen->root);
     geo = xcb_get_geometry_reply(c->conn, gc, NULL);
 
-    c->width      = FFMIN(geo->width, c->width);
-    c->height     = FFMIN(geo->height, c->height);
+    if (c->x + c->width > geo->width ||
+        c->y + c->height > geo->height) {
+        av_log(s, AV_LOG_ERROR,
+               "Capture area %dx%d at position %d.%d "
+               "outside the screen size %dx%d\n",
+               c->width, c->height,
+               c->x, c->y,
+               geo->width, geo->height);
+        return AVERROR(EINVAL);
+    }
+
     c->time_base  = (AVRational){ st->avg_frame_rate.den,
                                   st->avg_frame_rate.num };
     c->time_frame = av_gettime();
 
-    st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codec->codec_id   = AV_CODEC_ID_RAWVIDEO;
-    st->codec->width      = c->width;
-    st->codec->height     = c->height;
-    st->codec->time_base  = c->time_base;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id   = AV_CODEC_ID_RAWVIDEO;
+    st->codecpar->width      = c->width;
+    st->codecpar->height     = c->height;
 
-    ret = pixfmt_from_pixmap_format(s, geo->depth, &st->codec->pix_fmt);
+    ret = pixfmt_from_pixmap_format(s, geo->depth, &st->codecpar->format);
 
     free(geo);
 
@@ -569,7 +595,7 @@ static void setup_window(AVFormatContext *s)
     uint32_t values[] = { 1,
                           XCB_EVENT_MASK_EXPOSURE |
                           XCB_EVENT_MASK_STRUCTURE_NOTIFY };
-    xcb_rectangle_t rect = { 0, 0, c->width, c->height };
+    av_unused xcb_rectangle_t rect = { 0, 0, c->width, c->height };
 
     c->window = xcb_generate_id(c->conn);
 
@@ -621,6 +647,7 @@ static av_cold int xcbgrab_read_header(AVFormatContext *s)
                s->filename[0] ? s->filename : "default", ret);
         return AVERROR(EIO);
     }
+
     setup = xcb_get_setup(c->conn);
 
     c->screen = get_screen(setup, screen_num);
@@ -663,7 +690,7 @@ static av_cold int xcbgrab_read_header(AVFormatContext *s)
     return 0;
 }
 
-AVInputFormat ff_x11grab_xcb_demuxer = {
+AVInputFormat ff_xcbgrab_demuxer = {
     .name           = "x11grab",
     .long_name      = NULL_IF_CONFIG_SMALL("X11 screen capture, using XCB"),
     .priv_data_size = sizeof(XCBGrabContext),

@@ -1,7 +1,5 @@
 /*
- * Intel MediaSDK QSV utility functions
- *
- * copyright (c) 2013 Luca Barbato
+ * Intel MediaSDK QSV encoder/decoder shared code
  *
  * This file is part of FFmpeg.
  *
@@ -23,13 +21,9 @@
 #ifndef AVCODEC_QSV_INTERNAL_H
 #define AVCODEC_QSV_INTERNAL_H
 
-#include <stdint.h>
-#include <sys/types.h>
-
 #include <mfx/mfxvideo.h>
 
 #include "libavutil/frame.h"
-#include "libavutil/pixfmt.h"
 
 #include "avcodec.h"
 
@@ -38,49 +32,71 @@
 
 #define ASYNC_DEPTH_DEFAULT 4       // internal parallelism
 
+#define QSV_MAX_ENC_PAYLOAD 2       // # of mfxEncodeCtrl payloads supported
+
+#define QSV_VERSION_ATLEAST(MAJOR, MINOR)   \
+    (MFX_VERSION_MAJOR > (MAJOR) ||         \
+     MFX_VERSION_MAJOR == (MAJOR) && MFX_VERSION_MINOR >= (MINOR))
+
+typedef struct QSVMid {
+    AVBufferRef *hw_frames_ref;
+    mfxHDL handle;
+
+    AVFrame *locked_frame;
+    AVFrame *hw_frame;
+    mfxFrameSurface1 surf;
+} QSVMid;
+
 typedef struct QSVFrame {
     AVFrame *frame;
-    mfxFrameSurface1 *surface;
+    mfxFrameSurface1 surface;
+    mfxEncodeCtrl enc_ctrl;
 
-    mfxFrameSurface1 surface_internal;
+    int queued;
+    int used;
 
     struct QSVFrame *next;
 } QSVFrame;
 
-typedef struct QSVContext {
-    // the session used for decoding
-    mfxSession session;
+typedef struct QSVFramesContext {
+    AVBufferRef *hw_frames_ctx;
+    void *logctx;
 
-    // the session we allocated internally, in case the caller did not provide
-    // one
-    mfxSession internal_session;
-
-    /**
-     * a linked list of frames currently being used by QSV
-     */
-    QSVFrame *work_frames;
-
-    // options set by the caller
-    int async_depth;
-    int iopattern;
-
-    mfxExtBuffer **ext_buffers;
-    int         nb_ext_buffers;
-} QSVContext;
+    /* The memory ids for the external frames.
+     * Refcounted, since we need one reference owned by the QSVFramesContext
+     * (i.e. by the encoder/decoder) and another one given to the MFX session
+     * from the frame allocator. */
+    AVBufferRef *mids_buf;
+    QSVMid *mids;
+    int  nb_mids;
+} QSVFramesContext;
 
 /**
- * Convert a libmfx error code into a ffmpeg error code.
+ * Convert a libmfx error code into an ffmpeg error code.
  */
-int ff_qsv_error(int mfx_err);
+int ff_qsv_map_error(mfxStatus mfx_err, const char **desc);
 
-int ff_qsv_map_pixfmt(enum AVPixelFormat format);
+int ff_qsv_print_error(void *log_ctx, mfxStatus err,
+                       const char *error_string);
 
-int ff_qsv_init(AVCodecContext *s, QSVContext *q, mfxSession session);
+int ff_qsv_print_warning(void *log_ctx, mfxStatus err,
+                         const char *warning_string);
 
-int ff_qsv_decode(AVCodecContext *s, QSVContext *q,
-                  AVFrame *frame, int *got_frame,
-                  AVPacket *avpkt);
+int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id);
+int ff_qsv_profile_to_mfx(enum AVCodecID codec_id, int profile);
 
-int ff_qsv_close(QSVContext *q);
+int ff_qsv_map_pixfmt(enum AVPixelFormat format, uint32_t *fourcc);
+
+int ff_qsv_init_internal_session(AVCodecContext *avctx, mfxSession *session,
+                                 const char *load_plugins);
+
+int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
+                               AVBufferRef *device_ref, const char *load_plugins);
+
+int ff_qsv_init_session_frames(AVCodecContext *avctx, mfxSession *session,
+                               QSVFramesContext *qsv_frames_ctx,
+                               const char *load_plugins, int opaque);
+
+int ff_qsv_find_surface_idx(QSVFramesContext *ctx, QSVFrame *frame);
 
 #endif /* AVCODEC_QSV_INTERNAL_H */

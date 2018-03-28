@@ -62,6 +62,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     h = (buf[1] + 1) * 8;
     buf += 2;
 
+    if (avpkt->size < 2 + w*h / 513)
+        return AVERROR_INVALIDDATA;
+
     if (w != avctx->width || h != avctx->height) {
         av_freep(&c->frame_buffer);
         av_freep(&c->last_frame_buffer);
@@ -183,5 +186,5 @@ AVCodec ff_kgv1_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .flush          = decode_flush,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

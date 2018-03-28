@@ -20,7 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "hevc.h"
+#include "hevcdec.h"
 
 #include "hevcpred.h"
 
@@ -74,4 +74,7 @@ void ff_hevc_pred_init(HEVCPredContext *hpc, int bit_depth)
         HEVC_PRED(8);
         break;
     }
+
+    if (ARCH_MIPS)
+        ff_hevc_pred_init_mips(hpc, bit_depth);
 }

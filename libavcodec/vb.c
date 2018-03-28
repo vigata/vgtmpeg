@@ -205,6 +205,10 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (flags & VB_HAS_GMC) {
         i = (int16_t)bytestream2_get_le16(&c->stream);
         j = (int16_t)bytestream2_get_le16(&c->stream);
+        if (FFABS(j) > avctx->height) {
+            av_log(avctx, AV_LOG_ERROR, "GMV out of range\n");
+            return AVERROR_INVALIDDATA;
+        }
         offset = i + j * avctx->width;
     }
     if (flags & VB_HAS_VIDEO) {
@@ -279,5 +283,5 @@ AVCodec ff_vb_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

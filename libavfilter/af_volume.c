@@ -27,6 +27,7 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/eval.h"
+#include "libavutil/ffmath.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
@@ -74,16 +75,16 @@ static const AVOption volume_options[] = {
          { "once",  "eval volume expression once", 0, AV_OPT_TYPE_CONST, {.i64=EVAL_MODE_ONCE},  .flags = A|F, .unit = "eval" },
          { "frame", "eval volume expression per-frame",                  0, AV_OPT_TYPE_CONST, {.i64=EVAL_MODE_FRAME}, .flags = A|F, .unit = "eval" },
     { "replaygain", "Apply replaygain side data when present",
-            OFFSET(replaygain), AV_OPT_TYPE_INT, { .i64 = REPLAYGAIN_DROP }, REPLAYGAIN_DROP, REPLAYGAIN_ALBUM, A, "replaygain" },
-        { "drop",   "replaygain side data is dropped", 0, AV_OPT_TYPE_CONST, { .i64 = REPLAYGAIN_DROP   }, 0, 0, A, "replaygain" },
-        { "ignore", "replaygain side data is ignored", 0, AV_OPT_TYPE_CONST, { .i64 = REPLAYGAIN_IGNORE }, 0, 0, A, "replaygain" },
-        { "track",  "track gain is preferred",         0, AV_OPT_TYPE_CONST, { .i64 = REPLAYGAIN_TRACK  }, 0, 0, A, "replaygain" },
-        { "album",  "album gain is preferred",         0, AV_OPT_TYPE_CONST, { .i64 = REPLAYGAIN_ALBUM  }, 0, 0, A, "replaygain" },
+            OFFSET(replaygain), AV_OPT_TYPE_INT, { .i64 = REPLAYGAIN_DROP }, REPLAYGAIN_DROP, REPLAYGAIN_ALBUM, A|F, "replaygain" },
+        { "drop",   "replaygain side data is dropped", 0, AV_OPT_TYPE_CONST, { .i64 = REPLAYGAIN_DROP   }, 0, 0, A|F, "replaygain" },
+        { "ignore", "replaygain side data is ignored", 0, AV_OPT_TYPE_CONST, { .i64 = REPLAYGAIN_IGNORE }, 0, 0, A|F, "replaygain" },
+        { "track",  "track gain is preferred",         0, AV_OPT_TYPE_CONST, { .i64 = REPLAYGAIN_TRACK  }, 0, 0, A|F, "replaygain" },
+        { "album",  "album gain is preferred",         0, AV_OPT_TYPE_CONST, { .i64 = REPLAYGAIN_ALBUM  }, 0, 0, A|F, "replaygain" },
     { "replaygain_preamp", "Apply replaygain pre-amplification",
-            OFFSET(replaygain_preamp), AV_OPT_TYPE_DOUBLE, { .dbl = 0.0 }, -15.0, 15.0, A },
+            OFFSET(replaygain_preamp), AV_OPT_TYPE_DOUBLE, { .dbl = 0.0 }, -15.0, 15.0, A|F },
     { "replaygain_noclip", "Apply replaygain clipping prevention",
-            OFFSET(replaygain_noclip), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, A },
-    { NULL },
+            OFFSET(replaygain_noclip), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, A|F },
+    { NULL }
 };
 
 AVFILTER_DEFINE_CLASS(volume);
@@ -153,23 +154,26 @@ static int query_formats(AVFilterContext *ctx)
             AV_SAMPLE_FMT_NONE
         }
     };
+    int ret;
 
     layouts = ff_all_channel_counts();
     if (!layouts)
         return AVERROR(ENOMEM);
-    ff_set_common_channel_layouts(ctx, layouts);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
+    if (ret < 0)
+        return ret;
 
     formats = ff_make_format_list(sample_fmts[vol->precision]);
     if (!formats)
         return AVERROR(ENOMEM);
-    ff_set_common_formats(ctx, formats);
+    ret = ff_set_common_formats(ctx, formats);
+    if (ret < 0)
+        return ret;
 
     formats = ff_all_samplerates();
     if (!formats)
         return AVERROR(ENOMEM);
-    ff_set_common_samplerates(ctx, formats);
-
-    return 0;
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static inline void scale_samples_u8(uint8_t *dst, const uint8_t *src,
@@ -276,7 +280,7 @@ static int set_volume(AVFilterContext *ctx)
         av_log(ctx, AV_LOG_VERBOSE, "volume_i:%d/255 ", vol->volume_i);
     }
     av_log(ctx, AV_LOG_VERBOSE, "volume:%f volume_dB:%f\n",
-           vol->volume, 20.0*log(vol->volume)/M_LN10);
+           vol->volume, 20.0*log10(vol->volume));
 
     volume_init(vol);
     return 0;
@@ -373,7 +377,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
             av_log(inlink->dst, AV_LOG_VERBOSE,
                    "Using gain %f dB from replaygain side data.\n", g);
 
-            vol->volume   = pow(10, (g + vol->replaygain_preamp) / 20);
+            vol->volume   = ff_exp10((g + vol->replaygain_preamp) / 20);
             if (vol->replaygain_noclip)
                 vol->volume = FFMIN(vol->volume, 1.0 / p);
             vol->volume_i = (int)(vol->volume * 256 + 0.5);
@@ -389,9 +393,9 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     }
     vol->var_values[VAR_PTS] = TS2D(buf->pts);
     vol->var_values[VAR_T  ] = TS2T(buf->pts, inlink->time_base);
-    vol->var_values[VAR_N  ] = inlink->frame_count;
+    vol->var_values[VAR_N  ] = inlink->frame_count_out;
 
-    pos = av_frame_get_pkt_pos(buf);
+    pos = buf->pkt_pos;
     vol->var_values[VAR_POS] = pos == -1 ? NAN : pos;
     if (vol->eval_mode == EVAL_MODE_FRAME)
         set_volume(ctx);
@@ -407,8 +411,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         out_buf = buf;
     } else {
         out_buf = ff_get_audio_buffer(inlink, nb_samples);
-        if (!out_buf)
+        if (!out_buf) {
+            av_frame_free(&buf);
             return AVERROR(ENOMEM);
+        }
         ret = av_frame_copy_props(out_buf, buf);
         if (ret < 0) {
             av_frame_free(&out_buf);

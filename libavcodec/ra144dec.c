@@ -113,7 +113,7 @@ static int ra144_decode_frame(AVCodecContext * avctx, void *data,
         do_output_subblock(ractx, block_coefs[i], refl_rms[i], &gb);
 
         for (j=0; j < BLOCKSIZE; j++)
-            *samples++ = av_clip_int16(ractx->curr_sblock[j + 10] << 2);
+            *samples++ = av_clip_int16(ractx->curr_sblock[j + 10] * (1 << 2));
     }
 
     ractx->old_energy = energy;
@@ -134,5 +134,5 @@ AVCodec ff_ra_144_decoder = {
     .priv_data_size = sizeof(RA144Context),
     .init           = ra144_decode_init,
     .decode         = ra144_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

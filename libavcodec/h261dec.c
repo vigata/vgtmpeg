@@ -1,5 +1,5 @@
 /*
- * H261 decoder
+ * H.261 decoder
  * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
  * Copyright (c) 2004 Maarten Daniels
  *
@@ -223,7 +223,7 @@ static int h261_decode_mb_skipped(H261Context *h, int mba1, int mba2)
             s->current_picture.motion_val[0][b_xy][1] = s->mv[0][0][1];
         }
 
-        ff_mpv_decode_mb(s, s->block);
+        ff_mpv_reconstruct_mb(s, s->block);
     }
 
     return 0;
@@ -466,7 +466,7 @@ intra:
             s->block_last_index[i] = -1;
     }
 
-    ff_mpv_decode_mb(s, s->block);
+    ff_mpv_reconstruct_mb(s, s->block);
 
     return SLICE_OK;
 }
@@ -592,10 +592,8 @@ static int h261_decode_frame(AVCodecContext *avctx, void *data,
     int ret;
     AVFrame *pict = data;
 
-    av_dlog(avctx, "*****frame %d size=%d\n", avctx->frame_number, buf_size);
-    av_dlog(avctx, "bytes=%x %x %x %x\n", buf[0], buf[1], buf[2], buf[3]);
-    s->flags  = avctx->flags;
-    s->flags2 = avctx->flags2;
+    ff_dlog(avctx, "*****frame %d size=%d\n", avctx->frame_number, buf_size);
+    ff_dlog(avctx, "bytes=%x %x %x %x\n", buf[0], buf[1], buf[2], buf[3]);
 
     h->gob_start_code_skipped = 0;
 
@@ -603,7 +601,7 @@ retry:
     init_get_bits(&s->gb, buf, buf_size * 8);
 
     if (!s->context_initialized)
-        // we need the IDCT permutaton for reading a custom matrix
+        // we need the IDCT permutation for reading a custom matrix
         ff_mpv_idct_init(s);
 
     ret = h261_decode_picture_header(h);
@@ -687,6 +685,6 @@ AVCodec ff_h261_decoder = {
     .init           = h261_decode_init,
     .close          = h261_decode_end,
     .decode         = h261_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .max_lowres     = 3,
 };

@@ -318,16 +318,16 @@ void ff_xvid_idct(int16_t *const in)
     }
 }
 
-static void xvid_idct_put(uint8_t *dest, int line_size, int16_t *block)
+static void xvid_idct_put(uint8_t *dest, ptrdiff_t line_size, int16_t *block)
 {
     ff_xvid_idct(block);
-    ff_put_pixels_clamped(block, dest, line_size);
+    ff_put_pixels_clamped_c(block, dest, line_size);
 }
 
-static void xvid_idct_add(uint8_t *dest, int line_size, int16_t *block)
+static void xvid_idct_add(uint8_t *dest, ptrdiff_t line_size, int16_t *block)
 {
     ff_xvid_idct(block);
-    ff_add_pixels_clamped(block, dest, line_size);
+    ff_add_pixels_clamped_c(block, dest, line_size);
 }
 
 av_cold void ff_xvid_idct_init(IDCTDSPContext *c, AVCodecContext *avctx)
@@ -348,6 +348,8 @@ av_cold void ff_xvid_idct_init(IDCTDSPContext *c, AVCodecContext *avctx)
 
     if (ARCH_X86)
         ff_xvid_idct_init_x86(c, avctx, high_bit_depth);
+    if (ARCH_MIPS)
+        ff_xvid_idct_init_mips(c, avctx, high_bit_depth);
 
     ff_init_scantable_permutation(c->idct_permutation, c->perm_type);
 }

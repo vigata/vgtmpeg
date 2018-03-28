@@ -71,7 +71,9 @@ static av_cold int init(AVFilterContext *ctx)
         pad.type = AVMEDIA_TYPE_AUDIO;
         pad.name = av_get_channel_name(channel);
 
-        ff_insert_outpad(ctx, i, &pad);
+        if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {
+            return ret;
+        }
     }
 
 fail:
@@ -82,20 +84,23 @@ static int query_formats(AVFilterContext *ctx)
 {
     ChannelSplitContext *s = ctx->priv;
     AVFilterChannelLayouts *in_layouts = NULL;
-    int i;
+    int i, ret;
 
-    ff_set_common_formats    (ctx, ff_planar_sample_fmts());
-    ff_set_common_samplerates(ctx, ff_all_samplerates());
+    if ((ret = ff_set_common_formats(ctx, ff_planar_sample_fmts())) < 0 ||
+        (ret = ff_set_common_samplerates(ctx, ff_all_samplerates())) < 0)
+        return ret;
 
-    ff_add_channel_layout(&in_layouts, s->channel_layout);
-    ff_channel_layouts_ref(in_layouts, &ctx->inputs[0]->out_channel_layouts);
+    if ((ret = ff_add_channel_layout(&in_layouts, s->channel_layout)) < 0 ||
+        (ret = ff_channel_layouts_ref(in_layouts, &ctx->inputs[0]->out_channel_layouts)) < 0)
+        return ret;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         AVFilterChannelLayouts *out_layouts = NULL;
         uint64_t channel = av_channel_layout_extract_channel(s->channel_layout, i);
 
-        ff_add_channel_layout(&out_layouts, channel);
-        ff_channel_layouts_ref(out_layouts, &ctx->outputs[i]->in_channel_layouts);
+        if ((ret = ff_add_channel_layout(&out_layouts, channel)) < 0 ||
+            (ret = ff_channel_layouts_ref(out_layouts, &ctx->outputs[i]->in_channel_layouts)) < 0)
+            return ret;
     }
 
     return 0;
@@ -117,7 +122,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         buf_out->data[0] = buf_out->extended_data[0] = buf_out->extended_data[i];
         buf_out->channel_layout =
             av_channel_layout_extract_channel(buf->channel_layout, i);
-        av_frame_set_channels(buf_out, 1);
+        buf_out->channels = 1;
 
         ret = ff_filter_frame(ctx->outputs[i], buf_out);
         if (ret < 0)

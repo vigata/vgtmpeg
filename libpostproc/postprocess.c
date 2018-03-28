@@ -76,6 +76,7 @@ try to unroll inner for(x=0 ... loop to avoid these damn if(x ... checks
 #include "config.h"
 #include "libavutil/avutil.h"
 #include "libavutil/avassert.h"
+#include "libavutil/intreadwrite.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,6 +89,7 @@ try to unroll inner for(x=0 ... loop to avoid these damn if(x ... checks
 #include "postprocess.h"
 #include "postprocess_internal.h"
 #include "libavutil/avstring.h"
+#include "libavutil/ppc/util_altivec.h"
 
 #include "libavutil/ffversion.h"
 const char postproc_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
@@ -108,10 +110,6 @@ const char *postproc_license(void)
 #define LICENSE_PREFIX "libpostproc license: "
     return LICENSE_PREFIX FFMPEG_LICENSE + sizeof(LICENSE_PREFIX) - 1;
 }
-
-#if HAVE_ALTIVEC_H
-#include <altivec.h>
-#endif
 
 #define GET_MODE_BUFFER_SIZE 500
 #define OPTIONS_ARRAY_SIZE 10
@@ -167,37 +165,6 @@ static const char * const replaceTable[]=
     "ac",           "ha:a:128:7,va:a,dr:a",
     NULL //End Marker
 };
-
-
-#if ARCH_X86 && HAVE_INLINE_ASM
-static inline void prefetchnta(const void *p)
-{
-    __asm__ volatile(   "prefetchnta (%0)\n\t"
-        : : "r" (p)
-    );
-}
-
-static inline void prefetcht0(const void *p)
-{
-    __asm__ volatile(   "prefetcht0 (%0)\n\t"
-        : : "r" (p)
-    );
-}
-
-static inline void prefetcht1(const void *p)
-{
-    __asm__ volatile(   "prefetcht1 (%0)\n\t"
-        : : "r" (p)
-    );
-}
-
-static inline void prefetcht2(const void *p)
-{
-    __asm__ volatile(   "prefetcht2 (%0)\n\t"
-        : : "r" (p)
-    );
-}
-#endif
 
 /* The horizontal functions exist only in C because the MMX
  * code is faster with vertical filters and transposing. */
@@ -591,10 +558,10 @@ static av_always_inline void do_a_deblock_C(uint8_t *src, int step,
 #endif
 
 typedef void (*pp_fn)(const uint8_t src[], int srcStride, uint8_t dst[], int dstStride, int width, int height,
-                      const QP_STORE_T QPs[], int QPStride, int isColor, PPContext *c2);
+                      const int8_t QPs[], int QPStride, int isColor, PPContext *c2);
 
 static inline void postProcess(const uint8_t src[], int srcStride, uint8_t dst[], int dstStride, int width, int height,
-        const QP_STORE_T QPs[], int QPStride, int isColor, pp_mode *vm, pp_context *vc)
+        const int8_t QPs[], int QPStride, int isColor, pp_mode *vm, pp_context *vc)
 {
     pp_fn pp = postProcess_C;
     PPContext *c= (PPContext *)vc;
@@ -712,7 +679,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
     ppMode->minAllowedY= 16;
     ppMode->baseDcDiff= 256/8;
     ppMode->flatnessThreshold= 56-16-1;
-    ppMode->maxClippedThreshold= 0.01;
+    ppMode->maxClippedThreshold= (AVRational){1,100};
     ppMode->error=0;
 
     memset(temp, 0, GET_MODE_BUFFER_SIZE);
@@ -768,7 +735,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
         /* replace stuff from the replace Table */
         for(i=0; replaceTable[2*i]; i++){
             if(!strcmp(replaceTable[2*i], filterName)){
-                int newlen= strlen(replaceTable[2*i + 1]);
+                size_t newlen = strlen(replaceTable[2*i + 1]);
                 int plen;
                 int spaceLeft;
 
@@ -903,9 +870,9 @@ static void reallocBuffers(PPContext *c, int width, int height, int stride, int 
     }
 
     reallocAlign((void **)&c->deintTemp, 2*width+32);
-    reallocAlign((void **)&c->nonBQPTable, qpStride*mbHeight*sizeof(QP_STORE_T));
-    reallocAlign((void **)&c->stdQPTable, qpStride*mbHeight*sizeof(QP_STORE_T));
-    reallocAlign((void **)&c->forcedQPTable, mbWidth*sizeof(QP_STORE_T));
+    reallocAlign((void **)&c->nonBQPTable, qpStride*mbHeight*sizeof(int8_t));
+    reallocAlign((void **)&c->stdQPTable, qpStride*mbHeight*sizeof(int8_t));
+    reallocAlign((void **)&c->forcedQPTable, mbWidth*sizeof(int8_t));
 }
 
 static const char * context_to_name(void * ptr) {
@@ -973,7 +940,7 @@ av_cold void pp_free_context(void *vc){
 void  pp_postprocess(const uint8_t * src[3], const int srcStride[3],
                      uint8_t * dst[3], const int dstStride[3],
                      int width, int height,
-                     const QP_STORE_T *QP_store,  int QPStride,
+                     const int8_t *QP_store,  int QPStride,
                      pp_mode *vm,  void *vc, int pict_type)
 {
     int mbWidth = (width+15)>>4;
@@ -1003,7 +970,7 @@ void  pp_postprocess(const uint8_t * src[3], const int srcStride[3],
         int i;
         const int count= FFMAX(mbHeight * absQPStride, mbWidth);
         for(i=0; i<(count>>2); i++){
-            ((uint32_t*)c->stdQPTable)[i] = (((const uint32_t*)QP_store)[i]>>1) & 0x7F7F7F7F;
+            AV_WN32(c->stdQPTable + (i<<2), AV_RN32(QP_store + (i<<2)) >> 1 & 0x7F7F7F7F);
         }
         for(i<<=2; i<count; i++){
             c->stdQPTable[i] = QP_store[i]>>1;
@@ -1028,7 +995,7 @@ void  pp_postprocess(const uint8_t * src[3], const int srcStride[3],
             int i;
             const int count= FFMAX(mbHeight * QPStride, mbWidth);
             for(i=0; i<(count>>2); i++){
-                ((uint32_t*)c->nonBQPTable)[i] = ((const uint32_t*)QP_store)[i] & 0x3F3F3F3F;
+                AV_WN32(c->nonBQPTable + (i<<2), AV_RN32(QP_store + (i<<2)) & 0x3F3F3F3F);
             }
             for(i<<=2; i<count; i++){
                 c->nonBQPTable[i] = QP_store[i] & 0x3F;

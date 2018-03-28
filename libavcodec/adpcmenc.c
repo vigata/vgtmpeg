@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2003 The FFmpeg Project
+ * Copyright (c) 2001-2003 The FFmpeg project
  *
  * first version by Francois Revol (revol@free.fr)
  * fringe ADPCM codecs (e.g., DK3, DK4, Westwood)
@@ -113,7 +113,7 @@ static av_cold int adpcm_encode_init(AVCodecContext *avctx)
         avctx->frame_size = (BLKSIZE - 7 * avctx->channels) * 2 / avctx->channels + 2;
         avctx->bits_per_coded_sample = 4;
         avctx->block_align    = BLKSIZE;
-        if (!(avctx->extradata = av_malloc(32 + FF_INPUT_BUFFER_PADDING_SIZE)))
+        if (!(avctx->extradata = av_malloc(32 + AV_INPUT_BUFFER_PADDING_SIZE)))
             goto error;
         avctx->extradata_size = 32;
         extradata = avctx->extradata;
@@ -258,7 +258,7 @@ static inline uint8_t adpcm_yamaha_compress_sample(ADPCMChannelStatus *c,
     c->predictor += ((c->step * ff_adpcm_yamaha_difflookup[nibble]) / 8);
     c->predictor = av_clip_int16(c->predictor);
     c->step = (c->step * ff_adpcm_yamaha_indexscale[nibble]) >> 8;
-    c->step = av_clip(c->step, 127, 24567);
+    c->step = av_clip(c->step, 127, 24576);
 
     return nibble;
 }
@@ -415,7 +415,7 @@ static void adpcm_compress_trellis(AVCodecContext *avctx,
             } else { //AV_CODEC_ID_ADPCM_YAMAHA
                 LOOP_NODES(yamaha, step,
                            av_clip((step * ff_adpcm_yamaha_indexscale[nibble]) >> 8,
-                                   127, 24567));
+                                   127, 24576));
 #undef LOOP_NODES
 #undef STORE_NODE
             }
@@ -486,7 +486,7 @@ static int adpcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         pkt_size = (2 + avctx->channels * (22 + 4 * (frame->nb_samples - 1)) + 7) / 8;
     else
         pkt_size = avctx->block_align;
-    if ((ret = ff_alloc_packet2(avctx, avpkt, pkt_size)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, avpkt, pkt_size, 0)) < 0)
         return ret;
     dst = avpkt->data;
 

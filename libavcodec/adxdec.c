@@ -81,7 +81,7 @@ static int adx_decode(ADXContext *c, int16_t *out, int offset,
     s2 = prev->s2;
     for (i = 0; i < BLOCK_SAMPLES; i++) {
         d  = get_sbits(&gb, 4);
-        s0 = ((d << COEFF_BITS) * scale + c->coeff[0] * s1 + c->coeff[1] * s2) >> COEFF_BITS;
+        s0 = ((d * (1 << COEFF_BITS)) * scale + c->coeff[0] * s1 + c->coeff[1] * s2) >> COEFF_BITS;
         s2 = s1;
         s1 = av_clip_int16(s0);
         *out++ = s1;
@@ -183,7 +183,7 @@ AVCodec ff_adpcm_adx_decoder = {
     .init           = adx_decode_init,
     .decode         = adx_decode_frame,
     .flush          = adx_decode_flush,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16P,
                                                       AV_SAMPLE_FMT_NONE },
 };

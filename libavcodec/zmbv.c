@@ -513,7 +513,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
-    if (c->comp == 0) { //Uncompressed data
+    if (c->comp == 0) { // uncompressed data
         if (c->decomp_size < len) {
             av_log(avctx, AV_LOG_ERROR, "Buffer too small\n");
             return AVERROR_INVALIDDATA;
@@ -539,6 +539,8 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
     } else {
         frame->key_frame = 0;
         frame->pict_type = AV_PICTURE_TYPE_P;
+        if (c->decomp_len < 2LL * ((c->width + c->bw - 1) / c->bw) * ((c->height + c->bh - 1) / c->bh))
+            return AVERROR_INVALIDDATA;
         if (c->decomp_len)
             c->decode_xor(c);
     }
@@ -589,6 +591,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
     // Needed if zlib unused or init aborted before inflateInit
     memset(&c->zstream, 0, sizeof(z_stream));
 
+    if ((avctx->width + 255ULL) * (avctx->height + 64ULL) > FFMIN(avctx->max_pixels, INT_MAX / 4) ) {
+        av_log(avctx, AV_LOG_ERROR, "Internal buffer (decomp_size) larger than max_pixels or too large\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     c->decomp_size = (avctx->width + 255) * 4 * (avctx->height + 64);
 
     /* Allocate decompression buffer */
@@ -634,5 +641,5 @@ AVCodec ff_zmbv_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

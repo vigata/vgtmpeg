@@ -72,3 +72,9 @@ At the moment only Bluray folders are supported and you should point to the root
 vgtmpeg is available under the terms of the GNU General Public License, Version 2. Please note that
 under the GPL, there is absolutely no warranty of any kind, to the extent permitted by the law.
 
+
+## Contributing
+
+Patches should be submitted to the ffmpeg-devel mailing list using
+`git format-patch` or `git send-email`. Github pull requests should be
+avoided because they are not part of our review process and will be ignored.

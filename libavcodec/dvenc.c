@@ -17,6 +17,8 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * quant_deadzone code and fixes sponsored by NOA GmbH
  */
 
 /**
@@ -27,6 +29,8 @@
 #include "config.h"
 
 #include "libavutil/attributes.h"
+#include "libavutil/internal.h"
+#include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
 #include "avcodec.h"
@@ -35,6 +39,7 @@
 #include "dv_tablegen.h"
 #include "fdctdsp.h"
 #include "internal.h"
+#include "mathops.h"
 #include "me_cmp.h"
 #include "pixblockdsp.h"
 #include "put_bits.h"
@@ -64,10 +69,6 @@ static av_cold int dvvideo_encode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Error initializing work tables.\n");
         return ret;
     }
-
-    avctx->coded_frame = av_frame_alloc();
-    if (!avctx->coded_frame)
-        return AVERROR(ENOMEM);
 
     dv_vlc_map_tableinit();
 
@@ -176,7 +177,7 @@ static av_always_inline PutBitContext *dv_encode_ac(EncBlockInfo *bi,
             if (bits_left) {
                 size -= bits_left;
                 put_bits(pb, bits_left, vlc >> size);
-                vlc = vlc & ((1 << size) - 1);
+                vlc = av_mod_uintp2(vlc, size);
             }
             if (pb + 1 >= pb_end) {
                 bi->partial_bit_count  = size;
@@ -206,9 +207,9 @@ static av_always_inline PutBitContext *dv_encode_ac(EncBlockInfo *bi,
 }
 
 static av_always_inline int dv_guess_dct_mode(DVVideoContext *s, uint8_t *data,
-                                              int linesize)
+                                              ptrdiff_t linesize)
 {
-    if (s->avctx->flags & CODEC_FLAG_INTERLACED_DCT) {
+    if (s->avctx->flags & AV_CODEC_FLAG_INTERLACED_DCT) {
         int ps = s->ildct_cmp(NULL, data, NULL, linesize, 8) - 400;
         if (ps > 0) {
             int is = s->ildct_cmp(NULL, data,            NULL, linesize << 1, 4) +
@@ -243,8 +244,8 @@ static const int dv_weight_248[64] = {
 };
 
 static av_always_inline int dv_init_enc_block(EncBlockInfo *bi, uint8_t *data,
-                                              int linesize, DVVideoContext *s,
-                                              int bias)
+                                              ptrdiff_t linesize,
+                                              DVVideoContext *s, int bias)
 {
     const int *weight;
     const uint8_t *zigzag_scan;
@@ -267,6 +268,8 @@ static av_always_inline int dv_init_enc_block(EncBlockInfo *bi, uint8_t *data,
 #endif
     int max  = classes[0];
     int prev = 0;
+    const unsigned deadzone = s->quant_deadzone;
+    const unsigned threshold = 2 * deadzone;
 
     av_assert2((((int) blk) & 15) == 0);
 
@@ -299,13 +302,15 @@ static av_always_inline int dv_init_enc_block(EncBlockInfo *bi, uint8_t *data,
         for (i = mb_area_start[area]; i < mb_area_start[area + 1]; i++) {
             int level = blk[zigzag_scan[i]];
 
-            if (level + 15 > 30U) {
+            if (level + deadzone > threshold) {
                 bi->sign[i] = (level >> 31) & 1;
                 /* Weight it and shift down into range, adding for rounding.
                  * The extra division by a factor of 2^4 reverses the 8x
                  * expansion of the DCT AND the 2x doubling of the weights. */
                 level     = (FFABS(level) * weight[i] + (1 << (dv_weight_bits + 3))) >>
                             (dv_weight_bits + 4);
+                if (!level)
+                    continue;
                 bi->mb[i] = level;
                 if (level > max)
                     max = level;
@@ -422,7 +427,8 @@ static int dv_encode_video_segment(AVCodecContext *avctx, void *arg)
     DVVideoContext *s = avctx->priv_data;
     DVwork_chunk *work_chunk = arg;
     int mb_index, i, j;
-    int mb_x, mb_y, c_offset, linesize, y_stride;
+    int mb_x, mb_y, c_offset;
+    ptrdiff_t linesize, y_stride;
     uint8_t *y_ptr;
     uint8_t *dif;
     LOCAL_ALIGNED_8(uint8_t, scratch, [128]);
@@ -721,13 +727,17 @@ static int dvvideo_encode_frame(AVCodecContext *c, AVPacket *pkt,
     DVVideoContext *s = c->priv_data;
     int ret;
 
-    if ((ret = ff_alloc_packet2(c, pkt, s->sys->frame_size)) < 0)
+    if ((ret = ff_alloc_packet2(c, pkt, s->sys->frame_size, 0)) < 0)
         return ret;
 
     c->pix_fmt                = s->sys->pix_fmt;
     s->frame                  = frame;
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
     c->coded_frame->key_frame = 1;
     c->coded_frame->pict_type = AV_PICTURE_TYPE_I;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
 
     s->buf = pkt->data;
     c->execute(c, dv_encode_video_segment, s->work_chunks, NULL,
@@ -743,11 +753,19 @@ static int dvvideo_encode_frame(AVCodecContext *c, AVPacket *pkt,
     return 0;
 }
 
-static int dvvideo_encode_close(AVCodecContext *avctx)
-{
-    av_frame_free(&avctx->coded_frame);
-    return 0;
-}
+#define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
+#define OFFSET(x) offsetof(DVVideoContext, x)
+static const AVOption dv_options[] = {
+    { "quant_deadzone",        "Quantizer dead zone",    OFFSET(quant_deadzone),       AV_OPT_TYPE_INT, { .i64 = 7 }, 0, 1024, VE },
+    { NULL },
+};
+
+static const AVClass dvvideo_encode_class = {
+    .class_name = "dvvideo encoder",
+    .item_name  = av_default_item_name,
+    .option     = dv_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
 
 AVCodec ff_dvvideo_encoder = {
     .name           = "dvvideo",
@@ -757,10 +775,10 @@ AVCodec ff_dvvideo_encoder = {
     .priv_data_size = sizeof(DVVideoContext),
     .init           = dvvideo_encode_init,
     .encode2        = dvvideo_encode_frame,
-    .close          = dvvideo_encode_close,
-    .capabilities   = CODEC_CAP_SLICE_THREADS | CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
+    .capabilities   = AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV411P, AV_PIX_FMT_YUV422P,
         AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE
     },
+    .priv_class     = &dvvideo_encode_class,
 };
