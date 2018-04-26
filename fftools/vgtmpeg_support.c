@@ -371,11 +371,11 @@ static void show_avoptions_opt_list_enum(void *obj,  const char *unit,
          * Don't print anything but CONST's on level two.
          * Only print items from the requested unit.
          */
-        if (!unit && opt->type==FF_OPT_TYPE_CONST)
+        if (!unit && opt->type==AV_OPT_TYPE_CONST)
             continue;
-        else if (unit && opt->type!=FF_OPT_TYPE_CONST)
+        else if (unit && opt->type!=AV_OPT_TYPE_CONST)
             continue;
-        else if (unit && opt->type==FF_OPT_TYPE_CONST && strcmp(unit, opt->unit))
+        else if (unit && opt->type==AV_OPT_TYPE_CONST && strcmp(unit, opt->unit))
             continue;
 
         dblval = show_avoptions_get_double_default(opt);
@@ -525,7 +525,7 @@ static void avcontext_flagdef(void) {
             JSON_PROPERTY( 0, def,  JSON_OBJECT(
                     JSON_PROPERTY(1, AV_OPT_FLAG_ENCODING_PARAM, JSON_INT_C(AV_OPT_FLAG_ENCODING_PARAM));
                     JSON_PROPERTY(0, AV_OPT_FLAG_DECODING_PARAM, JSON_INT_C(AV_OPT_FLAG_DECODING_PARAM));
-                    JSON_PROPERTY(0, AV_OPT_FLAG_METADATA, JSON_INT_C(AV_OPT_FLAG_METADATA));
+                    JSON_PROPERTY(0, AV_OPT_FLAG_EXPORT, JSON_INT_C(AV_OPT_FLAG_EXPORT));
                     JSON_PROPERTY(0, AV_OPT_FLAG_AUDIO_PARAM, JSON_INT_C(AV_OPT_FLAG_AUDIO_PARAM));
                     JSON_PROPERTY(0, AV_OPT_FLAG_VIDEO_PARAM, JSON_INT_C(AV_OPT_FLAG_VIDEO_PARAM));
                     JSON_PROPERTY(0, AV_OPT_FLAG_FORMAT_PARAM, JSON_INT_C(AV_OPT_FLAG_FORMAT_PARAM));
@@ -760,7 +760,7 @@ static void avcodec_nlstring(char *buf, int buf_size, AVCodecContext *enc, int e
         FFMSG_LOG( FFMSG_STRING_FMT(codecname), codec_name );
         FFMSG_LOG( FFMSG_STRING_FMT(profile), profile );
 
-        if (enc->pix_fmt != PIX_FMT_NONE) {
+        if (enc->pix_fmt != AV_PIX_FMT_NONE) {
             FFMSG_LOG( FFMSG_STRING_FMT(picfmt), av_get_pix_fmt_name(enc->pix_fmt) );
         }
 
@@ -1032,7 +1032,7 @@ void print_nlreport( OutputFile **output_files,
             vid = 1;
         }
         /* compute min output value */
-        pts = (double)ost->st->pts.val * av_q2d(ost->st->time_base);
+        pts = (double)ost->st->cur_dts * av_q2d(ost->st->time_base);
         if ((pts < ti1) && (pts > 0))
             ti1 = pts;
     }

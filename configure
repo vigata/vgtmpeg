@@ -6167,8 +6167,8 @@ if enabled sdl2; then
 fi
 
 #>>vgtmpeg
-enabled dvd_protocol && require libdvdread  dvdread/dvd_reader.h DVDOpenFile -ldvdread $ldl 
-enabled bd_protocol && require libbluray  libbluray/bluray.h bd_open -lbluray $ldl 
+enabled dvd_protocol && require_pkg_config libdvdread dvdread dvdread/dvd_reader.h DVDOpenFile -ldvdread $ldl 
+enabled bd_protocol && require_pkg_config libbluray libbluray libbluray/bluray.h bd_open -lbluray $ldl 
 #<<vgtmpeg
 
 
