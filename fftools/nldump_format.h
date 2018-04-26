@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2015 Alberto Vigata
+ * Copyright (C) 2010-2018 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -21,12 +21,17 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __NLJSONMSG_H
-#define __NLJSONMSG_H
+#ifndef __NLDUMP_FORMAT_H
+#define __NLDUMP_FORMAT_H
+
+#include "libavcodec/avcodec.h"
+#include "libavutil/avstring.h"
+#include "libavutil/dict.h"
+#include "libavutil/pixdesc.h"
 
 
-#include <inttypes.h>
-
-
-
-#endif 
+void dump_nlformat(AVFormatContext *ic,
+                 int index,
+                 const char *url,
+                 int is_output);
+#endif

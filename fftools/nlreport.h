@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2015 Alberto Vigata
+ * Copyright (C) 2010-2018 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -21,22 +21,26 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __VGTMPEG_H
-#define __VGTMPEG_H
+#ifndef __NLREPORT_H
+#define __NLREPORT_H
 
-/* nl addons */
-#include "nlffmsg.h"
-#include "nlinput.h"
-#include "nldump_format.h"
-#include "nlreport.h"
+#include "libavutil/opt.h"
+#include "libavutil/time.h"
+#include "ffmpeg.h"
 
-/* optical media public functions */
-#include "libavformat/optmedia.h"
-extern int output_xml;
-extern int server_mode;
-extern int banner;
-extern int default_program_id;
+void print_nlreport( OutputFile **output_files,
+                         OutputStream **ost_table, int nb_ostreams,
+                         int is_last_report, int64_t timer_start, int nb_frames_dup, int nb_frames_drop );
 
-/* running options */
+
+void c_strfree(char *str);  
+char *c_strescape (const char *source);
+
+
+void show_codecs_json(void);
+void show_formats_json(void);
+void show_options_json(void);
+
+
 
 #endif

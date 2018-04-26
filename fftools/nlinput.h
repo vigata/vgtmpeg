@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2015 Alberto Vigata
+ * Copyright (C) 2010-2018 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -21,26 +21,33 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __NLREPORT_H
-#define __NLREPORT_H
+#ifndef __NLINPUT_H
+#define __NLINPUT_H
 
-#include "libavutil/opt.h"
-#include "libavutil/time.h"
-#include "ffmpeg.h"
-
-void print_nlreport( OutputFile **output_files,
-                         OutputStream **ost_table, int nb_ostreams,
-                         int is_last_report, int64_t timer_start, int nb_frames_dup, int nb_frames_drop );
-
-
-void c_strfree(char *str);  
-char *c_strescape (const char *source);
-
-
-void show_codecs_json(void);
-void show_formats_json(void);
-void show_options_json(void);
+#include "nlffmsg.h"
+#include "config.h"
 
 
 
+#if HAVE_PTHREADS
+#include <pthread.h>
+#elif HAVE_W32THREADS
+#include "libavcodec/w32pthreads.h"
+#elif HAVE_OS2THREADS
+#include "os2threads.h"
 #endif
+
+/* cross thread signal struct */
+typedef struct {
+    int exit;
+    int cancel_transcode;
+    pthread_t nlin_th;
+} nlinput_t;
+
+
+/* fires up input thread */
+nlinput_t *nlinput_prepare(void);
+void nlinput_cancel(nlinput_t *);
+
+
+#endif /* __NLINPUT_H */

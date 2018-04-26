@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2015 Alberto Vigata
+ * Copyright (C) 2010-2018 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -21,33 +21,12 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __NLINPUT_H
-#define __NLINPUT_H
-
-#include "nlffmsg.h"
-#include "config.h"
+#ifndef __NLJSONMSG_H
+#define __NLJSONMSG_H
 
 
-
-#if HAVE_PTHREADS
-#include <pthread.h>
-#elif HAVE_W32THREADS
-#include "libavcodec/w32pthreads.h"
-#elif HAVE_OS2THREADS
-#include "os2threads.h"
-#endif
-
-/* cross thread signal struct */
-typedef struct {
-    int exit;
-    int cancel_transcode;
-    pthread_t nlin_th;
-} nlinput_t;
+#include <inttypes.h>
 
 
-/* fires up input thread */
-nlinput_t *nlinput_prepare(void);
-void nlinput_cancel(nlinput_t *);
 
-
-#endif /* __NLINPUT_H */
+#endif 

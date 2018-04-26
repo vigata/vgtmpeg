@@ -174,27 +174,27 @@ static AVStream * dvd_add_stream(AVFormatContext *s, int es_type, int startcode,
     //es_type = m->psm_es_type[startcode & 0xff];
     if (es_type > 0 && es_type != STREAM_TYPE_PRIVATE_DATA) {
         if (es_type == STREAM_TYPE_VIDEO_MPEG1) {
-            codec_id = CODEC_ID_MPEG2VIDEO;
+            codec_id = AV_CODEC_ID_MPEG2VIDEO;
             type = AVMEDIA_TYPE_VIDEO;
             add = 1;
         } else if (es_type == STREAM_TYPE_VIDEO_MPEG2) {
-            codec_id = CODEC_ID_MPEG2VIDEO;
+            codec_id = AV_CODEC_ID_MPEG2VIDEO;
             type = AVMEDIA_TYPE_VIDEO;
             add = 1;
         } else if (es_type == STREAM_TYPE_AUDIO_MPEG1 || es_type == STREAM_TYPE_AUDIO_MPEG2) {
-            codec_id = CODEC_ID_MP3;
+            codec_id = AV_CODEC_ID_MP3;
             type = AVMEDIA_TYPE_AUDIO;
         } else if (es_type == STREAM_TYPE_AUDIO_AAC) {
-            codec_id = CODEC_ID_AAC;
+            codec_id = AV_CODEC_ID_AAC;
             type = AVMEDIA_TYPE_AUDIO;
         } else if (es_type == STREAM_TYPE_VIDEO_MPEG4) {
-            codec_id = CODEC_ID_MPEG4;
+            codec_id = AV_CODEC_ID_MPEG4;
             type = AVMEDIA_TYPE_VIDEO;
         } else if (es_type == STREAM_TYPE_VIDEO_H264) {
-            codec_id = CODEC_ID_H264;
+            codec_id = AV_CODEC_ID_H264;
             type = AVMEDIA_TYPE_VIDEO;
         } else if (es_type == STREAM_TYPE_AUDIO_AC3) {
-            codec_id = CODEC_ID_AC3;
+            codec_id = AV_CODEC_ID_AC3;
             type = AVMEDIA_TYPE_AUDIO;
         }
     } else if (startcode >= 0x1e0 && startcode <= 0x1ef) {
@@ -203,48 +203,48 @@ static AVStream * dvd_add_stream(AVFormatContext *s, int es_type, int startcode,
         avio_read(s->pb, buf, 8);
         avio_seek(s->pb, -8, SEEK_CUR);
         if (!memcmp(buf, avs_seqh, 4) && (buf[6] != 0 || buf[7] != 1))
-            codec_id = CODEC_ID_CAVS;
+            codec_id = AV_CODEC_ID_CAVS;
         type = AVMEDIA_TYPE_VIDEO;
     } else if (startcode >= 0x1c0 && startcode <= 0x1df) {
         type = AVMEDIA_TYPE_AUDIO;
-        codec_id = m->sofdec > 0 ? CODEC_ID_ADPCM_ADX : CODEC_ID_MP2;
+        codec_id = m->sofdec > 0 ? AV_CODEC_ID_ADPCM_ADX : AV_CODEC_ID_MP2;
     } else if (startcode >= 0x80 && startcode <= 0x87) {
         type = AVMEDIA_TYPE_AUDIO;
-        codec_id = CODEC_ID_AC3;
+        codec_id = AV_CODEC_ID_AC3;
     } else if ((startcode >= 0x88 && startcode <= 0x8f) || (startcode >= 0x98 && startcode <= 0x9f)) {
         /* 0x90 - 0x97 is reserved for SDDS in DVD specs */
         type = AVMEDIA_TYPE_AUDIO;
-        codec_id = CODEC_ID_DTS;
+        codec_id = AV_CODEC_ID_DTS;
     } else if (startcode >= 0xa0 && startcode <= 0xaf) {
         type = AVMEDIA_TYPE_AUDIO;
-        /* 16 bit form will be handled as CODEC_ID_PCM_S16BE */
-        codec_id = CODEC_ID_PCM_DVD;
+        /* 16 bit form will be handled as AV_CODEC_ID_PCM_S16BE */
+        codec_id = AV_CODEC_ID_PCM_DVD;
     } else if (startcode >= 0xb0 && startcode <= 0xbf) {
         type = AVMEDIA_TYPE_AUDIO;
-        codec_id = CODEC_ID_TRUEHD;
+        codec_id = AV_CODEC_ID_TRUEHD;
     } else if (startcode >= 0xc0 && startcode <= 0xcf) {
         /* Used for both AC-3 and E-AC-3 in EVOB files */
         type = AVMEDIA_TYPE_AUDIO;
-        codec_id = CODEC_ID_AC3;
+        codec_id = AV_CODEC_ID_AC3;
     } else if (startcode >= 0x20 && startcode <= 0x3f) {
         type = AVMEDIA_TYPE_SUBTITLE;
-        codec_id = CODEC_ID_DVD_SUBTITLE;
+        codec_id = AV_CODEC_ID_DVD_SUBTITLE;
     } else if (startcode >= 0xfd55 && startcode <= 0xfd5f) {
         type = AVMEDIA_TYPE_VIDEO;
-        codec_id = CODEC_ID_VC1;
+        codec_id = AV_CODEC_ID_VC1;
     } else if (startcode == 0x1bd) {
         // check dvd audio substream type
         type = AVMEDIA_TYPE_AUDIO;
         switch (dvdaudio_substream_type & 0xe0) {
         case 0xa0:
-            codec_id = CODEC_ID_PCM_DVD;
+            codec_id = AV_CODEC_ID_PCM_DVD;
             add = 1;
             break;
         case 0x80:
             if ((dvdaudio_substream_type & 0xf8) == 0x88)
-                codec_id = CODEC_ID_DTS;
+                codec_id = AV_CODEC_ID_DTS;
             else
-                codec_id = CODEC_ID_AC3;
+                codec_id = AV_CODEC_ID_AC3;
             add = 1;
             break;
         default:
@@ -262,7 +262,7 @@ static AVStream * dvd_add_stream(AVFormatContext *s, int es_type, int startcode,
             st->codec->codec_type = type;
             st->codec->codec_id = codec_id;
             st->request_probe = 0;
-            if (codec_id != CODEC_ID_PCM_S16BE)
+            if (codec_id != AV_CODEC_ID_PCM_S16BE)
                 st->need_parsing = AVSTREAM_PARSE_FULL;
         }
     }
@@ -301,7 +301,7 @@ static void dvd_create_streams(AVFormatContext *s) {
 		    st->duration = duration; // the 90khz base was set in dvd_add_stream
 		    st->codec->width = title->width;
 		    st->codec->height = title->height;
-		    ff_program_add_stream_index(s, title->index, st->index);
+		    av_program_add_stream_index(s, title->index, st->index);
 		}
 
 		/* add audio streams */
@@ -317,7 +317,7 @@ static void dvd_create_streams(AVFormatContext *s) {
 			    av_dict_set(&st->metadata, "language-description", as->config.lang.description, 0);
 			    st->start_time = 0;
 			    st->duration = duration; // the 90khz base was set in dvd_add_stream
-			    ff_program_add_stream_index(s, title->index, st->index);
+			    av_program_add_stream_index(s, title->index, st->index);
 			}
 		}
 

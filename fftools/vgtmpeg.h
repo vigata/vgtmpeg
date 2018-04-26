@@ -1,6 +1,6 @@
 /* @@--
  * 
- * Copyright (C) 2010-2015 Alberto Vigata
+ * Copyright (C) 2010-2018 Alberto Vigata
  *       
  * This file is part of vgtmpeg
  * 
@@ -21,17 +21,22 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __NLDUMP_FORMAT_H
-#define __NLDUMP_FORMAT_H
+#ifndef __VGTMPEG_H
+#define __VGTMPEG_H
 
-#include "libavcodec/avcodec.h"
-#include "libavutil/avstring.h"
-#include "libavutil/dict.h"
-#include "libavutil/pixdesc.h"
+/* nl addons */
+#include "nlffmsg.h"
+#include "nlinput.h"
+#include "nldump_format.h"
+#include "nlreport.h"
 
+/* optical media public functions */
+#include "libavformat/optmedia.h"
+extern int output_xml;
+extern int server_mode;
+extern int banner;
+extern int default_program_id;
 
-void dump_nlformat(AVFormatContext *ic,
-                 int index,
-                 const char *url,
-                 int is_output);
+/* running options */
+
 #endif
