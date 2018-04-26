@@ -71,6 +71,11 @@ extern const URLProtocol ff_librtmpte_protocol;
 extern const URLProtocol ff_libssh_protocol;
 extern const URLProtocol ff_libsmbclient_protocol;
 
+/*-- vgtmpeg --*/
+extern const  URLProtocol ff_bd_protocol;
+extern const  URLProtocol ff_dvd_protocol;
+/*-- vgtmpeg --*/
+
 #include "libavformat/protocol_list.c"
 
 const AVClass *ff_urlcontext_child_class_next(const AVClass *prev)

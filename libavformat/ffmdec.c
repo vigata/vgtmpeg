@@ -94,7 +94,6 @@ static int ffm_read_data(AVFormatContext *s,
     uint32_t id;
     ptrdiff_t len;
     int64_t last_pos = -1;
-    int64_t last_pos = -1;
 
     size1 = size;
     while (size > 0) {

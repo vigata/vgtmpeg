@@ -325,12 +325,12 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
 
         case BLURAY_STREAM_TYPE_VIDEO_VC1:
             title->video_codec = WORK_DECAVCODECV;
-            title->video_codec_param = CODEC_ID_VC1;
+            title->video_codec_param = AV_CODEC_ID_VC1;
             break;
 
         case BLURAY_STREAM_TYPE_VIDEO_H264:
             title->video_codec = WORK_DECAVCODECV;
-            title->video_codec_param = CODEC_ID_H264;
+            title->video_codec_param = AV_CODEC_ID_H264;
             title->flags |= HBTF_NO_IDR;
             break;
 
@@ -391,7 +391,7 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
 				add_audio(ii, title->list_audio, bdaudio,
 				HB_SUBSTREAM_BD_AC3, HB_ACODEC_AC3, 0);
 				add_audio(ii, title->list_audio, bdaudio,
-				HB_SUBSTREAM_BD_TRUEHD, HB_ACODEC_FFMPEG, CODEC_ID_TRUEHD);
+				HB_SUBSTREAM_BD_TRUEHD, HB_ACODEC_FFMPEG, AV_CODEC_ID_TRUEHD);
 				break;
 
 			case BLURAY_STREAM_TYPE_AUDIO_DTS:
@@ -401,17 +401,17 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
 			case BLURAY_STREAM_TYPE_AUDIO_MPEG2:
 			case BLURAY_STREAM_TYPE_AUDIO_MPEG1:
 				add_audio(ii, title->list_audio, bdaudio, 0,
-				HB_ACODEC_FFMPEG, CODEC_ID_MP2);
+				HB_ACODEC_FFMPEG, AV_CODEC_ID_MP2);
 				break;
 
 			case BLURAY_STREAM_TYPE_AUDIO_AC3PLUS:
 				add_audio(ii, title->list_audio, bdaudio, 0,
-				HB_ACODEC_FFMPEG, CODEC_ID_EAC3);
+				HB_ACODEC_FFMPEG, AV_CODEC_ID_EAC3);
 				break;
 
 			case BLURAY_STREAM_TYPE_AUDIO_LPCM:
 				add_audio(ii, title->list_audio, bdaudio, 0,
-				HB_ACODEC_FFMPEG, CODEC_ID_PCM_BLURAY);
+				HB_ACODEC_FFMPEG, AV_CODEC_ID_PCM_BLURAY);
 				break;
 
 			case BLURAY_STREAM_TYPE_AUDIO_AC3:
@@ -427,7 +427,7 @@ hb_title_t * hb_bd_title_scan( hb_bd_t * d, int tt, uint64_t min_duration )
 				// DTS-core followed by DTS-hd-extensions.  Setting
 				// a substream id of 0 says use all substreams.
 				add_audio(ii, title->list_audio, bdaudio, 0,
-				HB_ACODEC_DCA_HD, CODEC_ID_DTS);
+				HB_ACODEC_DCA_HD, AV_CODEC_ID_DTS);
 				break;
 
 			default:
@@ -876,8 +876,8 @@ hb_optmedia_func_t *hb_optmedia_bd_methods(void) {
 
 /* libavformat glue */
 static const AVOption options[] = {
-    { "wide_support", "enable wide support", offsetof(bdurl_t, wide_support), FF_OPT_TYPE_INT, {1}, -1, 1, AV_OPT_FLAG_DECODING_PARAM},
-    { "min_title_duration", "minimum duration in ms to select a BD title", offsetof(bdurl_t, min_title_duration), FF_OPT_TYPE_INT, {0}, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
+    { "wide_support", "enable wide support", offsetof(bdurl_t, wide_support), AV_OPT_TYPE_INT, {1}, -1, 1, AV_OPT_FLAG_DECODING_PARAM},
+    { "min_title_duration", "minimum duration in ms to select a BD title", offsetof(bdurl_t, min_title_duration), AV_OPT_TYPE_INT, {0}, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM},
     { NULL }
 };
 
