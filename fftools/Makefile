@@ -12,6 +12,7 @@ PROGS       += $(AVPROGS)
 
 # --vgtmpeg
 AVBASENAMES  = ffmpeg ffplay ffprobe vgtmpeg
+LDFLAGS	+= -ldvdread -lbluray
 # --vgtmpeg
 
 ALLAVPROGS   = $(AVBASENAMES:%=%$(PROGSSUF)$(EXESUF))
@@ -26,13 +27,13 @@ OBJS-ffmpeg-$(CONFIG_VDA)          += fftools/ffmpeg_videotoolbox.o
 endif
 OBJS-ffmpeg-$(CONFIG_VIDEOTOOLBOX) += fftools/ffmpeg_videotoolbox.o
 
-OBJS-vgtmpeg                        += fftools/vgtmpeg_opt.o fftools/vgtmpeg_filter.o fftools/vgtmpeg_hw.o fftools/vgtmpeg_support.o
-OBJS-vgtmpeg-$(CONFIG_CUVID)        += fftools/vgtmpeg_cuvid.o
-OBJS-vgtmpeg-$(CONFIG_LIBMFX)       += fftools/vgtmpeg_qsv.o
+OBJS-vgtmpeg                        += fftools/ffmpeg_opt.o fftools/ffmpeg_filter.o fftools/ffmpeg_hw.o fftools/vgtmpeg_support.o
+OBJS-vgtmpeg-$(CONFIG_CUVID)        += fftools/ffmpeg_cuvid.o
+OBJS-vgtmpeg-$(CONFIG_LIBMFX)       += fftools/ffmpeg_qsv.o
 ifndef CONFIG_VIDEOTOOLBOX
-OBJS-vgtmpeg-$(CONFIG_VDA)          += fftools/vgtmpeg_videotoolbox.o
+OBJS-vgtmpeg-$(CONFIG_VDA)          += fftools/ffmpeg_videotoolbox.o
 endif
-OBJS-vgtmpeg-$(CONFIG_VIDEOTOOLBOX) += fftools/vgtmpeg_videotoolbox.o
+OBJS-vgtmpeg-$(CONFIG_VIDEOTOOLBOX) += fftools/ffmpeg_videotoolbox.o
 # --vgtmpeg
 
 define DOFFTOOL

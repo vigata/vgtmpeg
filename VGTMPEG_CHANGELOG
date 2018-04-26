@@ -1,3 +1,8 @@
+4.0_vgt3
+- Merge with ffmpeg 4.0 series
+- Versioning scheme now makes it easier to identify upstream ffmpeg branch. {ffmpeg_ver}_vgt{vgtmpeg_ver}
+
+
 2.2.38
 - Merge with ffmpeg 2.6.x series. In particular, this version is merged and compatible with 2.6.1
 - Download links to older versions are now provided on the site and should be used when compatibility with older versions is required
