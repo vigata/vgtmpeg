@@ -422,14 +422,6 @@ static int opus_decode_packet(AVCodecContext *avctx, void *data,
     int decoded_samples = INT_MAX;
     int delayed_samples = 0;
     int i, ret;
-    int delayed_samples = 0;
-
-    for (i = 0; i < c->nb_streams; i++) {
-        OpusStreamContext *s = &c->streams[i];
-        s->out[0] =
-        s->out[1] = NULL;
-        delayed_samples = FFMAX(delayed_samples, s->delayed_samples);
-    }
 
     /* calculate the number of delayed samples */
     for (i = 0; i < c->nb_streams; i++) {
@@ -695,7 +687,7 @@ static av_cold int opus_decode_init(AVCodecContext *avctx)
         if (ret < 0)
             goto fail;
 
-        ret = ff_celt_init(avctx, &s->celt, s->output_channels);
+        ret = ff_celt_init(avctx, &s->celt, s->output_channels, c->apply_phase_inv);
         if (ret < 0)
             goto fail;
 
@@ -720,9 +712,24 @@ fail:
     return ret;
 }
 
+#define OFFSET(x) offsetof(OpusContext, x)
+#define AD AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_DECODING_PARAM
+static const AVOption opus_options[] = {
+    { "apply_phase_inv", "Apply intensity stereo phase inversion", OFFSET(apply_phase_inv), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, AD },
+    { NULL },
+};
+
+static const AVClass opus_class = {
+    .class_name = "Opus Decoder",
+    .item_name  = av_default_item_name,
+    .option     = opus_options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
 AVCodec ff_opus_decoder = {
     .name            = "opus",
     .long_name       = NULL_IF_CONFIG_SMALL("Opus"),
+    .priv_class      = &opus_class,
     .type            = AVMEDIA_TYPE_AUDIO,
     .id              = AV_CODEC_ID_OPUS,
     .priv_data_size  = sizeof(OpusContext),

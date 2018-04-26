@@ -63,6 +63,46 @@ Set the number of channels. Default is 2.
 
 @end table
 
+@section android_camera
+
+Android camera input device.
+
+This input devices uses the Android Camera2 NDK API which is
+available on devices with API level 24+. The availability of
+android_camera is autodetected during configuration.
+
+This device allows capturing from all cameras on an Android device,
+which are integrated into the Camera2 NDK API.
+
+The available cameras are enumerated internally and can be selected
+with the @var{camera_index} parameter. The input file string is
+discarded.
+
+Generally the back facing camera has index 0 while the front facing
+camera has index 1.
+
+@subsection Options
+
+@table @option
+
+@item video_size
+Set the video size given as a string such as 640x480 or hd720.
+Falls back to the first available configuration reported by
+Android if requested video size is not available or by default.
+
+@item framerate
+Set the video framerate.
+Falls back to the first available configuration reported by
+Android if requested framerate is not available or by default (-1).
+
+@item camera_index
+Set the index of the camera to use. Default is 0.
+
+@item input_queue_size
+Set the maximum number of frames to buffer. Default is 5.
+
+@end table
+
 @section avfoundation
 
 AVFoundation input device.
@@ -238,6 +278,8 @@ This sets the input video format to the format given by the FourCC. To see
 the supported values of your device(s) use @option{list_formats}.
 Note that there is a FourCC @option{'pal '} that can also be used
 as @option{pal} (3 letters).
+Default behavior is autodetection of the input video format, if the hardware
+supports it.
 
 @item bm_v210
 This is a deprecated option, you can use @option{raw_format} instead.
@@ -296,11 +338,13 @@ Sets the audio input source. Must be @samp{unset}, @samp{embedded},
 
 @item video_pts
 Sets the video packet timestamp source. Must be @samp{video}, @samp{audio},
-@samp{reference} or @samp{wallclock}. Defaults to @samp{video}.
+@samp{reference}, @samp{wallclock} or @samp{abs_wallclock}.
+Defaults to @samp{video}.
 
 @item audio_pts
 Sets the audio packet timestamp source. Must be @samp{video}, @samp{audio},
-@samp{reference} or @samp{wallclock}. Defaults to @samp{audio}.
+@samp{reference}, @samp{wallclock} or @samp{abs_wallclock}.
+Defaults to @samp{audio}.
 
 @item draw_bars
 If set to @samp{true}, color bars are drawn in the event of a signal loss.
@@ -310,6 +354,15 @@ Defaults to @samp{true}.
 Sets maximum input buffer size in bytes. If the buffering reaches this value,
 incoming frames will be dropped.
 Defaults to @samp{1073741824}.
+
+@item audio_depth
+Sets the audio sample bit depth. Must be @samp{16} or @samp{32}.
+Defaults to @samp{16}.
+
+@item decklink_copyts
+If set to @option{true}, timestamps are forwarded as they are without removing
+the initial offset.
+Defaults to @option{false}.
 
 @end table
 
@@ -1475,97 +1528,5 @@ the top left corner of the X11 window and correspond to the
 @var{x_offset} and @var{y_offset} parameters in the device name. The
 default value for both options is 0.
 @end table
-(??)
-(??)@subsection @var{grab_x} @var{grab_y} AVOption
-(??)
-(??)The syntax is:
-(??)@example
-(??)-grab_x @var{x_offset} -grab_y @var{y_offset}
-(??)@end example
-(??)
-(??)Set the grabing region coordinates. The are expressed as offset from the top left
-(??)corner of the X11 window. The default value is 0.
-(??)
-(??)@section decklink
-(??)
-(??)The decklink input device provides capture capabilities for Blackmagic
-(??)DeckLink devices.
-(??)
-(??)To enable this input device, you need the Blackmagic DeckLink SDK and you
-(??)need to configure with the appropriate @code{--extra-cflags}
-(??)and @code{--extra-ldflags}.
-(??)On Windows, you need to run the IDL files through @command{widl}.
-(??)
-(??)DeckLink is very picky about the formats it supports. Pixel format is
-(??)uyvy422 or v210, framerate and video size must be determined for your device with
-(??)@command{-list_formats 1}. Audio sample rate is always 48 kHz and the number
-(??)of channels can be 2, 8 or 16.
-(??)
-(??)@subsection Options
-(??)
-(??)@table @option
-(??)
-(??)@item list_devices
-(??)If set to @option{true}, print a list of devices and exit.
-(??)Defaults to @option{false}.
-(??)
-(??)@item list_formats
-(??)If set to @option{true}, print a list of supported formats and exit.
-(??)Defaults to @option{false}.
-(??)
-(??)@item bm_v210
-(??)If set to @samp{1}, video is captured in 10 bit v210 instead
-(??)of uyvy422. Not all Blackmagic devices support this option.
-(??)
-(??)@item bm_channels <CHANNELS>
-(??)Number of audio channels, can be 2, 8 or 16
-(??)
-(??)@item bm_audiodepth <BITDEPTH>
-(??)Audio bit depth, can be 16 or 32.
-(??)
-(??)@end table
-(??)
-(??)@subsection Examples
-(??)
-(??)@itemize
-(??)
-(??)@item
-(??)List input devices:
-(??)@example
-(??)ffmpeg -f decklink -list_devices 1 -i dummy
-(??)@end example
-(??)
-(??)@item
-(??)List supported formats:
-(??)@example
-(??)ffmpeg -f decklink -list_formats 1 -i 'Intensity Pro'
-(??)@end example
-(??)
-(??)@item
-(??)Capture video clip at 1080i50 (format 11):
-(??)@example
-(??)ffmpeg -f decklink -i 'Intensity Pro@@11' -acodec copy -vcodec copy output.avi
-(??)@end example
-(??)
-(??)@item
-(??)Capture video clip at 1080i50 10 bit:
-(??)@example
-(??)ffmpeg -bm_v210 1 -f decklink -i 'UltraStudio Mini Recorder@@11' -acodec copy -vcodec copy output.avi
-(??)@end example
-(??)
-(??)@item
-(??)Capture video clip at 720p50 with 32bit audio:
-(??)@example
-(??)ffmpeg -bm_audiodepth 32 -f decklink -i 'UltraStudio Mini Recorder@@14' -acodec copy -vcodec copy output.avi
-(??)@end example
-(??)
-(??)@item
-(??)Capture video clip at 576i50 with 8 audio channels:
-(??)@example
-(??)ffmpeg -bm_channels 8 -f decklink -i 'UltraStudio Mini Recorder@@3' -acodec copy -vcodec copy output.avi
-(??)@end example
-(??)
-(??)@end itemize
-(??)
 
 @c man end INPUT DEVICES
