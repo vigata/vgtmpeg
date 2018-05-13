@@ -12,7 +12,7 @@ PROGS       += $(AVPROGS)
 
 # --vgtmpeg
 AVBASENAMES  = ffmpeg ffplay ffprobe vgtmpeg
-LDFLAGS	+= -ldvdread -lbluray
+FF_EXTRALIBS += -ldvdread -lbluray
 # --vgtmpeg
 
 ALLAVPROGS   = $(AVBASENAMES:%=%$(PROGSSUF)$(EXESUF))
@@ -40,9 +40,9 @@ define DOFFTOOL
 OBJS-$(1) += fftools/cmdutils.o fftools/$(1).o $(OBJS-$(1)-yes)
 $(1)$(PROGSSUF)_g$(EXESUF): $$(OBJS-$(1))
 $$(OBJS-$(1)): | fftools
-$$(OBJS-$(1)): CFLAGS  += $(CFLAGS-$(1))
+$$(OBJS-$(1)): CFLAGS  += $(CFLAGS-$(1)) 
 $(1)$(PROGSSUF)_g$(EXESUF): LDFLAGS += $(LDFLAGS-$(1))
-$(1)$(PROGSSUF)_g$(EXESUF): FF_EXTRALIBS += $(EXTRALIBS-$(1))
+$(1)$(PROGSSUF)_g$(EXESUF): FF_EXTRALIBS += $(EXTRALIBS-$(1)) -ldvdread
 -include $$(OBJS-$(1):.o=.d)
 endef
 
