@@ -3467,6 +3467,10 @@ ffmpeg_select="aformat_filter anull_filter atrim_filter format_filter
                null_filter
                trim_filter"
 ffmpeg_suggest="ole32 psapi shell32"
+#>>vgtmpeg
+vgtmpeg_suggest="ole32 psapi shell32"
+#<<vgtmpeg
+
 ffplay_deps="avcodec avformat swscale swresample sdl2"
 ffplay_select="rdft crop_filter transpose_filter hflip_filter vflip_filter rotate_filter"
 ffplay_suggest="shell32"
