@@ -1,6 +1,6 @@
-4.0_vgt3
+4.0.24
 - Merge with ffmpeg 4.0 series
-- Versioning scheme now makes it easier to identify upstream ffmpeg branch. {ffmpeg_ver}_vgt{vgtmpeg_ver}
+- Versioning scheme now makes it easier to identify upstream ffmpeg branch. {ffmpeg_ver}.{vgtmpeg_rev}
 
 
 2.2.38
