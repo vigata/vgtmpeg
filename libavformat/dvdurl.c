@@ -1515,7 +1515,7 @@ static int dvd_read(URLContext *h, unsigned char *buf, int size)
             ctx->cur_read_buffer = hb_dvdread_read( ctx->hb_dvd );
             if(!ctx->cur_read_buffer) {
                 hb_log_level(gloglevel,"dvd_read: EOF");
-                break;
+                return AVERROR_EOF;
             }
             ctx->cur_read_buffer->cur = 0;
         }

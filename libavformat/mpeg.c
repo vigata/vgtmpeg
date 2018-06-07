@@ -146,7 +146,7 @@ typedef struct MpegDemuxContext {
 /*--vgtmpeg start*/
 /* DVDURL support routines */
 static dvdurl_t *get_dvdurl_ctx(AVFormatContext *s) {
-	URLContext *uc = s->pb->opaque;
+	URLContext *uc = ffio_geturlcontext( s->pb );
 	dvdurl_t * du = uc->priv_data;
 	if(strcmp(uc->prot->name,"dvd")){
 	    return 0;
@@ -259,8 +259,8 @@ static AVStream * dvd_add_stream(AVFormatContext *s, int es_type, int startcode,
         if (st) {
             st->id = av_id;
             avpriv_set_pts_info(st, 33, 1, 90000);
-            st->codec->codec_type = type;
-            st->codec->codec_id = codec_id;
+            st->codecpar->codec_type = type;
+            st->codecpar->codec_id = codec_id;
             st->request_probe = 0;
             if (codec_id != AV_CODEC_ID_PCM_S16BE)
                 st->need_parsing = AVSTREAM_PARSE_FULL;
@@ -293,6 +293,9 @@ static void dvd_create_streams(AVFormatContext *s) {
 	    hb_title_t *title = ctx->selected_title;
 		uint64_t duration = title->duration;
 		int j;
+
+        /* create new program entry in AVFormatContext */
+        av_new_program(s, title->index);
 
 		/* add video stream */
 		st = dvd_add_stream(s, STREAM_TYPE_VIDEO_MPEG2, title->video_id, 0, DVD_AVID(title->index,title->video_id) ); /* mpeg 2 stream type works for mpeg1/2 */

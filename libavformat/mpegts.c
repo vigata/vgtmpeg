@@ -251,7 +251,7 @@ extern AVInputFormat ff_mpegts_demuxer;
 
 /* DVDURL support routines */
 static bdurl_t *get_bdurl_ctx(AVFormatContext *s) {
-	URLContext *uc = s->pb->opaque;
+	URLContext *uc = ffio_geturlcontext( s->pb );
 	bdurl_t * du = uc->priv_data;
 	if(strcmp(uc->prot->name,"bd")){
 	    return 0;
