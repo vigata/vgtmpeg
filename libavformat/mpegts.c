@@ -2173,7 +2173,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
 /* --vgtmpeg */
         bdurl_stream_init(ts, st);
-        av_program_add_stream_index(ts->stream, h->id, st->index);
+        av_program_add_stream_index(ts->stream, get_ff_program_id_from_sid(ts, h->id), st->index);
 /* --vgtmpeg */
 
         desc_list_len = get16(&p, p_end);
@@ -2257,7 +2257,6 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
             program = av_new_program(ts->stream, get_ff_program_id_from_sid(ts,sid));
             bdurl_program_init(ts);
 /* --vgtmpeg */
-            program = av_new_program(ts->stream, sid);
             if (program) {
                 program->program_num = sid;
                 program->pmt_pid = pmt_pid;

@@ -1543,7 +1543,7 @@ int fragmented_read(void *ctx, fragread_t read, hb_buffer_t **cur_read_buffer, u
             *cur_read_buffer = read(ctx); //hb_bd_read( ctx->hb_bd );
             if(!(*cur_read_buffer)) {
                 hb_log_level(HB_LOG_VERBOSE,"fragmented_read: EOF");
-                break;
+                return AVERROR_EOF;
             }
             (*cur_read_buffer)->cur = 0;
         }
