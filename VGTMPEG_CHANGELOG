@@ -1,7 +1,10 @@
-4.0.24
-- Merge with ffmpeg 4.0 series
+4.0.24 (rc1):
+- Merge with ffmpeg 4.0 series. vgtmpeg should now be more compatible with 4.0+ ffmpeg
 - Versioning scheme now makes it easier to identify upstream ffmpeg branch. {ffmpeg_ver}.{vgtmpeg_rev}
-
+- DVD/bluray urls no longer needs explicit output mapping. Default, titles, video and audio tracks are selected. This fixes common error "Output file #0 does not contain any stream" when not specifying mapping
+- libx265/libx264/libvpx updated to latest versions
+- libfaac AAC encoder dropped in favor of the much higher quality fdk-aac. Use encoder 'libfdk_aac' to use this aac encoder
+- 32bit binaries have been deprecated for all platforms
 
 2.2.38
 - Merge with ffmpeg 2.6.x series. In particular, this version is merged and compatible with 2.6.1
