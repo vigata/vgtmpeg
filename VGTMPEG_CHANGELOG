@@ -1,3 +1,7 @@
+4.0.25 (rc2):
+- libopus added for opus codec support (encode and decode)
+- fixed mac build 
+
 4.0.24 (rc1):
 - Merge with ffmpeg 4.0 series. vgtmpeg should now be more compatible with 4.0+ ffmpeg
 - Versioning scheme now makes it easier to identify upstream ffmpeg branch. {ffmpeg_ver}.{vgtmpeg_rev}
